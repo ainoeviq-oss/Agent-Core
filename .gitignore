@@ -10,3 +10,4 @@ coverage/
 /runtime/
 /secrets/
 /tunnel-client/
+/capabilities/

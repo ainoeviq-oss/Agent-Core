@@ -5,6 +5,7 @@ export interface AppConfig {
   port: number;
   dataDir: string;
   logDir: string;
+  capabilityDir: string;
   allowedRoots: string[];
 }
 
@@ -12,7 +13,10 @@ type Env = Record<string, string | undefined>;
 
 function parseRoots(value: string | undefined, baseDir: string): string[] {
   if (!value?.trim()) return [path.resolve(baseDir)];
-  const roots = value.split(';').map((item) => item.trim()).filter(Boolean).map((item) => path.resolve(item));
+  const roots = value.split(';')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => path.resolve(item));
   return roots.length ? [...new Set(roots)] : [path.resolve(baseDir)];
 }
 
@@ -27,6 +31,7 @@ export function loadConfig(env: Env = process.env, baseDir = process.cwd()): App
     port,
     dataDir: path.resolve(env.COMMANDER_DATA_DIR?.trim() || path.join(baseDir, 'data')),
     logDir: path.resolve(env.COMMANDER_LOG_DIR?.trim() || path.join(baseDir, 'logs')),
+    capabilityDir: path.resolve(env.COMMANDER_CAPABILITY_DIR?.trim() || path.join(baseDir, 'capabilities')),
     allowedRoots: parseRoots(env.COMMANDER_ALLOWED_ROOTS, baseDir),
   };
 }
