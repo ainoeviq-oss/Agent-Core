@@ -22,13 +22,14 @@ export async function startCommanderService(config: AppConfig = loadConfig()): P
   await Promise.all([
     mkdir(config.dataDir, { recursive: true }),
     mkdir(config.logDir, { recursive: true }),
+    mkdir(config.capabilityDir, { recursive: true }),
   ]);
 
   const keyStore = new FileKeyStore(config.dataDir);
   const oauthStore = new FileOAuthStore(config.dataDir);
   const oauthService = new OAuthService(keyStore, oauthStore);
   const auditLogger = new FileAuditLogger(config.logDir);
-  const runtime = createRuntimeServices(config.allowedRoots);
+  const runtime = createRuntimeServices(config.allowedRoots, config.capabilityDir);
   const server = createServer(createHttpHandler({
     keyStore,
     oauthService,
