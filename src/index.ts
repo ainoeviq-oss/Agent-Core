@@ -7,6 +7,8 @@ import { loadConfig, type AppConfig } from './config.js';
 import { createHttpHandler } from './http/app.js';
 import { FileAuditLogger } from './logging/audit-log.js';
 import { createMcpHttpHandler } from './mcp/handler.js';
+import { OAuthService } from './oauth/service.js';
+import { FileOAuthStore } from './oauth/store.js';
 
 export interface CommanderService {
   server: Server;
@@ -22,9 +24,12 @@ export async function startCommanderService(config: AppConfig = loadConfig()): P
   ]);
 
   const keyStore = new FileKeyStore(config.dataDir);
+  const oauthStore = new FileOAuthStore(config.dataDir);
+  const oauthService = new OAuthService(keyStore, oauthStore);
   const auditLogger = new FileAuditLogger(config.logDir);
   const server = createServer(createHttpHandler({
     keyStore,
+    oauthService,
     auditLogger,
     mcpHandler: createMcpHttpHandler(),
   }));

@@ -7,7 +7,11 @@ export interface KeyMetadata {
   revokedAt: string | null;
 }
 
-export interface VerifiedKey extends KeyMetadata {}
+export type AuthenticationMode = 'bearer-api-key' | 'oauth2';
+
+export interface VerifiedKey extends KeyMetadata {
+  authentication?: AuthenticationMode;
+}
 
 export interface CreatedKey {
   key: string;

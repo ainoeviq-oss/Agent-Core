@@ -3,7 +3,7 @@ import * as z from 'zod/v4';
 import type { VerifiedKey } from '../auth/key-types.js';
 
 export const SERVER_NAME = 'desktop-commander';
-export const SERVER_VERSION = '0.1.0';
+export const SERVER_VERSION = '0.2.0';
 
 export function createCommanderMcpServer(key: VerifiedKey): McpServer {
   const server = new McpServer({
@@ -29,7 +29,7 @@ export function createCommanderMcpServer(key: VerifiedKey): McpServer {
       serverName: SERVER_NAME,
       version: SERVER_VERSION,
       runtime: `node ${process.version}`,
-      authentication: 'bearer-api-key',
+      authentication: key.authentication ?? 'bearer-api-key',
       key: { id: key.id, name: key.name },
     };
     return {
@@ -40,7 +40,7 @@ export function createCommanderMcpServer(key: VerifiedKey): McpServer {
 
   server.registerTool('commander_capabilities', {
     title: 'Commander Capabilities',
-    description: 'Describe enabled V1 capabilities and capability families intentionally deferred to later stages.',
+    description: 'Describe enabled gateway capabilities and capability families intentionally deferred to later stages.',
     outputSchema: {
       stage: z.string(),
       enabled: z.array(z.string()),
@@ -48,10 +48,14 @@ export function createCommanderMcpServer(key: VerifiedKey): McpServer {
     },
   }, async () => {
     const structuredContent = {
-      stage: 'v1',
+      stage: 'v1-oauth-bridge',
       enabled: [
         'mcp.streamable_http',
         'auth.api_key',
+        'auth.oauth2',
+        'oauth.dynamic_client_registration',
+        'oauth.authorization_code_pkce',
+        'oauth.refresh_token',
         'tool.commander_status',
         'tool.commander_capabilities',
       ],
@@ -62,8 +66,7 @@ export function createCommanderMcpServer(key: VerifiedKey): McpServer {
         'search',
         'git',
         'workspace',
-        'oauth',
-        'tunnel',
+        'tunnel.runtime',
       ],
     };
     return {

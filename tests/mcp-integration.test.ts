@@ -61,7 +61,7 @@ describe('Commander MCP integration', () => {
     expect(initialize.response.status).toBe(200);
     expect(initialize.json.result.serverInfo).toMatchObject({
       name: 'desktop-commander',
-      version: '0.1.0',
+      version: '0.2.0',
     });
 
     const listed = await mcpRequest(baseUrl, created.key, {
@@ -83,7 +83,7 @@ describe('Commander MCP integration', () => {
     expect(status.json.result.structuredContent).toMatchObject({
       service: 'commander-mcp',
       serverName: 'desktop-commander',
-      version: '0.1.0',
+      version: '0.2.0',
       authentication: 'bearer-api-key',
       key: { id: created.metadata.id, name: 'integration-client' },
     });
@@ -93,9 +93,9 @@ describe('Commander MCP integration', () => {
       params: { name: 'commander_capabilities', arguments: {} },
     });
     expect(capabilities.json.result.structuredContent).toMatchObject({
-      stage: 'v1',
-      enabled: expect.arrayContaining(['mcp.streamable_http', 'auth.api_key']),
-      deferred: expect.arrayContaining(['filesystem', 'terminal', 'process', 'git', 'oauth', 'tunnel']),
+      stage: 'v1-oauth-bridge',
+      enabled: expect.arrayContaining(['mcp.streamable_http', 'auth.api_key', 'auth.oauth2', 'oauth.dynamic_client_registration']),
+      deferred: expect.arrayContaining(['filesystem', 'terminal', 'process', 'git', 'tunnel.runtime']),
     });
   });
 });

@@ -3,6 +3,7 @@ import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http
 import type { FileKeyStore } from '../auth/key-store.js';
 import type { VerifiedKey } from '../auth/key-types.js';
 import type { AuditLogger } from '../logging/audit-log.js';
+import type { OAuthService } from '../oauth/service.js';
 import { authenticateRequest } from './auth.js';
 
 export type McpHttpHandler = (
@@ -15,10 +16,19 @@ export interface HttpHandlerOptions {
   keyStore: FileKeyStore;
   auditLogger: AuditLogger;
   mcpHandler: McpHttpHandler;
+  oauthService?: OAuthService;
 }
 
-function sendJson(response: ServerResponse, status: number, body: unknown): void {
-  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
+function sendJson(
+  response: ServerResponse,
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+): void {
+  response.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    ...headers,
+  });
   response.end(JSON.stringify(body));
 }
 
@@ -44,10 +54,18 @@ async function handleRequest(
       return;
     }
 
+    if (options.oauthService && await options.oauthService.handle(request, response)) {
+      return;
+    }
+
     if (route === '/mcp') {
-      key = await authenticateRequest(request, options.keyStore);
+      key = await authenticateRequest(request, options.keyStore, options.oauthService);
       if (!key) {
-        sendJson(response, 401, { error: 'unauthorized' });
+        const headers: Record<string, string> = {};
+        if (options.oauthService) {
+          headers['www-authenticate'] = options.oauthService.challenge(request);
+        }
+        sendJson(response, 401, { error: 'unauthorized' }, headers);
         return;
       }
       await options.mcpHandler(request, response, key);
