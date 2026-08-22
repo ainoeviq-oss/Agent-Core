@@ -9,6 +9,7 @@ import { FileAuditLogger } from './logging/audit-log.js';
 import { createMcpHttpHandler } from './mcp/handler.js';
 import { OAuthService } from './oauth/service.js';
 import { FileOAuthStore } from './oauth/store.js';
+import { createRuntimeServices } from './runtime/services.js';
 
 export interface CommanderService {
   server: Server;
@@ -27,11 +28,12 @@ export async function startCommanderService(config: AppConfig = loadConfig()): P
   const oauthStore = new FileOAuthStore(config.dataDir);
   const oauthService = new OAuthService(keyStore, oauthStore);
   const auditLogger = new FileAuditLogger(config.logDir);
+  const runtime = createRuntimeServices(config.allowedRoots);
   const server = createServer(createHttpHandler({
     keyStore,
     oauthService,
     auditLogger,
-    mcpHandler: createMcpHttpHandler(),
+    mcpHandler: createMcpHttpHandler(runtime),
   }));
 
   await new Promise<void>((resolve, reject) => {

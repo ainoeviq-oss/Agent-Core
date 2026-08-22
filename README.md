@@ -2,9 +2,9 @@
 
 Commander MCP is a Windows-hosted custom MCP gateway that provides a stable foundation for Desktop-Commander-style capabilities in a different controlled scope.
 
-V1 focuses on transport and identity rather than computer mutation. It exposes a local Streamable HTTP MCP endpoint protected by custom bearer API keys.
+V2 exposes a guarded operational toolset for filesystem, search, PowerShell execution, and Commander-managed process sessions while retaining the custom API-key + OAuth bridge and Secure MCP Tunnel compatibility.
 
-## V1 Endpoint
+## Endpoint
 
 - MCP: `http://127.0.0.1:8765/mcp`
 - Health: `http://127.0.0.1:8765/health`
@@ -42,10 +42,15 @@ node dist\cli.js rotate-key <key-id>
 
 ## MCP Tools
 
-- `commander_status` — reports server/runtime/auth identity and the authenticated key identity.
-- `commander_capabilities` — reports enabled V1 features and the capability families deferred to later stages.
+Core identity: `commander_status`, `commander_capabilities`, `workspace_info`.
 
-Filesystem, terminal, process, search, Git, workspace isolation, OAuth, and tunnel exposure are deliberately not enabled in V1.
+Filesystem: `list_directory`, `read_file`, `read_multiple_files`, `write_file`, `edit_file`, `create_directory`, `move_file`, `get_file_info`.
+
+Search: `search_files` supports filename and text-content modes.
+
+Process/terminal: `execute_command`, `start_process`, `read_process_output`, `stop_process`, `list_processes`.
+
+All paths and process working directories are constrained by `COMMANDER_ALLOWED_ROOTS`. High-risk system/storage/privilege commands are blocked before PowerShell execution. Git semantic tools and GUI/system administration remain deferred.
 
 ## HTTP Example
 
@@ -59,15 +64,11 @@ Accept: application/json, text/event-stream
 The MCP protocol version used by the installed SDK is `2025-11-25`.
 
 
-## ChatGPT Connection Note
+## ChatGPT Connection
 
-This V1 server binds to localhost and uses custom bearer API keys. A cloud ChatGPT custom plugin cannot directly reach `127.0.0.1`, and the current ChatGPT plugin form may require OAuth for authenticated MCP servers.
+The local server remains bound to `127.0.0.1`. ChatGPT reaches it through the OpenAI Secure MCP Tunnel configured for this installation. OAuth discovery, Dynamic Client Registration, PKCE authorization-code exchange, and refresh tokens are implemented by Commander; the authorization page maps the resulting OAuth identity back to a `cmdr_live_...` Commander key.
 
-The next integration stage is therefore intentionally separate:
-
-1. add a secure remote/tunnel transport path;
-2. add an OAuth compatibility bridge for ChatGPT while keeping Commander API keys as the internal credential model;
-3. then add scoped filesystem/terminal/process capabilities behind per-key authorization policies.
+The tunnel daemon must stay running for discovery and tool calls. The Commander runtime data directory should also remain stable across upgrades so OAuth clients/tokens and key metadata survive branch or binary changes.
 
 ## Development Verification
 
@@ -76,4 +77,4 @@ npm test
 npm run build
 ```
 
-Generated key data and audit logs remain under `data\` and `logs\` and are ignored by Git.
+The production launcher defaults runtime state to `runtime\data` and `runtime\logs`; both are ignored by Git. Override `COMMANDER_DATA_DIR`, `COMMANDER_LOG_DIR`, or semicolon-separated `COMMANDER_ALLOWED_ROOTS` when a different deployment scope is required.

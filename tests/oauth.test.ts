@@ -11,6 +11,7 @@ import { FileAuditLogger } from '../src/logging/audit-log.js';
 import { createMcpHttpHandler } from '../src/mcp/handler.js';
 import { FileOAuthStore } from '../src/oauth/store.js';
 import { OAuthService } from '../src/oauth/service.js';
+import { createRuntimeServices } from '../src/runtime/services.js';
 
 const roots: string[] = [];
 const servers: Server[] = [];
@@ -30,7 +31,7 @@ async function setup() {
     keyStore,
     oauthService,
     auditLogger: new FileAuditLogger(path.join(root, 'logs')),
-    mcpHandler: createMcpHttpHandler(),
+    mcpHandler: createMcpHttpHandler(createRuntimeServices([root])),
   });
   const server = createServer(app);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));

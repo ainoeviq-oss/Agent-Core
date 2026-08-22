@@ -8,6 +8,7 @@ import { FileKeyStore } from '../src/auth/key-store.js';
 import { createHttpHandler } from '../src/http/app.js';
 import { FileAuditLogger } from '../src/logging/audit-log.js';
 import { createMcpHttpHandler } from '../src/mcp/handler.js';
+import { createRuntimeServices } from '../src/runtime/services.js';
 
 const roots: string[] = [];
 const servers: Server[] = [];
@@ -20,7 +21,7 @@ async function setup() {
   const app = createHttpHandler({
     keyStore,
     auditLogger: new FileAuditLogger(path.join(root, 'logs')),
-    mcpHandler: createMcpHttpHandler(),
+    mcpHandler: createMcpHttpHandler(createRuntimeServices([root])),
   });
   const server = createServer(app);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -48,7 +49,7 @@ afterEach(async () => {
 });
 
 describe('Commander MCP integration', () => {
-  it('initializes as desktop-commander and exposes exactly the V1 tools', async () => {
+  it('initializes as desktop-commander and exposes the V2 operational tools', async () => {
     const { baseUrl, created } = await setup();
     const initialize = await mcpRequest(baseUrl, created.key, {
       jsonrpc: '2.0', id: 1, method: 'initialize',
@@ -61,20 +62,21 @@ describe('Commander MCP integration', () => {
     expect(initialize.response.status).toBe(200);
     expect(initialize.json.result.serverInfo).toMatchObject({
       name: 'desktop-commander',
-      version: '0.2.0',
+      version: '0.3.0',
     });
 
     const listed = await mcpRequest(baseUrl, created.key, {
       jsonrpc: '2.0', id: 2, method: 'tools/list', params: {},
     });
     expect(listed.response.status).toBe(200);
-    expect(listed.json.result.tools.map((tool: { name: string }) => tool.name)).toEqual([
-      'commander_status',
-      'commander_capabilities',
-    ]);
+    expect(listed.json.result.tools.map((tool: { name: string }) => tool.name)).toEqual(expect.arrayContaining([
+      'commander_status', 'commander_capabilities', 'workspace_info', 'list_directory',
+      'read_file', 'write_file', 'search_files', 'execute_command', 'start_process',
+      'read_process_output', 'stop_process', 'list_processes',
+    ]));
   });
 
-  it('calls both V1 tools with deterministic structured results', async () => {
+  it('reports V2 status and capabilities with deterministic structured results', async () => {
     const { baseUrl, created } = await setup();
     const status = await mcpRequest(baseUrl, created.key, {
       jsonrpc: '2.0', id: 3, method: 'tools/call',
@@ -83,7 +85,7 @@ describe('Commander MCP integration', () => {
     expect(status.json.result.structuredContent).toMatchObject({
       service: 'commander-mcp',
       serverName: 'desktop-commander',
-      version: '0.2.0',
+      version: '0.3.0',
       authentication: 'bearer-api-key',
       key: { id: created.metadata.id, name: 'integration-client' },
     });
@@ -93,9 +95,12 @@ describe('Commander MCP integration', () => {
       params: { name: 'commander_capabilities', arguments: {} },
     });
     expect(capabilities.json.result.structuredContent).toMatchObject({
-      stage: 'v1-oauth-bridge',
-      enabled: expect.arrayContaining(['mcp.streamable_http', 'auth.api_key', 'auth.oauth2', 'oauth.dynamic_client_registration']),
-      deferred: expect.arrayContaining(['filesystem', 'terminal', 'process', 'git', 'tunnel.runtime']),
+      stage: 'v2-operational-tools',
+      enabled: expect.arrayContaining([
+        'mcp.streamable_http', 'auth.api_key', 'auth.oauth2',
+        'tool.read_file', 'tool.write_file', 'tool.search_files', 'tool.execute_command',
+      ]),
+      deferred: expect.arrayContaining(['git.semantic_tools', 'gui.automation']),
     });
   });
 });

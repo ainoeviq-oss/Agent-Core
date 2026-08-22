@@ -18,6 +18,7 @@ async function config(port = 0): Promise<AppConfig> {
     port,
     dataDir: path.join(root, 'data'),
     logDir: path.join(root, 'logs'),
+    allowedRoots: [root],
   };
 }
 

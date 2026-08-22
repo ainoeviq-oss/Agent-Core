@@ -3,6 +3,10 @@ setlocal
 cd /d "%~dp0"
 title Commander MCP
 
+if not defined COMMANDER_DATA_DIR set "COMMANDER_DATA_DIR=%~dp0runtime\data"
+if not defined COMMANDER_LOG_DIR set "COMMANDER_LOG_DIR=%~dp0runtime\logs"
+if not defined COMMANDER_ALLOWED_ROOTS set "COMMANDER_ALLOWED_ROOTS=%~dp0"
+
 where node >nul 2>&1
 if errorlevel 1 (
   echo [ERROR] Node.js was not found in PATH.

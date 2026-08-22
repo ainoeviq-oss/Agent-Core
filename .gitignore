@@ -7,3 +7,6 @@ logs/
 *.log
 coverage/
 .vitest/
+/runtime/
+/secrets/
+/tunnel-client/
