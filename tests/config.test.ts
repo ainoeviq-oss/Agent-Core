@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.js';
 
 describe('loadConfig', () => {
-  it('uses local-only network and project-local storage defaults', () => {
+  it('uses local-only network, project-local storage, and current directory as safe workspace defaults', () => {
     const baseDir = path.resolve('F:\\Projects\\Commander-MCP');
     const config = loadConfig({}, baseDir);
 
@@ -11,19 +11,25 @@ describe('loadConfig', () => {
     expect(config.port).toBe(8765);
     expect(config.dataDir).toBe(path.resolve(baseDir, 'data'));
     expect(config.logDir).toBe(path.resolve(baseDir, 'logs'));
+    expect(config.allowedRoots).toEqual([baseDir]);
   });
 
-  it('accepts explicit environment overrides', () => {
+  it('accepts explicit environment overrides including semicolon-separated roots', () => {
     const config = loadConfig({
       COMMANDER_HOST: '0.0.0.0',
       COMMANDER_PORT: '9999',
       COMMANDER_DATA_DIR: 'F:\\CustomData',
       COMMANDER_LOG_DIR: 'F:\\CustomLogs',
+      COMMANDER_ALLOWED_ROOTS: 'F:\\Projects;F:\\Design',
     }, 'F:\\Ignored');
 
     expect(config.host).toBe('0.0.0.0');
     expect(config.port).toBe(9999);
     expect(config.dataDir).toBe(path.resolve('F:\\CustomData'));
     expect(config.logDir).toBe(path.resolve('F:\\CustomLogs'));
+    expect(config.allowedRoots).toEqual([
+      path.resolve('F:\\Projects'),
+      path.resolve('F:\\Design'),
+    ]);
   });
 });
