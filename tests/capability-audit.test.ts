@@ -13,7 +13,7 @@ const fixtureRoot = path.join(
 const tempRoots: string[] = [];
 
 async function tempDir() {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'commander-cap-audit-'));
+  const root = await mkdtemp(path.join(os.tmpdir(), 'agent-core-cap-audit-'));
   tempRoots.push(root);
   return root;
 }

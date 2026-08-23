@@ -27,7 +27,7 @@ function capability(id: string, name: string, state: CapabilityRecord['state'], 
   };
 }
 async function setup() {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'commander-mcp-cap-'));
+  const root = await mkdtemp(path.join(os.tmpdir(), 'agent-core-cap-'));
   roots.push(root);
   const capabilityDir = path.join(root, 'capabilities');
   const nativePath = path.join(capabilityDir, 'normalized', 'skills', 'cap_native', 'SKILL.md');

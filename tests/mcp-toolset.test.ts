@@ -17,7 +17,7 @@ const roots: string[] = [];
 const servers: Server[] = [];
 
 async function setup() {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'commander-toolset-'));
+  const root = await mkdtemp(path.join(os.tmpdir(), 'agent-core-toolset-'));
   roots.push(root);
   const keyStore = new FileKeyStore(path.join(root, 'data'));
   const created = await keyStore.create('toolset-client');
@@ -67,7 +67,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-describe('Commander MCP V2 toolset', () => {
+describe('Agent Core MCP V2 toolset', () => {
   it('discovers the operational filesystem, search, workspace, and process tools', async () => {
     const { baseUrl, created } = await setup();
     const listed = await listTools(baseUrl, created.key);

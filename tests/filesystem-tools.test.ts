@@ -7,9 +7,9 @@ import { WorkspacePolicy } from '../src/runtime/workspace.js';
 
 const roots: string[] = [];
 async function setup() {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'commander-fs-'));
+  const root = await mkdtemp(path.join(os.tmpdir(), 'agent-core-fs-'));
   roots.push(root);
-  const outside = await mkdtemp(path.join(os.tmpdir(), 'commander-fs-out-'));
+  const outside = await mkdtemp(path.join(os.tmpdir(), 'agent-core-fs-out-'));
   roots.push(outside);
   return { root, outside, fs: new FileSystemService(new WorkspacePolicy([root])) };
 }
@@ -43,9 +43,9 @@ describe('FileSystemService', () => {
     const file = path.join(dir, 'note.txt');
     await fs.writeFile(file, 'hello', 'rewrite');
     await fs.writeFile(file, ' world', 'append');
-    const edited = await fs.editFile(file, 'world', 'Commander', 1);
+    const edited = await fs.editFile(file, 'world', 'Agent Core', 1);
     expect(edited.replacements).toBe(1);
-    expect(await readFile(file, 'utf8')).toBe('hello Commander');
+    expect(await readFile(file, 'utf8')).toBe('hello Agent Core');
 
     const moved = path.join(root, 'moved.txt');
     await fs.moveFile(file, moved);

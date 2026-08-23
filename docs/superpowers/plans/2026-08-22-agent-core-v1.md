@@ -1,4 +1,4 @@
-# Commander MCP V1 Implementation Plan
+# Agent Core MCP V1 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -8,15 +8,15 @@
 
 **Tech Stack:** Node.js 24, TypeScript 7, `@modelcontextprotocol/sdk` 1.30.0, Zod 4.4.3, Vitest 4.1.11, native Node crypto/fs/http.
 
-**Spec:** `docs/superpowers/specs/2026-08-22-commander-mcp-v1-design.md`
+**Spec:** `docs/superpowers/specs/2026-08-22-agent-core-v1-design.md`
 
 ## Global Constraints
-- All project source, generated data, logs, and scripts live under `F:\Projects\Commander-MCP`.
+- All project source, generated data, logs, and scripts live under `F:\Projects\Agent-Core`.
 - Default bind is `127.0.0.1:8765`.
 - Raw API keys are never persisted or logged.
-- Key prefix is `cmdr_live_`.
+- Key prefix is `agent_core_live_`.
 - `/health` is unauthenticated; `/mcp` requires bearer authentication on every request.
-- V1 exposes only `commander_status` and `commander_capabilities`.
+- V1 exposes only `agent_core_status` and `agent_core_capabilities`.
 - Filesystem, shell, process, Git, OAuth, and tunnel features are deferred.
 
 ---
@@ -54,7 +54,7 @@
 **Consumes:** authenticated `VerifiedKey` and HTTP delegation hook.
 **Produces:** MCP initialize, tools/list, and tools/call over Streamable HTTP.
 - [ ] Write an integration test that creates a real generated key and sends MCP JSON-RPC requests through the HTTP application.
-- [ ] Assert initialize returns the `desktop-commander` identity; tools/list returns exactly the two V1 tools; tools/call returns structured status/capability data including authenticated key identity.
+- [ ] Assert initialize returns the `agent-core` identity; tools/list returns exactly the two V1 tools; tools/call returns structured status/capability data including authenticated key identity.
 - [ ] Run `npm test -- tests/mcp-integration.test.ts`; verify RED.
 - [ ] Implement MCP server construction and Streamable HTTP request handling with official SDK types and transports.
 - [ ] Run focused tests and full suite; verify GREEN.
@@ -71,7 +71,7 @@
 - [ ] Commit `feat: add commander api key cli`.
 
 ### Task 6: Production Entry Point and Windows Startup
-**Files:** `src/index.ts`, `Start-Commander-MCP.bat`, `README.md`, `tests/shutdown.test.ts`
+**Files:** `src/index.ts`, `Start-Agent-Core.bat`, `README.md`, `tests/shutdown.test.ts`
 **Produces:** compiled service startup, graceful SIGINT/SIGTERM shutdown, and one-click Windows launcher.
 - [ ] Write shutdown/startup tests proving listener close and port-conflict failure behavior.
 - [ ] Run focused tests; verify RED.

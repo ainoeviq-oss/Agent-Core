@@ -7,7 +7,7 @@ import { FileKeyStore } from '../src/auth/key-store.js';
 const tempDirs: string[] = [];
 
 async function makeStore(): Promise<FileKeyStore> {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'commander-key-store-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'agent-core-key-store-'));
   tempDirs.push(dir);
   return new FileKeyStore(dir);
 }

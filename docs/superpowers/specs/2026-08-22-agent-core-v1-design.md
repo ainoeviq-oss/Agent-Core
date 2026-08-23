@@ -1,7 +1,7 @@
-# Commander MCP V1 Design
+# Agent Core MCP V1 Design
 
 ## Goal
-Build a Windows-hosted MCP gateway at `F:\Projects\Commander-MCP` that exposes a Streamable HTTP MCP endpoint protected by custom bearer API keys.
+Build a Windows-hosted MCP gateway at `F:\Projects\Agent-Core` that exposes a Streamable HTTP MCP endpoint protected by custom bearer API keys.
 
 ## Scope
 V1 proves transport, authentication, key lifecycle, MCP discovery, tool invocation, health, logging, and one-click startup. It intentionally does not yet expose filesystem, terminal, process, Git, or workspace-control tools.
@@ -24,29 +24,29 @@ V1 proves transport, authentication, key lifecycle, MCP discovery, tool invocati
 - MCP sessions are transport-managed; authentication is evaluated on every HTTP request.
 
 ## API-Key Model
-- Generated keys use prefix `cmdr_live_` followed by cryptographically secure random material.
+- Generated keys use prefix `agent_core_live_` followed by cryptographically secure random material.
 - Raw keys are displayed only when created.
 - Persistent storage contains a salted `scrypt` hash, metadata, timestamps, status, and optional expiration; never the raw key.
 - Key comparisons use constant-time comparison after deriving the candidate hash.
 - CLI operations: `create-key`, `list-keys`, `revoke-key`, and `rotate-key`.
-- Default state location is `F:\Projects\Commander-MCP\data` and can be overridden only by explicit environment configuration.
+- Default state location is `F:\Projects\Agent-Core\data` and can be overridden only by explicit environment configuration.
 
 ## MCP Identity and Tools
-Server name: `desktop-commander`.
-Server description: a custom Commander MCP gateway for controlled local capabilities.
+Server name: `agent-core`.
+Server description: a custom Agent Core MCP gateway for controlled local capabilities.
 
 V1 tools:
-- `commander_status`: returns server identity, version, runtime, authentication mode, and current key identity.
-- `commander_capabilities`: returns the V1 capability manifest and explicitly reports that filesystem, terminal, process, Git, and workspace mutation are not enabled yet.
+- `agent_core_status`: returns server identity, version, runtime, authentication mode, and current key identity.
+- `agent_core_capabilities`: returns the V1 capability manifest and explicitly reports that filesystem, terminal, process, Git, and workspace mutation are not enabled yet.
 
 ## Logging
 - Request audit records contain timestamp, request id, route, authenticated key id/name when available, HTTP status, and duration.
 - Raw bearer tokens are never logged.
-- Logs are written beneath `F:\Projects\Commander-MCP\logs`.
+- Logs are written beneath `F:\Projects\Agent-Core\logs`.
 - Secret material and key database files are ignored by Git.
 
 ## Startup and Operations
-- `Start-Commander-MCP.bat` starts the compiled server from the project directory.
+- `Start-Agent-Core.bat` starts the compiled server from the project directory.
 - `.env.example` documents host, port, data directory, and log directory settings without containing secrets.
 - Production startup must fail clearly if required directories cannot be created or if the port is unavailable.
 - Graceful shutdown closes active MCP transports and the HTTP listener.

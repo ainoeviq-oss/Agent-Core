@@ -19,7 +19,7 @@ afterEach(async () => {
 
 describe('capability registry writer', () => {
   it('publishes canonical catalog, per-item files, and complete coverage', async () => {
-    const capabilityDir = await mkdtemp(path.join(os.tmpdir(), 'commander-capabilities-'));
+    const capabilityDir = await mkdtemp(path.join(os.tmpdir(), 'agent-core-capabilities-'));
     roots.push(capabilityDir);
     const records = await parseCatalog(fixtureRoot, 'sha-good');
 
@@ -41,7 +41,7 @@ describe('capability registry writer', () => {
   });
 
   it('rejects a duplicate-id generation without replacing the previous good catalog', async () => {
-    const capabilityDir = await mkdtemp(path.join(os.tmpdir(), 'commander-capabilities-'));
+    const capabilityDir = await mkdtemp(path.join(os.tmpdir(), 'agent-core-capabilities-'));
     roots.push(capabilityDir);
     const records = await parseCatalog(fixtureRoot, 'sha-good');
     await writeRegistryGeneration(capabilityDir, records, {

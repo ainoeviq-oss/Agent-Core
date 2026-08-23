@@ -15,7 +15,7 @@ const fixtureRoot = path.join(
 const roots: string[] = [];
 
 async function registryFixture() {
-  const capabilityDir = await mkdtemp(path.join(os.tmpdir(), 'commander-cap-registry-'));
+  const capabilityDir = await mkdtemp(path.join(os.tmpdir(), 'agent-core-cap-registry-'));
   roots.push(capabilityDir);
   const records = await parseCatalog(fixtureRoot, 'fixture-sha');
   await writeRegistryGeneration(capabilityDir, records, {
@@ -86,7 +86,7 @@ describe('CapabilityRegistry', () => {
   });
 
   it('opens as an empty registry when no published catalog exists', async () => {
-    const capabilityDir = await mkdtemp(path.join(os.tmpdir(), 'commander-cap-empty-'));
+    const capabilityDir = await mkdtemp(path.join(os.tmpdir(), 'agent-core-cap-empty-'));
     roots.push(capabilityDir);
     const registry = CapabilityRegistry.open(capabilityDir);
     expect(registry.coverage()).toMatchObject({ total: 0, catalogSha: 'none' });

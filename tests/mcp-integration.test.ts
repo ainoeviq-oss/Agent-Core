@@ -14,7 +14,7 @@ const roots: string[] = [];
 const servers: Server[] = [];
 
 async function setup() {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'commander-mcp-int-'));
+  const root = await mkdtemp(path.join(os.tmpdir(), 'agent-core-int-'));
   roots.push(root);
   const keyStore = new FileKeyStore(path.join(root, 'data'));
   const created = await keyStore.create('integration-client');

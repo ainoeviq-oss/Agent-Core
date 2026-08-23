@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
-**Goal:** Clone `J-nowcow/awesome-korean-agent-skills` under Commander, account for every catalog item in a canonical registry, and expose deferred capability discovery/loading through the existing Commander MCP/plugin.
+**Goal:** Clone `J-nowcow/awesome-korean-agent-skills` under Agent Core, account for every catalog item in a canonical registry, and expose deferred capability discovery/loading through the existing Agent Core MCP/plugin.
 
 **Architecture:** Keep the upstream catalog as an untouched Git clone under the stable project root. Parse its category tables into provenance-preserving records, serve compact search/recommend/get/coverage results from a registry service, and allow full instruction loading only for audited `native_ready` skills. Generated/cache/quarantine data remains outside Git source control.
 
@@ -11,8 +11,8 @@
 **Spec:** `docs/superpowers/specs/2026-08-22-korean-skills-hybrid-registry-design.md`
 
 ## Global Constraints
-- All capability storage lives below `F:\Projects\Commander-MCP\capabilities`.
-- The upstream catalog clone is never modified by Commander.
+- All capability storage lives below `F:\Projects\Agent-Core\capabilities`.
+- The upstream catalog clone is never modified by Agent Core.
 - Catalog CC0 does not confer license rights over external linked sources.
 - No external source becomes `native_ready` before source, function, license, and safety audits pass.
 - Hooks remain disabled by default; commands remain manual-only unless separately approved.
@@ -25,20 +25,20 @@
 
 **Files:**
 - Modify: `src/config.ts`
-- Modify: `Start-Commander-MCP.bat`
+- Modify: `Start-Agent-Core.bat`
 - Modify: `.gitignore`
 - Test: `tests/config.test.ts`
-- Runtime create: `F:\Projects\Commander-MCP\capabilities\sources\awesome-korean-agent-skills`
+- Runtime create: `F:\Projects\Agent-Core\capabilities\sources\awesome-korean-agent-skills`
 
 **Interfaces:**
 - Produces `AppConfig.capabilityDir: string`.
-- Production launcher sets `COMMANDER_CAPABILITY_DIR=F:\Projects\Commander-MCP\capabilities` by default.
+- Production launcher sets `AGENT_CORE_CAPABILITY_DIR=F:\Projects\Agent-Core\capabilities` by default.
 
 - [x] **Step 1: Write failing config tests** asserting default/override `capabilityDir` behavior.
 - [x] **Step 2: Run `npm test -- tests/config.test.ts`** and verify failure because `capabilityDir` does not exist.
-- [x] **Step 3: Add `capabilityDir` to configuration** from `COMMANDER_CAPABILITY_DIR` with `path.resolve` normalization.
+- [x] **Step 3: Add `capabilityDir` to configuration** from `AGENT_CORE_CAPABILITY_DIR` with `path.resolve` normalization.
 - [x] **Step 4: Re-run config tests and full build**; expect green.
-- [x] **Step 5: Clone the catalog** using `git clone --filter=blob:none https://github.com/J-nowcow/awesome-korean-agent-skills.git F:\Projects\Commander-MCP\capabilities\sources\awesome-korean-agent-skills`, or fast-forward it if already present, then record `git rev-parse HEAD`.
+- [x] **Step 5: Clone the catalog** using `git clone --filter=blob:none https://github.com/J-nowcow/awesome-korean-agent-skills.git F:\Projects\Agent-Core\capabilities\sources\awesome-korean-agent-skills`, or fast-forward it if already present, then record `git rev-parse HEAD`.
 - [x] **Step 6: Commit source/config changes** with `feat: add stable capability storage root`.
 
 ### Task 2: Canonical catalog parser and coverage generator
@@ -91,9 +91,9 @@
 - Create: `src/capabilities/source-audit.ts`
 - Create: `src/capabilities/skill-normalizer.ts`
 - Test: `tests/capability-audit.test.ts`
-- Runtime output: `F:\Projects\Commander-MCP\capabilities\cache\sources\...`
-- Runtime output: `F:\Projects\Commander-MCP\capabilities\normalized\skills\...`
-- Runtime output: `F:\Projects\Commander-MCP\capabilities\provenance\...`
+- Runtime output: `F:\Projects\Agent-Core\capabilities\cache\sources\...`
+- Runtime output: `F:\Projects\Agent-Core\capabilities\normalized\skills\...`
+- Runtime output: `F:\Projects\Agent-Core\capabilities\provenance\...`
 
 **Interfaces:**
 - `auditSkillSource(input): Promise<SkillAudit>` records source SHA, license, function, dependencies, side effects, risk and eligibility.
@@ -126,10 +126,10 @@
 - [x] **Step 6: Run MCP tests + all regression tests + build** and expect green.
 - [x] **Step 7: Commit** with `feat: expose deferred capability discovery over mcp`.
 
-### Task 6: Commander plugin packaging workspace and live acceptance
+### Task 6: Agent Core plugin packaging workspace and live acceptance
 
 **Files:**
-- Create: `plugin/commander/skills/commander-capability-router/SKILL.md`
+- Create: `plugin/commander/skills/agent-core-capability-router/SKILL.md`
 - Create: `plugin/commander/README.md`
 - Create: `scripts/build-plugin-package.mjs`
 - Modify: `README.md`
@@ -137,7 +137,7 @@
 - Test: `tests/plugin-package.test.ts`
 
 **Interfaces:**
-- Router skill instructs ChatGPT to perform compact preflight with `capability_recommend`, inspect risk/dependencies, call `skill_load` only after selection, and execute through the existing Commander app tools.
+- Router skill instructs ChatGPT to perform compact preflight with `capability_recommend`, inspect risk/dependencies, call `skill_load` only after selection, and execute through the existing Agent Core app tools.
 - Generated native-ready skill copies are sourced only from audited local normalized material.
 
 - [x] **Step 1: Write failing package tests** checking router skill presence, no unaudited skill packaging, provenance references, and generated app/tool documentation.
@@ -145,10 +145,10 @@
 - [x] **Step 3: Implement package builder and router skill** with deferred loading rules from the approved spec.
 - [x] **Step 4: Build package and verify** only audited native-ready skills are included; registry/cache/quarantine/secrets are excluded.
 - [x] **Step 5: Run full `npm test` + `npm run build`**; expect all green.
-- [x] **Step 6: Restart production Commander** against stable runtime/capability directories and verify live `tools/list` contains the original 17 plus six capability tools.
+- [x] **Step 6: Restart production Agent Core** against stable runtime/capability directories and verify live `tools/list` contains the original 17 plus six capability tools.
 - [x] **Step 7: Live-call `capability_coverage`, `capability_recommend`, and the one audited `skill_load`** using production credential without printing secrets.
 - [x] **Step 8: Verify tunnel `/readyz` is HTTP 200 and Git status contains no secret/cache/quarantine artifacts.**
-- [x] **Step 9: Commit** with `feat: package Commander capability router plugin`.
+- [x] **Step 9: Commit** with `feat: package Agent Core capability router plugin`.
 
 ## Plan Self-Review
 - Spec coverage: storage, state gating, full catalog accounting, deferred selection, one real audited skill, MCP primitives, plugin router, regression/live acceptance are all assigned to explicit tasks.

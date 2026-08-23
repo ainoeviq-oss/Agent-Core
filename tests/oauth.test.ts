@@ -21,7 +21,7 @@ function pkce(verifier: string): string {
 }
 
 async function setup() {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'commander-oauth-'));
+  const root = await mkdtemp(path.join(os.tmpdir(), 'agent-core-oauth-'));
   roots.push(root);
   const dataDir = path.join(root, 'data');
   const keyStore = new FileKeyStore(dataDir);
@@ -41,13 +41,13 @@ async function setup() {
     baseUrl: `http://127.0.0.1:${port}`,
     keyStore,
     oauthStore,
-    externalBase: 'https://commander-tunnel.example',
+    externalBase: 'https://agent-core-tunnel.example',
   };
 }
 
 const forwarded = {
   'x-forwarded-proto': 'https',
-  'x-forwarded-host': 'commander-tunnel.example',
+  'x-forwarded-host': 'agent-core-tunnel.example',
 };
 
 async function registerClient(baseUrl: string) {

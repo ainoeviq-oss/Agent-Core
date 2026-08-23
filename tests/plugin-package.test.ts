@@ -100,7 +100,7 @@ describe('Agent Core plugin package builder', () => {
     });
     const serialized = JSON.stringify(packageMeta).toLowerCase();
     expect(serialized).not.toContain('api_key');
-    expect(serialized).not.toContain('cmdr_live_');
+    expect(serialized).not.toContain('agent_core_live_');
     expect(serialized).not.toContain('oauth.json');
     expect(serialized).not.toContain('control-plane-api-key');
   });

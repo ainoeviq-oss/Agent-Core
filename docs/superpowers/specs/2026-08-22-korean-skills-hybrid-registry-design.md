@@ -1,9 +1,9 @@
 # Korean Agent Skills Hybrid Registry Design
 
 ## Goal
-Integrate `J-nowcow/awesome-korean-agent-skills` into Commander MCP as a provenance-preserving capability catalog, resolver, audit pipeline, and deferred skill source while keeping the existing Desktop Commander MCP app as the execution layer.
+Integrate `J-nowcow/awesome-korean-agent-skills` into Agent Core MCP as a provenance-preserving capability catalog, resolver, audit pipeline, and deferred skill source while keeping the existing Agent Core MCP app as the execution layer.
 
-The final user experience is one Commander plugin containing the Commander app plus native workflow skills. Long-tail capabilities are discovered and loaded only when relevant instead of placing hundreds of instructions in context on every prompt.
+The final user experience is one Agent Core plugin containing the Agent Core app plus native workflow skills. Long-tail capabilities are discovered and loaded only when relevant instead of placing hundreds of instructions in context on every prompt.
 
 ## Confirmed Source Facts
 - `awesome-korean-agent-skills` is primarily a curated catalog, not a monolithic repository containing every linked skill implementation.
@@ -14,10 +14,10 @@ The final user experience is one Commander plugin containing the Commander app p
 - OpenAI's current Plugin model supports a single plugin containing multiple skills, multiple apps, and app templates.
 
 ## Storage Layout
-Everything remains under `F:\Projects\Commander-MCP`.
+Everything remains under `F:\Projects\Agent-Core`.
 
 ```text
-F:\Projects\Commander-MCP\
+F:\Projects\Agent-Core\
   capabilities\
     sources\
       awesome-korean-agent-skills\   # untouched Git clone of catalog
@@ -80,7 +80,7 @@ For entries promoted to `native_ready`, the actual source instructions must also
 
 ## Type Mapping
 ### Skill
-A genuine task-specific instruction set is the strongest native candidate. Valid `SKILL.md` sources are preserved verbatim in cache, audited, then normalized into Commander metadata without silently rewriting their meaning.
+A genuine task-specific instruction set is the strongest native candidate. Valid `SKILL.md` sources are preserved verbatim in cache, audited, then normalized into Agent Core metadata without silently rewriting their meaning.
 
 ### Agent
 Agent/persona definitions become expert-role capabilities. They do not create autonomous subagents by default. Their expertise, activation conditions, and required tools are represented as loadable role instructions unless a separate orchestration layer explicitly supports subagents.
@@ -135,35 +135,35 @@ Pipeline stages:
 4. `license_audit` — classify source license and redistribution eligibility.
 5. `function_audit` — extract behavior, triggers, requirements, side effects, and dependencies.
 6. `safety_audit` — classify execution risk and unsupported behavior.
-7. `normalize` — create Commander-native metadata and native skill candidates when eligible.
+7. `normalize` — create Agent Core-native metadata and native skill candidates when eligible.
 8. `publish_registry` — atomically replace the generated registry only after validation succeeds.
 9. `coverage_report` — report total/cataloged/resolved/audited/native-ready/reference-only/quarantined/unresolved counts.
 
 A partial network failure must not destroy the previous good registry. Sync is staged to a temporary generation and promoted atomically.
 
 ## Deferred Capability Selection
-Commander does not expose the full text of every skill on every turn.
+Agent Core does not expose the full text of every skill on every turn.
 
 The MCP layer will add discovery primitives such as:
 - `capability_recommend(task, context?)` — rank relevant capabilities for the task;
 - `capability_search(query, filters?)` — search by function/type/category/tool/risk;
 - `capability_get(id)` — return canonical metadata and audit status;
 - `skill_load(id)` — return full normalized instructions only for an eligible skill;
-- `capability_dependencies(id)` — list required Commander tools, external apps, packages, or credentials;
+- `capability_dependencies(id)` — list required Agent Core tools, external apps, packages, or credentials;
 - `capability_coverage()` — expose catalog and audit coverage statistics.
 
 Recommendation returns compact metadata first. Full instructions are loaded only after a capability is selected. This preserves context budget and makes hundreds of catalog entries usable without turning every prompt into a massive system prompt.
 
-## Commander Plugin Packaging
-The existing Desktop Commander MCP app remains the app component of the Commander plugin.
+## Agent Core Plugin Packaging
+The existing Agent Core MCP app remains the app component of the Agent Core plugin.
 
 The plugin package is generated from audited material only:
-- one native `Commander Capability Router` skill that performs preflight capability selection for actionable tasks;
+- one native `Agent Core Capability Router` skill that performs preflight capability selection for actionable tasks;
 - selected native-ready skills where packaging them natively adds value;
-- the existing Desktop Commander MCP app for filesystem/search/process execution;
+- the existing Agent Core MCP app for filesystem/search/process execution;
 - optional app templates only when a capability genuinely needs another external system.
 
-The router does not blindly obey catalog text. It asks Commander for recommendations, checks eligibility/risk/dependencies, loads selected instructions, and then uses the already-registered MCP tools.
+The router does not blindly obey catalog text. It asks Agent Core for recommendations, checks eligibility/risk/dependencies, loads selected instructions, and then uses the already-registered MCP tools.
 
 The long-tail registry remains behind MCP deferred loading even when the plugin contains some native skills. This avoids duplicate instructions and context overload.
 
@@ -194,7 +194,7 @@ Required fields include:
 ```
 
 ## Update and Conflict Rules
-- The source clone is read-only from Commander's perspective; generated normalization never edits upstream files.
+- The source clone is read-only from Agent Core's perspective; generated normalization never edits upstream files.
 - Duplicate display names are allowed when provenance differs; stable IDs keep them distinct.
 - Functionally equivalent capabilities are grouped by `equivalenceGroup` rather than deleted.
 - Native packaging prefers the highest-audit-confidence candidate, but alternatives remain searchable.
@@ -204,20 +204,20 @@ Required fields include:
 ## Testing Strategy
 Tests cover catalog parsing, deterministic IDs, duplicate handling, license states, source-resolution failures, risk classification, normalization, recommendation ranking, deferred loading, and registry atomicity.
 
-Integration tests verify that the MCP server can recommend and load an audited skill without expanding unrelated skill text. Existing Commander filesystem/search/process/OAuth/tunnel tests must remain green.
+Integration tests verify that the MCP server can recommend and load an audited skill without expanding unrelated skill text. Existing Agent Core filesystem/search/process/OAuth/tunnel tests must remain green.
 
 A generated fixture catalog is used for deterministic unit tests; live GitHub resolution is kept out of normal unit tests and covered by explicit sync acceptance checks.
 
 ## Acceptance Criteria
 The first integrated release is accepted only when:
-1. the catalog repository is cloned under the approved Commander folder and its exact commit SHA is recorded;
+1. the catalog repository is cloned under the approved Agent Core folder and its exact commit SHA is recorded;
 2. every catalog entry discovered by the parser has a canonical registry record with declared function/type/category/source;
 3. coverage reports account for every parsed item, including unresolved and quarantined entries;
 4. no external capability is marked native-ready without source resolution, function analysis, license verification, and safety review;
 5. at least one eligible real skill completes the full resolve -> audit -> normalize -> `skill_load` path;
 6. MCP exposes recommendation/search/get/load/coverage primitives with read-only annotations where appropriate;
-7. the existing 17 Commander operational tools remain available and regression tests pass;
-8. plugin packaging contains the Commander app plus a native capability-router skill generated from audited local material;
+7. the existing 17 Agent Core operational tools remain available and regression tests pass;
+8. plugin packaging contains the Agent Core app plus a native capability-router skill generated from audited local material;
 9. source updates are repeatable without overwriting provenance or silently activating new behavior;
 10. secrets, runtime OAuth data, tunnel credentials, external-repo caches, and quarantined executable material are never committed accidentally.
 
@@ -227,4 +227,4 @@ The first integrated release is accepted only when:
 - Treating Agent definitions as real autonomous subagents.
 - Activating unknown-license content as native plugin material.
 - Loading every skill into every ChatGPT turn.
-- Replacing ChatGPT as the reasoning model; Commander remains the capability and execution layer.
+- Replacing ChatGPT as the reasoning model; Agent Core remains the capability and execution layer.

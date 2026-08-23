@@ -18,7 +18,7 @@ afterEach(async () => {
 
 describe('WorkspacePolicy', () => {
   it('allows paths inside configured roots and rejects traversal outside', async () => {
-    const root = await tempRoot('commander-root-');
+    const root = await tempRoot('agent-core-root-');
     await mkdir(path.join(root, 'nested'));
     const policy = new WorkspacePolicy([root]);
 
@@ -27,8 +27,8 @@ describe('WorkspacePolicy', () => {
   });
 
   it('rejects an existing symlink or junction escape', async () => {
-    const root = await tempRoot('commander-root-');
-    const outside = await tempRoot('commander-outside-');
+    const root = await tempRoot('agent-core-root-');
+    const outside = await tempRoot('agent-core-outside-');
     await writeFile(path.join(outside, 'secret.txt'), 'outside');
     const link = path.join(root, 'escape-link');
     await symlink(outside, link, process.platform === 'win32' ? 'junction' : 'dir');
@@ -38,7 +38,7 @@ describe('WorkspacePolicy', () => {
   });
 
   it('allows a new target only when its nearest existing parent is allowed', async () => {
-    const root = await tempRoot('commander-root-');
+    const root = await tempRoot('agent-core-root-');
     await mkdir(path.join(root, 'nested'));
     const policy = new WorkspacePolicy([root]);
 

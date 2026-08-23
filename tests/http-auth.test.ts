@@ -12,7 +12,7 @@ const tempDirs: string[] = [];
 const servers: Server[] = [];
 
 async function tempRoot(): Promise<string> {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'commander-http-'));
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'agent-core-http-'));
   tempDirs.push(dir);
   return dir;
 }
@@ -47,7 +47,7 @@ describe('HTTP authentication', () => {
   it.each([
     [undefined, 'missing bearer'],
     ['Basic abc', 'malformed bearer'],
-    ['Bearer cmdr_live_invalid', 'invalid bearer'],
+    ['Bearer agent_core_live_invalid', 'invalid bearer'],
   ])('returns 401 for %s (%s)', async (authorization) => {
     const root = await tempRoot();
     const handler = createHttpHandler({

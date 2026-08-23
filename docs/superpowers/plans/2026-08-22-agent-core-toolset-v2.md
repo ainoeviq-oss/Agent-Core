@@ -1,17 +1,17 @@
-# Commander Toolset V2 Implementation Plan
+# Agent Core Toolset V2 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a practical, guarded Desktop-Commander-style filesystem, search, and process toolset to the existing authenticated MCP server.
+**Goal:** Add a practical, guarded Agent-Core-style filesystem, search, and process toolset to the existing authenticated MCP server.
 
 **Architecture:** Introduce focused workspace, filesystem, search, and process services. The MCP registration layer only validates schemas, invokes these services, and formats results. Existing OAuth/API-key authentication remains unchanged.
 
 **Tech Stack:** Node.js 24, TypeScript 7, MCP TypeScript SDK 1.30, Zod 4, Vitest 4.
 
-**Spec:** `docs/superpowers/specs/2026-08-22-commander-toolset-v2-design.md`
+**Spec:** `docs/superpowers/specs/2026-08-22-agent-core-toolset-v2-design.md`
 
 ## Global Constraints
-- All filesystem and process working-directory access must stay inside `COMMANDER_ALLOWED_ROOTS`.
+- All filesystem and process working-directory access must stay inside `AGENT_CORE_ALLOWED_ROOTS`.
 - Default root is current working directory, never unrestricted access.
 - Existing-path checks must resist symlink/junction escapes.
 - High-risk system/storage/privilege commands are blocked.
@@ -41,7 +41,7 @@
 ### Task 3: Process execution and sessions
 **Files:** Create `src/runtime/process-manager.ts`; test `tests/process-tools.test.ts`.
 
-**Interfaces:** `ProcessManager.execute`, `start`, `read`, `stop`, and `list` use opaque Commander session IDs and bounded captured output.
+**Interfaces:** `ProcessManager.execute`, `start`, `read`, `stop`, and `list` use opaque Agent Core session IDs and bounded captured output.
 
 - [ ] Write failing tests for successful one-shot execution, blocked commands, timeout, background start/read/stop, and working-directory boundary enforcement.
 - [ ] Verify RED and implement the smallest Windows PowerShell-backed process manager.
@@ -50,7 +50,7 @@
 ### Task 4: MCP registration and acceptance
 **Files:** Create `src/mcp/tools.ts`; modify `src/mcp/server.ts`, `src/mcp/handler.ts`, `src/index.ts`; modify `tests/mcp-integration.test.ts`; add `tests/mcp-toolset.test.ts`.
 
-**Interfaces:** `createCommanderMcpServer(key, runtime)` receives workspace/filesystem/search/process services and exposes the V2 tool names defined by the spec.
+**Interfaces:** `createAgentCoreMcpServer(key, runtime)` receives workspace/filesystem/search/process services and exposes the V2 tool names defined by the spec.
 
 - [ ] Write failing MCP tests asserting V2 tool discovery and representative read/write/search/execute calls.
 - [ ] Verify RED, register schemas and handlers, and update capabilities/version metadata.

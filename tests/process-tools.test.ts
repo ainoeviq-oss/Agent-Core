@@ -7,9 +7,9 @@ import { WorkspacePolicy } from '../src/runtime/workspace.js';
 
 const roots: string[] = [];
 async function setup() {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'commander-proc-'));
+  const root = await mkdtemp(path.join(os.tmpdir(), 'agent-core-proc-'));
   roots.push(root);
-  const outside = await mkdtemp(path.join(os.tmpdir(), 'commander-proc-out-'));
+  const outside = await mkdtemp(path.join(os.tmpdir(), 'agent-core-proc-out-'));
   roots.push(outside);
   return { root, outside, manager: new ProcessManager(new WorkspacePolicy([root])) };
 }

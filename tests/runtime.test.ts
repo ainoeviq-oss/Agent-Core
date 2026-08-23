@@ -11,7 +11,7 @@ const roots: string[] = [];
 const blockers: Server[] = [];
 
 async function config(port = 0): Promise<AppConfig> {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'commander-runtime-'));
+  const root = await mkdtemp(path.join(os.tmpdir(), 'agent-core-runtime-'));
   roots.push(root);
   return {
     host: '127.0.0.1',

@@ -7,12 +7,12 @@ import { WorkspacePolicy } from '../src/runtime/workspace.js';
 
 const roots: string[] = [];
 async function setup() {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'commander-search-'));
+  const root = await mkdtemp(path.join(os.tmpdir(), 'agent-core-search-'));
   roots.push(root);
-  const outside = await mkdtemp(path.join(os.tmpdir(), 'commander-search-out-'));
+  const outside = await mkdtemp(path.join(os.tmpdir(), 'agent-core-search-out-'));
   roots.push(outside);
   await mkdir(path.join(root, 'src'));
-  await writeFile(path.join(root, 'README.md'), 'Commander gateway documentation');
+  await writeFile(path.join(root, 'README.md'), 'Agent Core gateway documentation');
   await writeFile(path.join(root, 'src', 'alpha.ts'), 'export const alpha = "needle";');
   await writeFile(path.join(root, 'src', 'beta.ts'), 'export const beta = "needle";');
   return { root, outside, search: new SearchService(new WorkspacePolicy([root])) };

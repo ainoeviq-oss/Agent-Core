@@ -31,7 +31,7 @@ export class WorkspacePolicy {
 
   constructor(roots: string[]) {
     const normalized = roots.map((root) => path.resolve(root.trim())).filter(Boolean);
-    if (!normalized.length) throw new Error('At least one Commander workspace root is required');
+    if (!normalized.length) throw new Error('At least one Agent Core workspace root is required');
     this.roots = [...new Set(normalized)];
   }
 

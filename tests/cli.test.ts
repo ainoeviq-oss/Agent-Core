@@ -8,7 +8,7 @@ import { runCli } from '../src/cli.js';
 const roots: string[] = [];
 
 async function cliHarness() {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'commander-cli-'));
+  const root = await mkdtemp(path.join(os.tmpdir(), 'agent-core-cli-'));
   roots.push(root);
   const dataDir = path.join(root, 'data');
   const stdout: string[] = [];

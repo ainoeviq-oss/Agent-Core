@@ -56,7 +56,7 @@ export function registerCapabilityTools(server: McpServer, runtime: RuntimeServi
 
   server.registerTool('capability_search', {
     title: 'Search Capabilities',
-    description: 'Search compact Commander capability metadata by function, type, category, risk, state, or agent compatibility.',
+    description: 'Search compact Agent Core capability metadata by function, type, category, risk, state, or agent compatibility.',
     inputSchema: {
       query: z.string().max(20_000).default(''),
       type: capabilityType.optional(),
@@ -73,7 +73,7 @@ export function registerCapabilityTools(server: McpServer, runtime: RuntimeServi
 
   server.registerTool('capability_get', {
     title: 'Get Capability',
-    description: 'Return canonical metadata and audit state for one Commander capability. This never returns full skill instructions.',
+    description: 'Return canonical metadata and audit state for one Agent Core capability. This never returns full skill instructions.',
     inputSchema: { id: z.string().min(1).max(200) },
     annotations: readOnlyAnnotations,
   }, async ({ id }) => guarded(() => {
@@ -91,14 +91,14 @@ export function registerCapabilityTools(server: McpServer, runtime: RuntimeServi
 
   server.registerTool('capability_dependencies', {
     title: 'Capability Dependencies',
-    description: 'Inspect required Commander tools, dependencies, side effects, risk, and eligibility before loading or using a capability.',
+    description: 'Inspect required Agent Core tools, dependencies, side effects, risk, and eligibility before loading or using a capability.',
     inputSchema: { id: z.string().min(1).max(200) },
     annotations: readOnlyAnnotations,
   }, async ({ id }) => guarded(() => runtime.capabilities.dependencies(id)));
 
   server.registerTool('capability_coverage', {
     title: 'Capability Coverage',
-    description: 'Return catalog coverage totals and audit states for the Commander capability registry.',
+    description: 'Return catalog coverage totals and audit states for the Agent Core capability registry.',
     annotations: readOnlyAnnotations,
   }, async () => textResult(runtime.capabilities.coverage()));
 }
