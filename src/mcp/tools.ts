@@ -1,6 +1,8 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
+import type { VerifiedKey } from '../auth/key-types.js';
 import type { RuntimeServices } from '../runtime/services.js';
+import { routeErrorResult, validateOperationalRoute } from './route-guard.js';
 
 function textResult(value: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] };
@@ -16,6 +18,24 @@ async function guarded<T>(operation: () => Promise<T>) {
   catch (error) { return errorResult(error); }
 }
 
+async function routeGuarded<T>(
+  runtime: RuntimeServices,
+  key: VerifiedKey,
+  routeContextId: string,
+  toolName: string,
+  operation: () => Promise<T>,
+) {
+  try {
+    validateOperationalRoute(runtime, key, routeContextId, toolName);
+    return textResult(await operation());
+  } catch (error) {
+    return routeErrorResult(error) ?? errorResult(error);
+  }
+}
+
+const ROUTE_REQUIRED_DESCRIPTION = 'Obtain routeContextId from capability_route before using this tool.';
+const routedDescription = (description: string) => `${description} ${ROUTE_REQUIRED_DESCRIPTION}`;
+
 export const OPERATIONAL_TOOL_NAMES = [
   'workspace_info', 'list_directory', 'read_file', 'read_multiple_files',
   'write_file', 'edit_file', 'create_directory', 'move_file', 'get_file_info',
@@ -23,7 +43,11 @@ export const OPERATIONAL_TOOL_NAMES = [
   'stop_process', 'list_processes',
 ] as const;
 
-export function registerOperationalTools(server: McpServer, runtime: RuntimeServices): void {
+export function registerOperationalTools(
+  server: McpServer,
+  runtime: RuntimeServices,
+  key: VerifiedKey,
+): void {
   server.registerTool('workspace_info', {
     title: 'Workspace Info',
     description: 'Show the filesystem roots this Agent Core identity is allowed to access.',
@@ -32,112 +56,160 @@ export function registerOperationalTools(server: McpServer, runtime: RuntimeServ
 
   server.registerTool('list_directory', {
     title: 'List Directory',
-    description: 'List files and directories inside an allowed workspace, optionally descending several levels.',
+    description: routedDescription('List files and directories inside an allowed workspace, optionally descending several levels.'),
     inputSchema: {
       path: z.string(),
       depth: z.number().int().min(1).max(10).default(2),
       maxEntries: z.number().int().min(1).max(2000).default(500),
+      routeContextId: z.string().uuid(),
     },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-  }, async ({ path, depth, maxEntries }) => guarded(() => runtime.filesystem.listDirectory(path, depth, maxEntries)));
+  }, async ({ path, depth, maxEntries, routeContextId }) => routeGuarded(
+    runtime, key, routeContextId, 'list_directory',
+    () => runtime.filesystem.listDirectory(path, depth, maxEntries),
+  ));
 
   server.registerTool('read_file', {
     title: 'Read File',
-    description: 'Read a UTF-8 text file from an allowed workspace, with optional line and byte bounds.',
+    description: routedDescription('Read a UTF-8 text file from an allowed workspace, with optional line and byte bounds.'),
     inputSchema: {
       path: z.string(),
       startLine: z.number().int().min(0).optional(),
       lineCount: z.number().int().min(1).max(10000).optional(),
       maxBytes: z.number().int().min(1).max(5 * 1024 * 1024).optional(),
+      routeContextId: z.string().uuid(),
     },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-  }, async ({ path, startLine, lineCount, maxBytes }) => guarded(() => runtime.filesystem.readFile(path, { startLine, lineCount, maxBytes })));
+  }, async ({ path, startLine, lineCount, maxBytes, routeContextId }) => routeGuarded(
+    runtime, key, routeContextId, 'read_file',
+    () => runtime.filesystem.readFile(path, { startLine, lineCount, maxBytes }),
+  ));
 
   server.registerTool('read_multiple_files', {
     title: 'Read Multiple Files',
-    description: 'Read several UTF-8 text files from allowed workspaces in one call.',
+    description: routedDescription('Read several UTF-8 text files from allowed workspaces in one call.'),
     inputSchema: {
       paths: z.array(z.string()).min(1).max(50),
       startLine: z.number().int().min(0).optional(),
       lineCount: z.number().int().min(1).max(10000).optional(),
       maxBytes: z.number().int().min(1).max(5 * 1024 * 1024).optional(),
+      routeContextId: z.string().uuid(),
     },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-  }, async ({ paths, startLine, lineCount, maxBytes }) => guarded(() => runtime.filesystem.readMultipleFiles(paths, { startLine, lineCount, maxBytes })));
+  }, async ({ paths, startLine, lineCount, maxBytes, routeContextId }) => routeGuarded(
+    runtime, key, routeContextId, 'read_multiple_files',
+    () => runtime.filesystem.readMultipleFiles(paths, { startLine, lineCount, maxBytes }),
+  ));
 
   server.registerTool('write_file', {
     title: 'Write File',
-    description: 'Create, replace, or append UTF-8 text in a file inside an allowed workspace.',
+    description: routedDescription('Create, replace, or append UTF-8 text in a file inside an allowed workspace.'),
     inputSchema: {
       path: z.string(),
       content: z.string(),
       mode: z.enum(['rewrite', 'append']).default('rewrite'),
+      routeContextId: z.string().uuid(),
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
-  }, async ({ path, content, mode }) => guarded(() => runtime.filesystem.writeFile(path, content, mode)));
+  }, async ({ path, content, mode, routeContextId }) => routeGuarded(
+    runtime, key, routeContextId, 'write_file',
+    () => runtime.filesystem.writeFile(path, content, mode),
+  ));
 
   server.registerTool('edit_file', {
     title: 'Edit File',
-    description: 'Replace an exact text block in a file and reject the edit when the match count is not exactly what was expected.',
+    description: routedDescription('Replace an exact text block in a file and reject the edit when the match count is not exactly what was expected.'),
     inputSchema: {
       path: z.string(),
       oldString: z.string().min(1),
       newString: z.string(),
       expectedReplacements: z.number().int().min(1).max(10000).default(1),
+      routeContextId: z.string().uuid(),
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
-  }, async ({ path, oldString, newString, expectedReplacements }) => guarded(() => runtime.filesystem.editFile(path, oldString, newString, expectedReplacements)));
+  }, async ({ path, oldString, newString, expectedReplacements, routeContextId }) => routeGuarded(
+    runtime, key, routeContextId, 'edit_file',
+    () => runtime.filesystem.editFile(path, oldString, newString, expectedReplacements),
+  ));
 
   server.registerTool('create_directory', {
     title: 'Create Directory',
-    description: 'Create a directory, including missing parent directories, inside an allowed workspace.',
-    inputSchema: { path: z.string() },
+    description: routedDescription('Create a directory, including missing parent directories, inside an allowed workspace.'),
+    inputSchema: { path: z.string(), routeContextId: z.string().uuid() },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, async ({ path }) => guarded(() => runtime.filesystem.createDirectory(path)));
+  }, async ({ path, routeContextId }) => routeGuarded(
+    runtime, key, routeContextId, 'create_directory',
+    () => runtime.filesystem.createDirectory(path),
+  ));
 
   server.registerTool('move_file', {
     title: 'Move File',
-    description: 'Move or rename a file or directory between locations that are both inside allowed workspaces.',
-    inputSchema: { source: z.string(), destination: z.string() },
+    description: routedDescription('Move or rename a file or directory between locations that are both inside allowed workspaces.'),
+    inputSchema: {
+      source: z.string(),
+      destination: z.string(),
+      routeContextId: z.string().uuid(),
+    },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
-  }, async ({ source, destination }) => guarded(() => runtime.filesystem.moveFile(source, destination)));
+  }, async ({ source, destination, routeContextId }) => routeGuarded(
+    runtime, key, routeContextId, 'move_file',
+    () => runtime.filesystem.moveFile(source, destination),
+  ));
 
   server.registerTool('get_file_info', {
     title: 'Get File Info',
-    description: 'Return metadata for a file or directory inside an allowed workspace.',
-    inputSchema: { path: z.string() },
+    description: routedDescription('Return metadata for a file or directory inside an allowed workspace.'),
+    inputSchema: { path: z.string(), routeContextId: z.string().uuid() },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-  }, async ({ path }) => guarded(() => runtime.filesystem.getFileInfo(path)));
+  }, async ({ path, routeContextId }) => routeGuarded(
+    runtime, key, routeContextId, 'get_file_info',
+    () => runtime.filesystem.getFileInfo(path),
+  ));
 
   server.registerTool('search_files', {
     title: 'Search Files',
-    description: 'Search recursively by filename or UTF-8 text content inside an allowed workspace.',
+    description: routedDescription('Search recursively by filename or UTF-8 text content inside an allowed workspace.'),
     inputSchema: {
       path: z.string(),
       query: z.string().min(1),
       mode: z.enum(['files', 'content']).default('files'),
       maxResults: z.number().int().min(1).max(1000).default(100),
+      routeContextId: z.string().uuid(),
     },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-  }, async ({ path, query, mode, maxResults }) => guarded(() => runtime.search.search({ path, query, mode, maxResults })));
+  }, async ({ path, query, mode, maxResults, routeContextId }) => routeGuarded(
+    runtime, key, routeContextId, 'search_files',
+    () => runtime.search.search({ path, query, mode, maxResults }),
+  ));
 
   server.registerTool('execute_command', {
     title: 'Execute Command',
-    description: 'Run a PowerShell command once in an allowed working directory with timeout and output bounds. High-risk system commands are blocked.',
+    description: routedDescription('Run a PowerShell command once in an allowed working directory with timeout and output bounds. High-risk system commands are blocked.'),
     inputSchema: {
       command: z.string().min(1),
       cwd: z.string().optional(),
       timeoutMs: z.number().int().min(1).max(10 * 60_000).default(30_000),
+      routeContextId: z.string().uuid(),
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
-  }, async ({ command, cwd, timeoutMs }) => guarded(() => runtime.processes.execute(command, { cwd: cwd ?? runtime.workspace.roots[0]!, timeoutMs })));
+  }, async ({ command, cwd, timeoutMs, routeContextId }) => routeGuarded(
+    runtime, key, routeContextId, 'execute_command',
+    () => runtime.processes.execute(command, { cwd: cwd ?? runtime.workspace.roots[0]!, timeoutMs }),
+  ));
 
   server.registerTool('start_process', {
     title: 'Start Process',
-    description: 'Start a long-running PowerShell command in an allowed working directory and return an opaque process session ID.',
-    inputSchema: { command: z.string().min(1), cwd: z.string().optional() },
+    description: routedDescription('Start a long-running PowerShell command in an allowed working directory and return an opaque process session ID.'),
+    inputSchema: {
+      command: z.string().min(1),
+      cwd: z.string().optional(),
+      routeContextId: z.string().uuid(),
+    },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
-  }, async ({ command, cwd }) => guarded(() => runtime.processes.start(command, { cwd: cwd ?? runtime.workspace.roots[0]! })));
+  }, async ({ command, cwd, routeContextId }) => routeGuarded(
+    runtime, key, routeContextId, 'start_process',
+    () => runtime.processes.start(command, { cwd: cwd ?? runtime.workspace.roots[0]! }),
+  ));
 
   server.registerTool('read_process_output', {
     title: 'Read Process Output',

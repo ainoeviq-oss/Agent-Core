@@ -75,7 +75,7 @@ export function createAgentCoreMcpServer(key: VerifiedKey, runtime: RuntimeServi
     };
   });
 
-  registerOperationalTools(server, runtime);
+  registerOperationalTools(server, runtime, key);
   registerCapabilityTools(server, runtime, key);
   return server;
 }
