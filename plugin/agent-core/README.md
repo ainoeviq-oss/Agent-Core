@@ -21,6 +21,14 @@ The builder reads the stable registry under `F:\Projects\Agent Core-MCP\capabili
 
 Every imported skill carries its audited `PROVENANCE.json` and source `LICENSE` beside `SKILL.md`.
 
+## Agent Core v0.5 automatic routing
+
+The native Router Skill treats routing as an internal reflex. A normal user brief is preflighted with `capability_route`, the returned `routeContextId` is reused for one coherent goal, and any route-required audited skill is loaded with `skill_load(id, routeContextId)` before route-bound execution. Users should not have to name routing primitives themselves.
+
+Only audited `native_ready` skills may be full-instruction-loaded. Reference-only, catalog-only, quarantined, unresolved, and unknown-license material remains metadata/reference material and is never loaded as executable skill guidance.
+
+After an Agent Core v0.5.0 deployment, refresh the ChatGPT app tool snapshot once with **Scan Tools / Refresh Tools**, then update the Router Skill once so ChatGPT sees `capability_route` and the route-bound schemas containing `routeContextId`.
+
 ## ChatGPT packaging boundary
 
 OpenAI currently documents that one Plugin may include multiple Skills and Apps, but does not publish a generic local plugin-manifest format equivalent to Agent Skills' `SKILL.md` standard. Therefore this workspace does not invent one.

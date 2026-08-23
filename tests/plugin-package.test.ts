@@ -58,8 +58,7 @@ async function setupPackageFixture() {
     record('cap_cataloged', 'catalog-only', 'cataloged', false, null),
   ], { catalogSha: 'fixture-sha', generatedAt: '2026-08-22T00:00:00.000Z' });
 
-  const routerSkillPath = path.join(root, 'router-SKILL.md');
-  await writeFile(routerSkillPath, '# Agent Core Capability Router\n\nUse capability_recommend before actionable Agent Core work.\n', 'utf8');
+  const routerSkillPath = path.resolve('plugin', 'agent-core', 'skills', 'agent-core-capability-router', 'SKILL.md');
   return { root, capabilityDir, outputDir, routerSkillPath };
 }
 
@@ -71,7 +70,10 @@ describe('Agent Core plugin package builder', () => {
     expect(result.skills).toEqual(expect.arrayContaining(['agent-core-capability-router', 'native-skill']));
 
     const router = await readFile(path.join(outputDir, 'skills', 'agent-core-capability-router', 'SKILL.md'), 'utf8');
-    expect(router).toContain('capability_recommend');
+    expect(router).toContain('capability_route');
+    expect(router).toContain('routeContextId');
+    expect(router).toContain('skill_load(id, routeContextId)');
+    expect(router).not.toMatch(/\b(?:ask|tell|require|instruct)\s+(?:the\s+)?user\b[^.\n]{0,120}\b(?:mention|name|invoke|call)\b[^.\n]{0,120}\b(?:capability_route|routeContextId|skill_load)\b/i);
     const native = await readFile(path.join(outputDir, 'skills', 'native-skill', 'SKILL.md'), 'utf8');
     expect(native).toContain('Audited instructions');
     await expect(readFile(path.join(outputDir, 'skills', 'catalog-only', 'SKILL.md'), 'utf8')).rejects.toThrow();

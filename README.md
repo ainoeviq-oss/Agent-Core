@@ -96,3 +96,13 @@ npm run build:plugin
 ```
 
 The package contains the native Agent Core Capability Router plus audited native-ready skills and references the already-connected Agent Core MCP app. Generated package output is ignored by Git; credentials, runtime OAuth state, external caches, and quarantine material are never packaged.
+
+## Agent Core v0.5 Automatic Capability Routing
+
+Agent Core v0.5.0 promotes routing from an optional recommendation step into an internal execution preflight. Normal user briefs are routed with `capability_route`; the returned `routeContextId` is reused across the route-required operations that belong to the same coherent goal.
+
+If the route selects a required audited skill, load it with `skill_load(id, routeContextId)` before route-bound execution. Only `native_ready` skills may be full-instruction-loaded; catalog-only, reference-only, quarantined, unresolved, and unknown-license material remains non-executable guidance or metadata.
+
+Automatic routing is intentionally invisible to the normal prompt surface. Users should not need to mention capability tools, route IDs, or skill-loading primitives. Routing details should surface only when a risk, dependency, required approval, or route failure materially helps the user.
+
+After deploying v0.5.0, refresh the ChatGPT Agent Core app once with **Scan Tools / Refresh Tools** and update the Agent Core Capability Router Skill once. This refresh is required so ChatGPT replaces the cached capability schema with `capability_route` and sees `routeContextId` on route-bound operational tools.
