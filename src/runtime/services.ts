@@ -1,7 +1,9 @@
 import path from 'node:path';
 import { CapabilityRegistry } from '../capabilities/registry-service.js';
+import { CapabilityRouter } from '../capabilities/router.js';
 import { FileSystemService } from './filesystem.js';
 import { ProcessManager } from './process-manager.js';
+import { RouteContextStore } from './route-context-store.js';
 import { SearchService } from './search.js';
 import { WorkspacePolicy } from './workspace.js';
 
@@ -11,6 +13,8 @@ export interface RuntimeServices {
   search: SearchService;
   processes: ProcessManager;
   capabilities: CapabilityRegistry;
+  router: CapabilityRouter;
+  routes: RouteContextStore;
 }
 
 export function createRuntimeServices(
@@ -18,11 +22,14 @@ export function createRuntimeServices(
   capabilityDir = path.join(allowedRoots[0] ?? process.cwd(), 'capabilities'),
 ): RuntimeServices {
   const workspace = new WorkspacePolicy(allowedRoots);
+  const capabilities = CapabilityRegistry.open(capabilityDir);
   return {
     workspace,
     filesystem: new FileSystemService(workspace),
     search: new SearchService(workspace),
     processes: new ProcessManager(workspace),
-    capabilities: CapabilityRegistry.open(capabilityDir),
+    capabilities,
+    router: new CapabilityRouter(capabilities),
+    routes: new RouteContextStore(),
   };
 }
