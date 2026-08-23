@@ -49,7 +49,7 @@ afterEach(async () => {
 });
 
 describe('Commander MCP integration', () => {
-  it('initializes as desktop-commander and exposes the V2 operational tools', async () => {
+  it('initializes as desktop-commander and exposes the hybrid operational and capability tools', async () => {
     const { baseUrl, created } = await setup();
     const initialize = await mcpRequest(baseUrl, created.key, {
       jsonrpc: '2.0', id: 1, method: 'initialize',
@@ -62,7 +62,7 @@ describe('Commander MCP integration', () => {
     expect(initialize.response.status).toBe(200);
     expect(initialize.json.result.serverInfo).toMatchObject({
       name: 'desktop-commander',
-      version: '0.3.0',
+      version: '0.4.0',
     });
 
     const listed = await mcpRequest(baseUrl, created.key, {
@@ -76,7 +76,7 @@ describe('Commander MCP integration', () => {
     ]));
   });
 
-  it('reports V2 status and capabilities with deterministic structured results', async () => {
+  it('reports hybrid status and capabilities with deterministic structured results', async () => {
     const { baseUrl, created } = await setup();
     const status = await mcpRequest(baseUrl, created.key, {
       jsonrpc: '2.0', id: 3, method: 'tools/call',
@@ -85,7 +85,7 @@ describe('Commander MCP integration', () => {
     expect(status.json.result.structuredContent).toMatchObject({
       service: 'commander-mcp',
       serverName: 'desktop-commander',
-      version: '0.3.0',
+      version: '0.4.0',
       authentication: 'bearer-api-key',
       key: { id: created.metadata.id, name: 'integration-client' },
     });
@@ -95,12 +95,14 @@ describe('Commander MCP integration', () => {
       params: { name: 'commander_capabilities', arguments: {} },
     });
     expect(capabilities.json.result.structuredContent).toMatchObject({
-      stage: 'v2-operational-tools',
+      stage: 'v3-hybrid-capability-registry',
       enabled: expect.arrayContaining([
         'mcp.streamable_http', 'auth.api_key', 'auth.oauth2',
         'tool.read_file', 'tool.write_file', 'tool.search_files', 'tool.execute_command',
+        'tool.capability_recommend', 'tool.capability_search', 'tool.skill_load',
       ]),
       deferred: expect.arrayContaining(['git.semantic_tools', 'gui.automation']),
     });
   });
 });
+

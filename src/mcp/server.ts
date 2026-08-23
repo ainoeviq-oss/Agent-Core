@@ -2,10 +2,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
 import type { VerifiedKey } from '../auth/key-types.js';
 import type { RuntimeServices } from '../runtime/services.js';
+import { CAPABILITY_TOOL_NAMES, registerCapabilityTools } from './capability-tools.js';
 import { OPERATIONAL_TOOL_NAMES, registerOperationalTools } from './tools.js';
 
 export const SERVER_NAME = 'desktop-commander';
-export const SERVER_VERSION = '0.3.0';
+export const SERVER_VERSION = '0.4.0';
 
 export function createCommanderMcpServer(key: VerifiedKey, runtime: RuntimeServices): McpServer {
   const server = new McpServer({
@@ -45,7 +46,7 @@ export function createCommanderMcpServer(key: VerifiedKey, runtime: RuntimeServi
 
   server.registerTool('commander_capabilities', {
     title: 'Commander Capabilities',
-    description: 'Describe the enabled V2 gateway, authentication, filesystem, search, and process capabilities.',
+    description: 'Describe the hybrid Commander gateway, authentication, operational tools, and deferred capability registry.',
     outputSchema: {
       stage: z.string(),
       enabled: z.array(z.string()),
@@ -54,12 +55,14 @@ export function createCommanderMcpServer(key: VerifiedKey, runtime: RuntimeServi
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   }, async () => {
     const structuredContent = {
-      stage: 'v2-operational-tools',
+      stage: 'v3-hybrid-capability-registry',
       enabled: [
         'mcp.streamable_http', 'auth.api_key', 'auth.oauth2',
         'oauth.dynamic_client_registration', 'oauth.authorization_code_pkce',
         'oauth.refresh_token', 'workspace.boundaries',
+        'capability.registry', 'capability.deferred_loading', 'capability.audit_gate',
         ...OPERATIONAL_TOOL_NAMES.map((name) => `tool.${name}`),
+        ...CAPABILITY_TOOL_NAMES.map((name) => `tool.${name}`),
       ],
       deferred: ['git.semantic_tools', 'gui.automation', 'registry.system_admin', 'app.adapters'],
     };
@@ -70,5 +73,6 @@ export function createCommanderMcpServer(key: VerifiedKey, runtime: RuntimeServi
   });
 
   registerOperationalTools(server, runtime);
+  registerCapabilityTools(server, runtime);
   return server;
 }
