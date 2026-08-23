@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
+import type { VerifiedKey } from '../auth/key-types.js';
 import type { RuntimeServices } from '../runtime/services.js';
 
 function textResult(value: unknown) {
@@ -25,11 +26,18 @@ const readOnlyAnnotations = {
   idempotentHint: true,
   openWorldHint: false,
 } as const;
+const routeAnnotations = {
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: false,
+} as const;
 
 export const CAPABILITY_TOOL_NAMES = [
-  'capability_recommend', 'capability_search', 'capability_get',
+  'capability_route', 'capability_search', 'capability_get',
   'skill_load', 'capability_dependencies', 'capability_coverage',
 ] as const;
+
 const capabilityType = z.enum([
   'skill', 'agent', 'command', 'hook', 'framework', 'collection', 'guide', 'utility',
 ]);
@@ -40,19 +48,37 @@ const capabilityState = z.enum([
   'quarantined', 'unresolved', 'license_unknown', 'source_removed',
 ]);
 
-export function registerCapabilityTools(server: McpServer, runtime: RuntimeServices): void {
-  server.registerTool('capability_recommend', {
-    title: 'Recommend Capabilities',
-    description: 'Rank compact skill, agent, command, hook, and reference capability metadata for an actionable task without loading full instructions.',
+export function registerCapabilityTools(
+  server: McpServer,
+  runtime: RuntimeServices,
+  key: VerifiedKey,
+): void {
+  server.registerTool('capability_route', {
+    title: 'Route Capabilities',
+    description: 'Create a principal-bound Agent Core routing context for an actionable task before task-execution tools are used.',
     inputSchema: {
       task: z.string().min(1).max(20_000),
       context: z.string().max(20_000).optional(),
-      limit: z.number().int().min(1).max(20).default(8),
     },
-    annotations: readOnlyAnnotations,
-  }, async ({ task, context, limit }) => textResult({
-    results: runtime.capabilities.recommend(task, context ?? '', limit),
-  }));
+    annotations: routeAnnotations,
+  }, async ({ task, context }) => {
+    const plan = runtime.router.route(task, context ?? '');
+    const route = runtime.routes.create(key.id, plan);
+    return textResult({
+      routeContextId: route.routeContextId,
+      tier: route.tier,
+      mode: route.mode,
+      domain: route.domain,
+      confidence: route.confidence,
+      risk: route.risk,
+      recommendedCapabilities: route.recommendedCapabilities,
+      requiredSkillLoads: route.requiredSkillLoads,
+      allowedTools: route.allowedTools,
+      verification: route.verification,
+      reasonCodes: route.reasonCodes,
+      expiresAt: route.expiresAt,
+    });
+  });
 
   server.registerTool('capability_search', {
     title: 'Search Capabilities',
@@ -68,7 +94,9 @@ export function registerCapabilityTools(server: McpServer, runtime: RuntimeServi
     },
     annotations: readOnlyAnnotations,
   }, async ({ query, type, category, risk, state, compatibility, limit }) => textResult({
-    results: runtime.capabilities.search(query, { type, category, risk, state, compatibility, limit }),
+    results: runtime.capabilities.search(query, {
+      type, category, risk, state, compatibility, limit,
+    }),
   }));
 
   server.registerTool('capability_get', {
@@ -81,13 +109,21 @@ export function registerCapabilityTools(server: McpServer, runtime: RuntimeServi
     if (!capability) throw new Error(`Unknown capability: ${id}`);
     return capability;
   }));
-
   server.registerTool('skill_load', {
     title: 'Load Audited Skill',
-    description: 'Load full instructions only for a skill that passed source, license, function, and safety audits and is marked native-ready.',
-    inputSchema: { id: z.string().min(1).max(200) },
+    description: 'Load full instructions only for an audited native-ready skill and optionally bind that load to an Agent Core route context.',
+    inputSchema: {
+      id: z.string().min(1).max(200),
+      routeContextId: z.string().uuid().optional(),
+    },
     annotations: readOnlyAnnotations,
-  }, async ({ id }) => guarded(() => runtime.capabilities.loadSkill(id)));
+  }, async ({ id, routeContextId }) => guarded(() => {
+    const loaded = runtime.capabilities.loadSkill(id);
+    if (routeContextId) {
+      runtime.routes.markSkillLoaded(routeContextId, key.id, id);
+    }
+    return loaded;
+  }));
 
   server.registerTool('capability_dependencies', {
     title: 'Capability Dependencies',

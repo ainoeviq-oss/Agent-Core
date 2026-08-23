@@ -6,7 +6,7 @@ import { CAPABILITY_TOOL_NAMES, registerCapabilityTools } from './capability-too
 import { OPERATIONAL_TOOL_NAMES, registerOperationalTools } from './tools.js';
 
 export const SERVER_NAME = 'agent-core';
-export const SERVER_VERSION = '0.4.0';
+export const SERVER_VERSION = '0.5.0';
 
 export function createAgentCoreMcpServer(key: VerifiedKey, runtime: RuntimeServices): McpServer {
   const server = new McpServer({
@@ -46,7 +46,7 @@ export function createAgentCoreMcpServer(key: VerifiedKey, runtime: RuntimeServi
 
   server.registerTool('agent_core_capabilities', {
     title: 'Agent Core Capabilities',
-    description: 'Describe the hybrid Agent Core gateway, authentication, operational tools, and deferred capability registry.',
+    description: 'Describe Agent Core automatic capability routing, authentication, operational tools, and deferred capability registry.',
     outputSchema: {
       stage: z.string(),
       enabled: z.array(z.string()),
@@ -55,12 +55,15 @@ export function createAgentCoreMcpServer(key: VerifiedKey, runtime: RuntimeServi
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   }, async () => {
     const structuredContent = {
-      stage: 'v3-hybrid-capability-registry',
+      stage: 'v4-automatic-capability-routing',
       enabled: [
         'mcp.streamable_http', 'auth.api_key', 'auth.oauth2',
         'oauth.dynamic_client_registration', 'oauth.authorization_code_pkce',
         'oauth.refresh_token', 'workspace.boundaries',
         'capability.registry', 'capability.deferred_loading', 'capability.audit_gate',
+        'routing.capability_route',
+        'routing.principal_bound_context',
+        'routing.execution_gate',
         ...OPERATIONAL_TOOL_NAMES.map((name) => `tool.${name}`),
         ...CAPABILITY_TOOL_NAMES.map((name) => `tool.${name}`),
       ],
@@ -73,6 +76,6 @@ export function createAgentCoreMcpServer(key: VerifiedKey, runtime: RuntimeServi
   });
 
   registerOperationalTools(server, runtime);
-  registerCapabilityTools(server, runtime);
+  registerCapabilityTools(server, runtime, key);
   return server;
 }
