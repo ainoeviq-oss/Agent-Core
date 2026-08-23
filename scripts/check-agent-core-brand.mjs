@@ -4,16 +4,17 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const oldWord = ['Com', 'mander'].join('');
 const legacy = [
-  ['Desktop ', 'Commander'].join(''),
+  ['Desktop ', oldWord].join(''),
   ['desktop-', 'commander'].join(''),
-  ['Commander', '-MCP'].join(''),
+  [oldWord, '-MCP'].join(''),
   ['commander', '-mcp'].join(''),
   ['COMMANDER', '_'].join(''),
   ['cmd', 'r_'].join(''),
   ['commander', '_'].join(''),
   ['commander', '-'].join(''),
-  ['Com', 'mander'].join(''),
+  oldWord,
 ];
 const migrationHistory = new Set([
   'docs/superpowers/specs/2026-08-23-agent-core-hard-rebrand-design.md',
@@ -29,6 +30,7 @@ async function walk(dir) {
   }
   return files;
 }
+
 function trackedFiles() {
   return execFileSync('git', ['-C', repoRoot, 'ls-files', '-z'], { encoding: 'utf8' })
     .split('\0').filter(Boolean)

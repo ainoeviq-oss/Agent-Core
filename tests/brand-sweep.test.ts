@@ -20,7 +20,8 @@ afterEach(async () => {
 
 describe('Agent Core brand scanner', () => {
   it('rejects legacy owned brand strings', async () => {
-    const root = await fixture('legacy Desktop ' + 'Commander identity');
+    const oldWord = ['Com', 'mander'].join('');
+    const root = await fixture(`legacy Desktop ${oldWord} identity`);
     const run = spawnSync(process.execPath, [script, '--scan-path', root], { encoding: 'utf8' });
     expect(run.status).toBe(1);
     expect(run.stdout + run.stderr).toContain('sample.txt');
