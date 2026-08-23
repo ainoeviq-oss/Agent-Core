@@ -4,7 +4,7 @@ import { loadConfig } from '../src/config.js';
 
 describe('loadConfig', () => {
   it('uses local-only network, project-local storage, capability storage, and current directory as safe defaults', () => {
-    const baseDir = path.resolve('F:\\Projects\\Commander-MCP');
+    const baseDir = path.resolve('F:\\Projects\\Agent-Core');
     const config = loadConfig({}, baseDir);
 
     expect(config.host).toBe('127.0.0.1');
@@ -17,19 +17,19 @@ describe('loadConfig', () => {
 
   it('accepts explicit environment overrides including capability storage and semicolon-separated roots', () => {
     const config = loadConfig({
-      COMMANDER_HOST: '0.0.0.0',
-      COMMANDER_PORT: '9999',
-      COMMANDER_DATA_DIR: 'F:\\CustomData',
-      COMMANDER_LOG_DIR: 'F:\\CustomLogs',
-      COMMANDER_CAPABILITY_DIR: 'F:\\CommanderCapabilities',
-      COMMANDER_ALLOWED_ROOTS: 'F:\\Projects;F:\\Design',
+      AGENT_CORE_HOST: '0.0.0.0',
+      AGENT_CORE_PORT: '9999',
+      AGENT_CORE_DATA_DIR: 'F:\\CustomData',
+      AGENT_CORE_LOG_DIR: 'F:\\CustomLogs',
+      AGENT_CORE_CAPABILITY_DIR: 'F:\\AgentCoreCapabilities',
+      AGENT_CORE_ALLOWED_ROOTS: 'F:\\Projects;F:\\Design',
     }, 'F:\\Ignored');
 
     expect(config.host).toBe('0.0.0.0');
     expect(config.port).toBe(9999);
     expect(config.dataDir).toBe(path.resolve('F:\\CustomData'));
     expect(config.logDir).toBe(path.resolve('F:\\CustomLogs'));
-    expect(config.capabilityDir).toBe(path.resolve('F:\\CommanderCapabilities'));
+    expect(config.capabilityDir).toBe(path.resolve('F:\\AgentCoreCapabilities'));
     expect(config.allowedRoots).toEqual([
       path.resolve('F:\\Projects'),
       path.resolve('F:\\Design'),

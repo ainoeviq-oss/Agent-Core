@@ -50,7 +50,7 @@ async function handleRequest(
 
   try {
     if (request.method === 'GET' && route === '/health') {
-      sendJson(response, 200, { status: 'ok', service: 'commander-mcp' });
+      sendJson(response, 200, { status: 'ok', service: 'agent-core' });
       return;
     }
 

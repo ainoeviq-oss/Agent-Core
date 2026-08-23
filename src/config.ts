@@ -21,17 +21,17 @@ function parseRoots(value: string | undefined, baseDir: string): string[] {
 }
 
 export function loadConfig(env: Env = process.env, baseDir = process.cwd()): AppConfig {
-  const port = Number.parseInt(env.COMMANDER_PORT ?? '8765', 10);
+  const port = Number.parseInt(env.AGENT_CORE_PORT ?? '8765', 10);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error('COMMANDER_PORT must be an integer between 1 and 65535');
+    throw new Error('AGENT_CORE_PORT must be an integer between 1 and 65535');
   }
 
   return {
-    host: env.COMMANDER_HOST?.trim() || '127.0.0.1',
+    host: env.AGENT_CORE_HOST?.trim() || '127.0.0.1',
     port,
-    dataDir: path.resolve(env.COMMANDER_DATA_DIR?.trim() || path.join(baseDir, 'data')),
-    logDir: path.resolve(env.COMMANDER_LOG_DIR?.trim() || path.join(baseDir, 'logs')),
-    capabilityDir: path.resolve(env.COMMANDER_CAPABILITY_DIR?.trim() || path.join(baseDir, 'capabilities')),
-    allowedRoots: parseRoots(env.COMMANDER_ALLOWED_ROOTS, baseDir),
+    dataDir: path.resolve(env.AGENT_CORE_DATA_DIR?.trim() || path.join(baseDir, 'data')),
+    logDir: path.resolve(env.AGENT_CORE_LOG_DIR?.trim() || path.join(baseDir, 'logs')),
+    capabilityDir: path.resolve(env.AGENT_CORE_CAPABILITY_DIR?.trim() || path.join(baseDir, 'capabilities')),
+    allowedRoots: parseRoots(env.AGENT_CORE_ALLOWED_ROOTS, baseDir),
   };
 }

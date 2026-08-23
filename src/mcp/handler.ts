@@ -1,7 +1,7 @@
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { McpHttpHandler } from '../http/app.js';
 import type { RuntimeServices } from '../runtime/services.js';
-import { createCommanderMcpServer } from './server.js';
+import { createAgentCoreMcpServer } from './server.js';
 
 function sendProtocolError(response: Parameters<McpHttpHandler>[1], status: number, message: string): void {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
@@ -19,7 +19,7 @@ export function createMcpHttpHandler(runtime: RuntimeServices): McpHttpHandler {
       return;
     }
 
-    const server = createCommanderMcpServer(key, runtime);
+    const server = createAgentCoreMcpServer(key, runtime);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,

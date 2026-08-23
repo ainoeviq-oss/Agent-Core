@@ -11,14 +11,14 @@ import { OAuthService } from './oauth/service.js';
 import { FileOAuthStore } from './oauth/store.js';
 import { createRuntimeServices } from './runtime/services.js';
 
-export interface CommanderService {
+export interface AgentCoreService {
   server: Server;
   host: string;
   port: number;
   close(): Promise<void>;
 }
 
-export async function startCommanderService(config: AppConfig = loadConfig()): Promise<CommanderService> {
+export async function startAgentCoreService(config: AppConfig = loadConfig()): Promise<AgentCoreService> {
   await Promise.all([
     mkdir(config.dataDir, { recursive: true }),
     mkdir(config.logDir, { recursive: true }),
@@ -70,8 +70,8 @@ async function closeServer(server: Server): Promise<void> {
 const entry = process.argv[1];
 if (entry && import.meta.url === pathToFileURL(entry).href) {
   try {
-    const service = await startCommanderService();
-    process.stdout.write(`Commander MCP listening on http://${service.host}:${service.port}/mcp\n`);
+    const service = await startAgentCoreService();
+    process.stdout.write(`Agent Core listening on http://${service.host}:${service.port}/mcp\n`);
     let closing = false;
     const gracefulClose = async () => {
       if (closing) return;
@@ -81,7 +81,7 @@ if (entry && import.meta.url === pathToFileURL(entry).href) {
     process.once('SIGINT', () => { void gracefulClose(); });
     process.once('SIGTERM', () => { void gracefulClose(); });
   } catch (error) {
-    process.stderr.write(`Commander MCP failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.stderr.write(`Agent Core failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
   }
 }

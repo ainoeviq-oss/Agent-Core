@@ -41,7 +41,7 @@ describe('HTTP authentication', () => {
 
     const response = await fetch(`${baseUrl}/health`);
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ status: 'ok', service: 'commander-mcp' });
+    expect(await response.json()).toMatchObject({ status: 'ok', service: 'agent-core' });
   });
 
   it.each([

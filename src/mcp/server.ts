@@ -5,19 +5,19 @@ import type { RuntimeServices } from '../runtime/services.js';
 import { CAPABILITY_TOOL_NAMES, registerCapabilityTools } from './capability-tools.js';
 import { OPERATIONAL_TOOL_NAMES, registerOperationalTools } from './tools.js';
 
-export const SERVER_NAME = 'desktop-commander';
+export const SERVER_NAME = 'agent-core';
 export const SERVER_VERSION = '0.4.0';
 
-export function createCommanderMcpServer(key: VerifiedKey, runtime: RuntimeServices): McpServer {
+export function createAgentCoreMcpServer(key: VerifiedKey, runtime: RuntimeServices): McpServer {
   const server = new McpServer({
     name: SERVER_NAME,
-    title: 'Desktop Commander',
+    title: 'Agent Core',
     version: SERVER_VERSION,
   });
 
-  server.registerTool('commander_status', {
-    title: 'Commander Status',
-    description: 'Report Commander MCP identity, runtime, authentication mode, authenticated key identity, and workspace roots.',
+  server.registerTool('agent_core_status', {
+    title: 'Agent Core Status',
+    description: 'Report Agent Core MCP identity, runtime, authentication mode, authenticated key identity, and workspace roots.',
     outputSchema: {
       service: z.string(),
       serverName: z.string(),
@@ -30,7 +30,7 @@ export function createCommanderMcpServer(key: VerifiedKey, runtime: RuntimeServi
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   }, async () => {
     const structuredContent = {
-      service: 'commander-mcp',
+      service: 'agent-core',
       serverName: SERVER_NAME,
       version: SERVER_VERSION,
       runtime: `node ${process.version}`,
@@ -44,9 +44,9 @@ export function createCommanderMcpServer(key: VerifiedKey, runtime: RuntimeServi
     };
   });
 
-  server.registerTool('commander_capabilities', {
-    title: 'Commander Capabilities',
-    description: 'Describe the hybrid Commander gateway, authentication, operational tools, and deferred capability registry.',
+  server.registerTool('agent_core_capabilities', {
+    title: 'Agent Core Capabilities',
+    description: 'Describe the hybrid Agent Core gateway, authentication, operational tools, and deferred capability registry.',
     outputSchema: {
       stage: z.string(),
       enabled: z.array(z.string()),

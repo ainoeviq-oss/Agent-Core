@@ -48,20 +48,20 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-describe('Commander MCP integration', () => {
-  it('initializes as desktop-commander and exposes the hybrid operational and capability tools', async () => {
+describe('Agent Core MCP integration', () => {
+  it('initializes as agent-core and exposes the hybrid operational and capability tools', async () => {
     const { baseUrl, created } = await setup();
     const initialize = await mcpRequest(baseUrl, created.key, {
       jsonrpc: '2.0', id: 1, method: 'initialize',
       params: {
         protocolVersion: '2025-11-25',
         capabilities: {},
-        clientInfo: { name: 'commander-test', version: '1.0.0' },
+        clientInfo: { name: 'agent-core-test', version: '1.0.0' },
       },
     });
     expect(initialize.response.status).toBe(200);
     expect(initialize.json.result.serverInfo).toMatchObject({
-      name: 'desktop-commander',
+      name: 'agent-core',
       version: '0.4.0',
     });
 
@@ -70,7 +70,7 @@ describe('Commander MCP integration', () => {
     });
     expect(listed.response.status).toBe(200);
     expect(listed.json.result.tools.map((tool: { name: string }) => tool.name)).toEqual(expect.arrayContaining([
-      'commander_status', 'commander_capabilities', 'workspace_info', 'list_directory',
+      'agent_core_status', 'agent_core_capabilities', 'workspace_info', 'list_directory',
       'read_file', 'write_file', 'search_files', 'execute_command', 'start_process',
       'read_process_output', 'stop_process', 'list_processes',
     ]));
@@ -80,11 +80,11 @@ describe('Commander MCP integration', () => {
     const { baseUrl, created } = await setup();
     const status = await mcpRequest(baseUrl, created.key, {
       jsonrpc: '2.0', id: 3, method: 'tools/call',
-      params: { name: 'commander_status', arguments: {} },
+      params: { name: 'agent_core_status', arguments: {} },
     });
     expect(status.json.result.structuredContent).toMatchObject({
-      service: 'commander-mcp',
-      serverName: 'desktop-commander',
+      service: 'agent-core',
+      serverName: 'agent-core',
       version: '0.4.0',
       authentication: 'bearer-api-key',
       key: { id: created.metadata.id, name: 'integration-client' },
@@ -92,7 +92,7 @@ describe('Commander MCP integration', () => {
 
     const capabilities = await mcpRequest(baseUrl, created.key, {
       jsonrpc: '2.0', id: 4, method: 'tools/call',
-      params: { name: 'commander_capabilities', arguments: {} },
+      params: { name: 'agent_core_capabilities', arguments: {} },
     });
     expect(capabilities.json.result.structuredContent).toMatchObject({
       stage: 'v3-hybrid-capability-registry',

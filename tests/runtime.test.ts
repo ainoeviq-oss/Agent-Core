@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AppConfig } from '../src/config.js';
-import { startCommanderService } from '../src/index.js';
+import { startAgentCoreService } from '../src/index.js';
 
 const roots: string[] = [];
 const blockers: Server[] = [];
@@ -28,9 +28,9 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-describe('Commander runtime', () => {
+describe('Agent Core runtime', () => {
   it('starts, serves health, and closes its listener', async () => {
-    const service = await startCommanderService(await config());
+    const service = await startAgentCoreService(await config());
     expect(service.server.listening).toBe(true);
     const response = await fetch(`http://${service.host}:${service.port}/health`);
     expect(response.status).toBe(200);
@@ -45,7 +45,7 @@ describe('Commander runtime', () => {
     blockers.push(blocker);
     const port = (blocker.address() as AddressInfo).port;
 
-    await expect(startCommanderService(await config(port))).rejects.toMatchObject({
+    await expect(startAgentCoreService(await config(port))).rejects.toMatchObject({
       code: 'EADDRINUSE',
     });
   });

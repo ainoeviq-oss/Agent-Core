@@ -26,7 +26,7 @@ export const OPERATIONAL_TOOL_NAMES = [
 export function registerOperationalTools(server: McpServer, runtime: RuntimeServices): void {
   server.registerTool('workspace_info', {
     title: 'Workspace Info',
-    description: 'Show the filesystem roots this Commander identity is allowed to access.',
+    description: 'Show the filesystem roots this Agent Core identity is allowed to access.',
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   }, async () => textResult({ roots: runtime.workspace.roots }));
 
@@ -141,7 +141,7 @@ export function registerOperationalTools(server: McpServer, runtime: RuntimeServ
 
   server.registerTool('read_process_output', {
     title: 'Read Process Output',
-    description: 'Read the bounded stdout/stderr snapshot and state of a Commander process session.',
+    description: 'Read the bounded stdout/stderr snapshot and state of a Agent Core process session.',
     inputSchema: { sessionId: z.string().min(1) },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   }, async ({ sessionId }) => {
@@ -151,14 +151,14 @@ export function registerOperationalTools(server: McpServer, runtime: RuntimeServ
 
   server.registerTool('stop_process', {
     title: 'Stop Process',
-    description: 'Stop a Commander-managed process session.',
+    description: 'Stop a Agent Core-managed process session.',
     inputSchema: { sessionId: z.string().min(1) },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
   }, async ({ sessionId }) => guarded(() => runtime.processes.stop(sessionId)));
 
   server.registerTool('list_processes', {
     title: 'List Processes',
-    description: 'List only the process sessions started and tracked by this Commander runtime.',
+    description: 'List only the process sessions started and tracked by this Agent Core runtime.',
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   }, async () => textResult({ processes: runtime.processes.list() }));
 }
