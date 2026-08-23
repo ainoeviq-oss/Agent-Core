@@ -29,7 +29,7 @@ export async function startAgentCoreService(config: AppConfig = loadConfig()): P
   const oauthStore = new FileOAuthStore(config.dataDir);
   const oauthService = new OAuthService(keyStore, oauthStore);
   const auditLogger = new FileAuditLogger(config.logDir);
-  const runtime = createRuntimeServices(config.allowedRoots, config.capabilityDir);
+  const runtime = createRuntimeServices(config.allowedRoots, config.capabilityDir, auditLogger);
   const server = createServer(createHttpHandler({
     keyStore,
     oauthService,
