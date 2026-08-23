@@ -68,6 +68,8 @@ The MCP protocol version used by the installed SDK is `2025-11-25`.
 
 The local server remains bound to `127.0.0.1`. ChatGPT reaches it through the OpenAI Secure MCP Tunnel configured for this installation. OAuth discovery, Dynamic Client Registration, PKCE authorization-code exchange, and refresh tokens are implemented by Agent Core; the authorization page maps the resulting OAuth identity back to a `agent_core_live_...` Agent Core key.
 
+After an Agent Core identity or credential reset, any pre-existing ChatGPT app connection must be reconnected once and its tools scanned/refreshed so the app metadata and tool snapshot use Agent Core. Legacy credential prefixes are not accepted.
+
 The tunnel daemon must stay running for discovery and tool calls. The Agent Core runtime data directory should also remain stable across upgrades so OAuth clients/tokens and key metadata survive branch or binary changes.
 
 ## Development Verification
