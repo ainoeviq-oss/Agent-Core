@@ -73,7 +73,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-describe('Commander OAuth bridge', () => {
+describe('Agent Core OAuth bridge', () => {
   it('advertises protected-resource and OAuth metadata with DCR and PKCE', async () => {
     const { baseUrl, externalBase } = await setup();
     const protectedResource = await fetch(
@@ -105,8 +105,8 @@ describe('Commander OAuth bridge', () => {
   it('registers a confidential OAuth client without storing its raw secret', async () => {
     const { baseUrl, oauthStore } = await setup();
     const client = await registerClient(baseUrl);
-    expect(client.client_id).toMatch(/^cmdr_client_/);
-    expect(client.client_secret).toMatch(/^cmdr_secret_/);
+    expect(client.client_id).toMatch(/^agent_core_client_/);
+    expect(client.client_secret).toMatch(/^agent_core_secret_/);
     expect(client.token_endpoint_auth_method).toBe('client_secret_post');
 
     const stored = await readFile(oauthStore.filePath, 'utf8');
@@ -135,7 +135,7 @@ describe('Commander OAuth bridge', () => {
       headers: forwarded,
     });
     expect(form.status).toBe(200);
-    expect(await form.text()).toContain('Commander API key');
+    expect(await form.text()).toContain('Agent Core API key');
 
     const approved = await fetch(`${baseUrl}/oauth/authorize`, {
       method: 'POST',
@@ -148,7 +148,7 @@ describe('Commander OAuth bridge', () => {
     expect(callback.origin + callback.pathname).toBe(redirectUri);
     expect(callback.searchParams.get('state')).toBe('state-123');
     const code = callback.searchParams.get('code');
-    expect(code).toMatch(/^cmdr_code_/);
+    expect(code).toMatch(/^agent_core_code_/);
     const tokenResponse = await fetch(`${baseUrl}/oauth/token`, {
       method: 'POST',
       headers: { ...forwarded, 'content-type': 'application/x-www-form-urlencoded' },
@@ -164,8 +164,8 @@ describe('Commander OAuth bridge', () => {
     });
     expect(tokenResponse.status).toBe(200);
     const tokens = await tokenResponse.json() as Record<string, any>;
-    expect(tokens.access_token).toMatch(/^cmdr_oauth_/);
-    expect(tokens.refresh_token).toMatch(/^cmdr_refresh_/);
+    expect(tokens.access_token).toMatch(/^agent_core_oauth_/);
+    expect(tokens.refresh_token).toMatch(/^agent_core_refresh_/);
     expect(tokens.scope).toContain('mcp:tools');
 
     const initialize = await fetch(`${baseUrl}/mcp`, {
@@ -196,7 +196,7 @@ describe('Commander OAuth bridge', () => {
       },
       body: JSON.stringify({
         jsonrpc: '2.0', id: 2, method: 'tools/call',
-        params: { name: 'commander_status', arguments: {} },
+        params: { name: 'agent_core_status', arguments: {} },
       }),
     });
     const statusJson = await statusResponse.json() as Record<string, any>;
@@ -218,8 +218,8 @@ describe('Commander OAuth bridge', () => {
     });
     expect(refreshed.status).toBe(200);
     const refreshTokens = await refreshed.json() as Record<string, any>;
-    expect(refreshTokens.access_token).toMatch(/^cmdr_oauth_/);
-    expect(refreshTokens.refresh_token).toMatch(/^cmdr_refresh_/);
+    expect(refreshTokens.access_token).toMatch(/^agent_core_oauth_/);
+    expect(refreshTokens.refresh_token).toMatch(/^agent_core_refresh_/);
     expect(refreshTokens.refresh_token).not.toBe(tokens.refresh_token);
     const stored = await readFile(oauthStore.filePath, 'utf8');
     expect(stored).not.toContain(key.key);
@@ -234,7 +234,7 @@ describe('Commander OAuth bridge', () => {
       method: 'POST',
       headers: {
         ...forwarded,
-        authorization: 'Bearer cmdr_oauth_invalid',
+        authorization: 'Bearer agent_core_oauth_invalid',
       },
     });
     expect(response.status).toBe(401);

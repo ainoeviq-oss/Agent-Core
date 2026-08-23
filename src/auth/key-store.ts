@@ -10,7 +10,7 @@ import type {
   VerifiedKey,
 } from './key-types.js';
 
-const KEY_PREFIX = 'cmdr_live_';
+const KEY_PREFIX = 'agent_core_live_';
 const HASH_BYTES = 64;
 
 function deriveKey(secret: string, salt: Buffer): Promise<Buffer> {
@@ -39,7 +39,7 @@ export class FileKeyStore {
       const raw = await readFile(this.filePath, 'utf8');
       const parsed = JSON.parse(raw) as StoredKeyFile;
       if (parsed.version !== 1 || !Array.isArray(parsed.keys)) {
-        throw new Error('Unsupported Commander key store format');
+        throw new Error('Unsupported Agent Core key store format');
       }
       return parsed;
     } catch (error) {

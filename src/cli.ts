@@ -10,10 +10,10 @@ export interface CliOptions {
 
 const USAGE = [
   'Usage:',
-  '  commander-mcp create-key <name>',
-  '  commander-mcp list-keys',
-  '  commander-mcp revoke-key <id>',
-  '  commander-mcp rotate-key <id>',
+  '  agent-core create-key <name>',
+  '  agent-core list-keys',
+  '  agent-core revoke-key <id>',
+  '  agent-core rotate-key <id>',
 ].join('\n');
 
 export async function runCli(args: string[], options: CliOptions = {}): Promise<number> {

@@ -66,7 +66,7 @@ function validRedirectUri(value: string): boolean {
 }
 
 function authorizationError(response: ServerResponse, status: number, message: string): void {
-  sendHtml(response, status, `<!doctype html><html><body><h1>Commander OAuth</h1><p>${escapeHtml(message)}</p></body></html>`);
+  sendHtml(response, status, `<!doctype html><html><body><h1>Agent Core OAuth</h1><p>${escapeHtml(message)}</p></body></html>`);
 }
 
 export class OAuthService {
@@ -204,9 +204,9 @@ export class OAuthService {
     }
     const hidden = (name: string, value: string) =>
       `<input type="hidden" name="${name}" value="${escapeHtml(value)}">`;
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Commander OAuth</title></head>
-<body><main><h1>Authorize Desktop Commander</h1>
-<p>Paste a valid Commander API key to authorize ChatGPT for this MCP server.</p>
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Agent Core OAuth</title></head>
+<body><main><h1>Authorize Agent Core</h1>
+<p>Paste a valid Agent Core API key to authorize ChatGPT for this MCP server.</p>
 <form method="post" action="/oauth/authorize">
 ${hidden('response_type', 'code')}
 ${hidden('client_id', validated.clientId)}
@@ -216,7 +216,7 @@ ${hidden('code_challenge', validated.codeChallenge)}
 ${hidden('code_challenge_method', 'S256')}
 ${hidden('resource', validated.resource)}
 ${hidden('scope', validated.scopes.join(' '))}
-<label>Commander API key <input name="api_key" type="password" autocomplete="off" required></label>
+<label>Agent Core API key <input name="api_key" type="password" autocomplete="off" required></label>
 <button type="submit">Authorize</button>
 </form></main></body></html>`;
     sendHtml(response, 200, html);
@@ -232,7 +232,7 @@ ${hidden('scope', validated.scopes.join(' '))}
     const apiKey = params.get('api_key') ?? '';
     const verified = await this.keyStore.verify(apiKey);
     if (!verified) {
-      authorizationError(response, 401, 'Commander API key is invalid or revoked.');
+      authorizationError(response, 401, 'Agent Core API key is invalid or revoked.');
       return;
     }
     const code = await this.store.issueCode({

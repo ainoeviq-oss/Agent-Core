@@ -2,11 +2,11 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const CLIENT_ID_PREFIX = 'cmdr_client_';
-const CLIENT_SECRET_PREFIX = 'cmdr_secret_';
-const CODE_PREFIX = 'cmdr_code_';
-export const ACCESS_TOKEN_PREFIX = 'cmdr_oauth_';
-const REFRESH_TOKEN_PREFIX = 'cmdr_refresh_';
+const CLIENT_ID_PREFIX = 'agent_core_client_';
+const CLIENT_SECRET_PREFIX = 'agent_core_secret_';
+const CODE_PREFIX = 'agent_core_code_';
+export const ACCESS_TOKEN_PREFIX = 'agent_core_oauth_';
+const REFRESH_TOKEN_PREFIX = 'agent_core_refresh_';
 
 export interface OAuthPrincipal {
   clientId: string;

@@ -25,13 +25,13 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-describe('Commander key CLI', () => {
+describe('Agent Core key CLI', () => {
   it('creates a key and lists only non-secret metadata', async () => {
     const harness = await cliHarness();
     expect(await harness.execute(['create-key', 'chatgpt'])).toBe(0);
 
     const created = JSON.parse(harness.stdout.at(-1)!) as { key: string; metadata: { id: string } };
-    expect(created.key).toMatch(/^cmdr_live_/);
+    expect(created.key).toMatch(/^agent_core_live_/);
 
     harness.stdout.length = 0;
     expect(await harness.execute(['list-keys'])).toBe(0);
@@ -68,7 +68,7 @@ describe('Commander key CLI', () => {
     harness.stdout.length = 0;
     expect(await harness.execute(['rotate-key', original.metadata.id])).toBe(0);
     const rotated = JSON.parse(harness.stdout.at(-1)!) as { key: string; metadata: { id: string } };
-    expect(rotated.key).toMatch(/^cmdr_live_/);
+    expect(rotated.key).toMatch(/^agent_core_live_/);
     expect(rotated.key).not.toBe(original.key);
 
     const store = new FileKeyStore(harness.dataDir);

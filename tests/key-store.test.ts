@@ -21,12 +21,12 @@ describe('FileKeyStore', () => {
     const store = await makeStore();
     const created = await store.create('integration');
 
-    expect(created.key).toMatch(/^cmdr_live_[A-Za-z0-9_-]+$/);
+    expect(created.key).toMatch(/^agent_core_live_[A-Za-z0-9_-]+$/);
     expect(created.metadata.name).toBe('integration');
 
     const persisted = await readFile(store.filePath, 'utf8');
     expect(persisted).not.toContain(created.key);
-    expect(persisted).not.toContain(created.key.slice('cmdr_live_'.length));
+    expect(persisted).not.toContain(created.key.slice('agent_core_live_'.length));
   });
 
   it('verifies valid keys and rejects invalid keys', async () => {
@@ -36,7 +36,7 @@ describe('FileKeyStore', () => {
     const verified = await store.verify(created.key);
     expect(verified?.id).toBe(created.metadata.id);
     expect(verified?.name).toBe('operator');
-    expect(await store.verify('cmdr_live_not-the-key')).toBeNull();
+    expect(await store.verify('agent_core_live_not-the-key')).toBeNull();
   });
 
   it('rejects revoked and expired keys', async () => {
