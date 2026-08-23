@@ -85,7 +85,7 @@ afterEach(async () => {
 });
 
 const CAPABILITY_TOOLS = [
-  'capability_recommend', 'capability_search', 'capability_get',
+  'capability_route', 'capability_search', 'capability_get',
   'skill_load', 'capability_dependencies', 'capability_coverage',
 ];
 
@@ -97,13 +97,20 @@ const OPERATIONAL_TOOLS = [
 ];
 
 describe('Agent Core MCP capability registry tools', () => {
-  it('discovers six read-only capability tools without losing operational tools', async () => {
+  it('discovers six capability tools without losing operational tools', async () => {
     const { baseUrl, created } = await setup();
     const tools = await listTools(baseUrl, created.key);
     const names = tools.map((tool) => tool.name);
     expect(names).toEqual(expect.arrayContaining([...OPERATIONAL_TOOLS, ...CAPABILITY_TOOLS]));
 
-    for (const name of CAPABILITY_TOOLS) {
+    const routeTool = tools.find((entry) => entry.name === 'capability_route');
+    expect(routeTool?.annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    });
+    for (const name of CAPABILITY_TOOLS.filter((entry) => entry !== 'capability_route')) {
       const tool = tools.find((entry) => entry.name === name);
       expect(tool?.annotations).toMatchObject({
         readOnlyHint: true,
@@ -124,9 +131,9 @@ describe('Agent Core MCP capability registry tools', () => {
     expect(searchBody.results[0]).toMatchObject({ id: 'cap_native', name: 'native-debugger' });
     expect(JSON.stringify(searchBody)).not.toContain('Use evidence, patch minimally');
 
-    const recommended = await call(baseUrl, created.key, 'capability_recommend', { task: 'debug a build failure' });
-    const recommendBody = JSON.parse(recommended.json.result.content[0].text);
-    expect(recommendBody.results.some((item: { id: string }) => item.id === 'cap_native')).toBe(true);
+    const routed = await call(baseUrl, created.key, 'capability_route', { task: 'debug a build failure' });
+    const routeBody = JSON.parse(routed.json.result.content[0].text);
+    expect(routeBody.recommendedCapabilities.some((item: { id: string }) => item.id === 'cap_native')).toBe(true);
 
     const got = await call(baseUrl, created.key, 'capability_get', { id: 'cap_native' });
     expect(JSON.parse(got.json.result.content[0].text)).toMatchObject({ id: 'cap_native', state: 'native_ready' });
