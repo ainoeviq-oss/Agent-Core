@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildCommanderPluginPackage } from '../dist/plugin/package-builder.js';
+import { buildAgentCorePluginPackage } from '../dist/plugin/package-builder.js';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const checkoutRoot = path.resolve(scriptDir, '..');
@@ -10,24 +10,24 @@ const commonGitDir = execFileSync(
   { encoding: 'utf8' },
 ).trim();
 const resolvedGitDir = path.resolve(checkoutRoot, commonGitDir);
-const commanderHome = path.dirname(resolvedGitDir);
+const agentCoreHome = path.dirname(resolvedGitDir);
 const capabilityDir = path.resolve(
-  process.env.COMMANDER_CAPABILITY_DIR || path.join(commanderHome, 'capabilities'),
+  process.env.AGENT_CORE_CAPABILITY_DIR || path.join(agentCoreHome, 'capabilities'),
 );
 const outputDir = path.resolve(
-  process.env.COMMANDER_PLUGIN_OUTPUT_DIR || path.join(checkoutRoot, 'plugin', 'commander', 'generated'),
+  process.env.AGENT_CORE_PLUGIN_OUTPUT_DIR || path.join(checkoutRoot, 'plugin', 'agent-core', 'generated'),
 );
 const routerSkillPath = path.join(
-  checkoutRoot, 'plugin', 'commander', 'skills', 'commander-capability-router', 'SKILL.md',
+  checkoutRoot, 'plugin', 'agent-core', 'skills', 'agent-core-capability-router', 'SKILL.md',
 );
-const result = await buildCommanderPluginPackage({
+const result = await buildAgentCorePluginPackage({
   capabilityDir,
   outputDir,
   routerSkillPath,
 });
 
 process.stdout.write(`${JSON.stringify({
-  commanderHome,
+  agentCoreHome,
   capabilityDir,
   outputDir: result.outputDir,
   nativeSkillCount: result.nativeSkillCount,

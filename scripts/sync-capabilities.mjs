@@ -15,7 +15,7 @@ const gitCommon = path.isAbsolute(gitCommonRaw)
   : path.resolve(worktreeRoot, gitCommonRaw);
 const projectRoot = path.dirname(gitCommon);
 const capabilityDir = path.resolve(
-  process.env.COMMANDER_CAPABILITY_DIR?.trim() || path.join(projectRoot, 'capabilities'),
+  process.env.AGENT_CORE_CAPABILITY_DIR?.trim() || path.join(projectRoot, 'capabilities'),
 );
 const catalogDir = path.join(capabilityDir, 'sources', 'awesome-korean-agent-skills');
 

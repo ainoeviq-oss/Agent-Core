@@ -4,12 +4,12 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CapabilityRecord } from '../src/capabilities/types.js';
 import { writeRegistryGeneration } from '../src/capabilities/registry-writer.js';
-import { buildCommanderPluginPackage } from '../src/plugin/package-builder.js';
+import { buildAgentCorePluginPackage } from '../src/plugin/package-builder.js';
 
 const roots: string[] = [];
 
 async function tempRoot() {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'commander-plugin-'));
+  const root = await mkdtemp(path.join(os.tmpdir(), 'agent-core-plugin-'));
   roots.push(root);
   return root;
 }
@@ -59,18 +59,18 @@ async function setupPackageFixture() {
   ], { catalogSha: 'fixture-sha', generatedAt: '2026-08-22T00:00:00.000Z' });
 
   const routerSkillPath = path.join(root, 'router-SKILL.md');
-  await writeFile(routerSkillPath, '# Commander Capability Router\n\nUse capability_recommend before actionable Commander work.\n', 'utf8');
+  await writeFile(routerSkillPath, '# Agent Core Capability Router\n\nUse capability_recommend before actionable Agent Core work.\n', 'utf8');
   return { root, capabilityDir, outputDir, routerSkillPath };
 }
 
-describe('Commander plugin package builder', () => {
+describe('Agent Core plugin package builder', () => {
   it('packages the router plus audited native-ready skills only', async () => {
     const { capabilityDir, outputDir, routerSkillPath } = await setupPackageFixture();
-    const result = await buildCommanderPluginPackage({ capabilityDir, outputDir, routerSkillPath });
+    const result = await buildAgentCorePluginPackage({ capabilityDir, outputDir, routerSkillPath });
     expect(result.nativeSkillCount).toBe(1);
-    expect(result.skills).toEqual(expect.arrayContaining(['commander-capability-router', 'native-skill']));
+    expect(result.skills).toEqual(expect.arrayContaining(['agent-core-capability-router', 'native-skill']));
 
-    const router = await readFile(path.join(outputDir, 'skills', 'commander-capability-router', 'SKILL.md'), 'utf8');
+    const router = await readFile(path.join(outputDir, 'skills', 'agent-core-capability-router', 'SKILL.md'), 'utf8');
     expect(router).toContain('capability_recommend');
     const native = await readFile(path.join(outputDir, 'skills', 'native-skill', 'SKILL.md'), 'utf8');
     expect(native).toContain('Audited instructions');
@@ -79,7 +79,7 @@ describe('Commander plugin package builder', () => {
 
   it('carries provenance and required license material beside each imported skill', async () => {
     const { capabilityDir, outputDir, routerSkillPath } = await setupPackageFixture();
-    await buildCommanderPluginPackage({ capabilityDir, outputDir, routerSkillPath });
+    await buildAgentCorePluginPackage({ capabilityDir, outputDir, routerSkillPath });
 
     const provenance = JSON.parse(await readFile(
       path.join(outputDir, 'skills', 'native-skill', 'PROVENANCE.json'), 'utf8',
@@ -88,13 +88,13 @@ describe('Commander plugin package builder', () => {
     const license = await readFile(path.join(outputDir, 'skills', 'native-skill', 'LICENSE'), 'utf8');
     expect(license).toContain('Apache License');
   });
-  it('documents the existing Desktop Commander app without embedding secrets or runtime caches', async () => {
+  it('documents the existing Agent Core app without embedding secrets or runtime caches', async () => {
     const { capabilityDir, outputDir, routerSkillPath } = await setupPackageFixture();
-    await buildCommanderPluginPackage({ capabilityDir, outputDir, routerSkillPath });
+    await buildAgentCorePluginPackage({ capabilityDir, outputDir, routerSkillPath });
 
-    const packageMeta = JSON.parse(await readFile(path.join(outputDir, 'commander-package.json'), 'utf8')) as Record<string, any>;
+    const packageMeta = JSON.parse(await readFile(path.join(outputDir, 'agent-core-package.json'), 'utf8')) as Record<string, any>;
     expect(packageMeta.app).toMatchObject({
-      name: 'Desktop Commander',
+      name: 'Agent Core',
       protocol: 'mcp',
       endpoint: '/mcp',
     });

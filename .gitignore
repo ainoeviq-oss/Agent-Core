@@ -11,6 +11,6 @@ coverage/
 /secrets/
 /tunnel-client/
 /capabilities/
-/plugin/commander/generated/
+/plugin/agent-core/generated/
 /Set-Tunnel-Key.bat
 /Set-Tunnel-Key.ps1

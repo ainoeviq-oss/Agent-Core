@@ -18,13 +18,13 @@ interface ProvenanceRecord {
   safetyReviewed: boolean;
 }
 
-export interface BuildCommanderPluginOptions {
+export interface BuildAgentCorePluginOptions {
   capabilityDir: string;
   outputDir: string;
   routerSkillPath: string;
 }
 
-export interface CommanderPluginBuildResult {
+export interface AgentCorePluginBuildResult {
   nativeSkillCount: number;
   skills: string[];
   outputDir: string;
@@ -98,15 +98,15 @@ async function packageSkill(
   return packageName;
 }
 
-export async function buildCommanderPluginPackage(
-  options: BuildCommanderPluginOptions,
-): Promise<CommanderPluginBuildResult> {
+export async function buildAgentCorePluginPackage(
+  options: BuildAgentCorePluginOptions,
+): Promise<AgentCorePluginBuildResult> {
   const capabilityDir = path.resolve(options.capabilityDir);
   const outputDir = path.resolve(options.outputDir);
   const routerSkillPath = path.resolve(options.routerSkillPath);
   await rm(outputDir, { recursive: true, force: true });
-  await mkdir(path.join(outputDir, 'skills', 'commander-capability-router'), { recursive: true });
-  await cp(routerSkillPath, path.join(outputDir, 'skills', 'commander-capability-router', 'SKILL.md'));
+  await mkdir(path.join(outputDir, 'skills', 'agent-core-capability-router'), { recursive: true });
+  await cp(routerSkillPath, path.join(outputDir, 'skills', 'agent-core-capability-router', 'SKILL.md'));
 
   const catalog = await loadCatalog(capabilityDir);
   const nativeRecords = catalog.records.filter((record) =>
@@ -118,24 +118,24 @@ export async function buildCommanderPluginPackage(
   }
 
   const packageMetadata = {
-    format: 'commander-plugin-source-v1',
-    name: 'Commander',
-    description: 'Capability router skills plus the existing Desktop Commander MCP app.',
+    format: 'agent-core-plugin-source-v1',
+    name: 'Agent Core',
+    description: 'Capability router skills plus the existing Agent Core MCP app.',
     app: {
-      name: 'Desktop Commander',
+      name: 'Agent Core',
       protocol: 'mcp',
       endpoint: '/mcp',
       binding: 'existing-connected-chatgpt-app',
       discovery: 'tools/list',
     },
-    skills: ['commander-capability-router', ...packagedSkills],
+    skills: ['agent-core-capability-router', ...packagedSkills],
     generatedFrom: {
       nativeReadyCount: nativeRecords.length,
       capabilityRegistry: 'local-audited-registry',
     },
   };
   await writeFile(
-    path.join(outputDir, 'commander-package.json'),
+    path.join(outputDir, 'agent-core-package.json'),
     `${JSON.stringify(packageMetadata, null, 2)}\n`,
     'utf8',
   );
