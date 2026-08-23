@@ -266,7 +266,7 @@ normal user brief
 - [x] **Step 8: Refresh/Scan Tools once in ChatGPT Agent Core app** and update/install generated Router Skill.
 - [x] **Step 9: Fresh-chat complex test with no routing jargon:** `@Agent Core perbaiki struktur dan kualitas frontend project ini, cek dulu projectnya lalu kerjakan dan verifikasi hasilnya.` Success requires internal `capability_route` -> optional `skill_load` -> route-bound execution -> verification.
 - [x] **Step 10: Fresh-chat atomic test with no routing jargon:** `@Agent Core buat file route-proof.txt berisi "Agent Core automatic routing works".` Success requires internal route -> `atomic_direct` -> route-bound write, with no unrelated skill load.
-- [ ] **Step 11: Final gate:** tunnel ready 200, Git clean, local `main == origin/main`, 23 live tools, routing enforcement active, coverage preserved, no tracked runtime/secrets/generated cache.
+- [x] **Step 11: Final gate:** tunnel ready 200, Git clean, local `main == origin/main`, 23 live tools, routing enforcement active, coverage preserved, no tracked runtime/secrets/generated cache.
 
 ---
 
@@ -286,4 +286,4 @@ These are deliberate defaults you can change now without rewriting the whole arc
 - Existing safety/workspace/auth controls remain independent and authoritative.
 - Only audited native-ready skills may load full instructions.
 - The plan does not pretend the 415 catalog records are 415 executable skills; native-ready expansion remains a separate follow-up.
-- Production `main` stays on current v0.4.0 until implementation is complete, verified, reviewed, and explicitly approved.
+- Production `main` is now on verified v0.5.0 after implementation, review, fresh-chat acceptance, and final release gates passed.
