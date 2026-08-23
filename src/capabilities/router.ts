@@ -125,7 +125,7 @@ export class CapabilityRouter {
     const recommendations = this.registry.recommend(task, context, 8);
     const topScore = recommendations[0]?.score ?? 0;
     const tier = classifyTier(task, topScore);
-    const requiredSkillLoads = requiredSkills(recommendations);
+    const requiredSkillLoads = tier === 'atomic' ? [] : requiredSkills(recommendations);
     const highImpact = tier === 'high_impact';
 
     return {

@@ -147,4 +147,16 @@ describe('CapabilityRouter', () => {
 
     expect(second).toEqual(first);
   });
+  it('never requires a skill for atomic work even when context strongly matches a native skill', async () => {
+    const router = await routerFixture();
+    const result = router.route(
+      'Create notes.txt containing hello',
+      'frontend dashboard visual hierarchy spacing React frontend workspace',
+    );
+
+    expect(result.tier).toBe('atomic');
+    expect(result.mode).toBe('atomic_direct');
+    expect(result.requiredSkillLoads).toEqual([]);
+  });
+
 });
