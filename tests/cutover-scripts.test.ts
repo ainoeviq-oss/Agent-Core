@@ -48,3 +48,28 @@ describe('Agent Core cutover utilities', () => {
     expect(oauth).toMatchObject({ clients: [], codes: [], accessTokens: [], refreshTokens: [] });
   });
 });
+
+
+describe('Agent Core capability path migration', () => {
+  it('rewrites stale absolute capability provenance paths after a root rename', async () => {
+    const target = await temp('agent-core-path-migrate-');
+    const capabilityDir = path.join(target, 'capabilities');
+    const provenanceDir = path.join(capabilityDir, 'provenance');
+    await mkdir(provenanceDir, { recursive: true });
+    const oldName = ['Com', 'mander-MCP'].join('');
+    const fromRoot = `F:\\Projects\\${oldName}`;
+    const toRoot = 'F:\\Projects\\Agent-Core';
+    const file = path.join(provenanceDir, 'sample.json');
+    await writeFile(file, JSON.stringify({
+      sourcePath: `${fromRoot}\\capabilities\\cache\\source\\SKILL.md`,
+      licensePath: `${fromRoot}\\capabilities\\cache\\source\\LICENSE`,
+    }), 'utf8');
+    const script = path.resolve('scripts/migrate-agent-core-capability-paths.mjs');
+    const run = spawnSync(process.execPath, [script, '--capability-dir', capabilityDir, '--from-root', fromRoot, '--to-root', toRoot], { encoding: 'utf8' });
+    expect(run.status, run.stderr).toBe(0);
+    const migrated = JSON.parse(await readFile(file, 'utf8')) as Record<string, string>;
+    expect(migrated.sourcePath.startsWith(toRoot)).toBe(true);
+    expect(migrated.licensePath.startsWith(toRoot)).toBe(true);
+    expect(run.stdout).not.toContain(fromRoot);
+  });
+});

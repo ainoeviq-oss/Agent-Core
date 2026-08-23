@@ -54,7 +54,11 @@ assert(initialized.json?.result?.serverInfo?.name === 'agent-core', 'unexpected 
 
 const tools = await postMcp({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
 const toolNames = tools.json?.result?.tools?.map((tool) => tool.name) ?? [];
-assert(JSON.stringify(toolNames) === JSON.stringify(['agent_core_status', 'agent_core_capabilities']), 'unexpected tool list');
+assert(toolNames.length === 23, `expected 23 tools, got ${toolNames.length}`);
+assert(toolNames.includes('agent_core_status'), 'agent_core_status missing');
+assert(toolNames.includes('agent_core_capabilities'), 'agent_core_capabilities missing');
+assert(toolNames.includes('capability_coverage'), 'capability_coverage missing');
+assert(toolNames.includes('skill_load'), 'skill_load missing');
 
 const status = await postMcp({
   jsonrpc: '2.0', id: 3, method: 'tools/call',
@@ -73,6 +77,28 @@ const capabilities = await postMcp({
 assert(capabilities.response.status === 200, 'agent_core_capabilities failed');
 assert(capabilities.json?.result?.structuredContent?.enabled?.includes('auth.api_key'), 'capability auth.api_key missing');
 
+const coverageCall = await postMcp({
+  jsonrpc: '2.0', id: 5, method: 'tools/call',
+  params: { name: 'capability_coverage', arguments: {} },
+});
+const coverage = JSON.parse(coverageCall.json.result.content[0].text);
+assert(coverage.total > 0, 'capability registry is empty');
+
+const nativeSearch = await postMcp({
+  jsonrpc: '2.0', id: 6, method: 'tools/call',
+  params: { name: 'capability_search', arguments: { query: '', state: 'native_ready', limit: 1 } },
+});
+const nativeResults = JSON.parse(nativeSearch.json.result.content[0].text).results ?? [];
+let loadedSkill = null;
+if (nativeResults.length) {
+  const loaded = await postMcp({
+    jsonrpc: '2.0', id: 7, method: 'tools/call',
+    params: { name: 'skill_load', arguments: { id: nativeResults[0].id } },
+  });
+  assert(loaded.json?.result?.isError !== true, 'native-ready skill_load failed');
+  loadedSkill = nativeResults[0].name;
+}
+
 console.log(JSON.stringify({
   health: health.status,
   unauthorized: unauthorized.response.status,
@@ -80,4 +106,7 @@ console.log(JSON.stringify({
   tools: toolNames,
   statusKeyId: status.json.result.structuredContent.key.id,
   capabilitiesStage: capabilities.json.result.structuredContent.stage,
+  coverageTotal: coverage.total,
+  nativeReady: coverage.nativeReady,
+  loadedSkill,
 }));
