@@ -11,3 +11,4 @@ coverage/
 /secrets/
 /tunnel-client/
 /capabilities/
+/plugin/commander/generated/

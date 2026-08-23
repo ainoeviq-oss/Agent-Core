@@ -1,0 +1,107 @@
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import type { CapabilityRecord } from '../src/capabilities/types.js';
+import { writeRegistryGeneration } from '../src/capabilities/registry-writer.js';
+import { buildCommanderPluginPackage } from '../src/plugin/package-builder.js';
+
+const roots: string[] = [];
+
+async function tempRoot() {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'commander-plugin-'));
+  roots.push(root);
+  return root;
+}
+
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+function record(id: string, name: string, state: CapabilityRecord['state'], nativeEligible: boolean, normalizedPath: string | null): CapabilityRecord {
+  return {
+    id, name, displayName: name, aliases: [], type: 'skill', category: 'web-frontend', categoryTitle: 'Frontend',
+    declaredPurpose: `${name} purpose`, functionalSummary: `${name} function`,
+    source: { url: `https://example.invalid/${name}`, repo: `example/${name}`, path: 'SKILL.md', sha: 'source-sha' },
+    compatibility: ['CX'], language: ['en'], triggers: [`intent:${name}`], invocation: 'auto_candidate',
+    inputsContext: ['task_context'], outputsArtifacts: [], requiredTools: ['read_file'], dependencies: [], sideEffects: [],
+    risk: 'low', license: { status: 'verified', id: 'Apache-2.0' }, state, nativeEligible, normalizedPath,
+    equivalenceGroup: null, catalogSha: 'fixture-sha', catalogFile: 'fixture.md', catalogRow: 1,
+  };
+}
+
+async function setupPackageFixture() {
+  const root = await tempRoot();
+  const capabilityDir = path.join(root, 'capabilities');
+  const outputDir = path.join(root, 'plugin-output');
+  const nativeDir = path.join(capabilityDir, 'normalized', 'skills', 'cap_native');
+  const provenanceDir = path.join(capabilityDir, 'provenance');
+  const cacheRepo = path.join(capabilityDir, 'cache', 'sources', 'repos', 'native-skill');
+  await Promise.all([
+    mkdir(nativeDir, { recursive: true }),
+    mkdir(provenanceDir, { recursive: true }),
+    mkdir(cacheRepo, { recursive: true }),
+  ]);
+  await writeFile(path.join(nativeDir, 'SKILL.md'), '# Native Skill\n\nAudited instructions.\n', 'utf8');
+  await writeFile(path.join(cacheRepo, 'LICENSE'), 'Apache License\nVersion 2.0, January 2004\n', 'utf8');
+  await writeFile(path.join(provenanceDir, 'cap_native.json'), JSON.stringify({
+    capabilityId: 'cap_native',
+    sourceRepo: 'example/native-skill',
+    sourceUrl: 'https://example.invalid/native-skill',
+    sourceCommitSha: 'source-sha',
+    licensePath: path.join(cacheRepo, 'LICENSE'),
+    license: { status: 'verified', id: 'Apache-2.0' },
+    risk: 'low', functionAnalyzed: true, safetyReviewed: true,
+  }), 'utf8');
+  await writeRegistryGeneration(capabilityDir, [
+    record('cap_native', 'native-skill', 'native_ready', true, 'normalized/skills/cap_native/SKILL.md'),
+    record('cap_cataloged', 'catalog-only', 'cataloged', false, null),
+  ], { catalogSha: 'fixture-sha', generatedAt: '2026-08-22T00:00:00.000Z' });
+
+  const routerSkillPath = path.join(root, 'router-SKILL.md');
+  await writeFile(routerSkillPath, '# Commander Capability Router\n\nUse capability_recommend before actionable Commander work.\n', 'utf8');
+  return { root, capabilityDir, outputDir, routerSkillPath };
+}
+
+describe('Commander plugin package builder', () => {
+  it('packages the router plus audited native-ready skills only', async () => {
+    const { capabilityDir, outputDir, routerSkillPath } = await setupPackageFixture();
+    const result = await buildCommanderPluginPackage({ capabilityDir, outputDir, routerSkillPath });
+    expect(result.nativeSkillCount).toBe(1);
+    expect(result.skills).toEqual(expect.arrayContaining(['commander-capability-router', 'native-skill']));
+
+    const router = await readFile(path.join(outputDir, 'skills', 'commander-capability-router', 'SKILL.md'), 'utf8');
+    expect(router).toContain('capability_recommend');
+    const native = await readFile(path.join(outputDir, 'skills', 'native-skill', 'SKILL.md'), 'utf8');
+    expect(native).toContain('Audited instructions');
+    await expect(readFile(path.join(outputDir, 'skills', 'catalog-only', 'SKILL.md'), 'utf8')).rejects.toThrow();
+  });
+
+  it('carries provenance and required license material beside each imported skill', async () => {
+    const { capabilityDir, outputDir, routerSkillPath } = await setupPackageFixture();
+    await buildCommanderPluginPackage({ capabilityDir, outputDir, routerSkillPath });
+
+    const provenance = JSON.parse(await readFile(
+      path.join(outputDir, 'skills', 'native-skill', 'PROVENANCE.json'), 'utf8',
+    )) as Record<string, unknown>;
+    expect(provenance).toMatchObject({ capabilityId: 'cap_native', sourceCommitSha: 'source-sha' });
+    const license = await readFile(path.join(outputDir, 'skills', 'native-skill', 'LICENSE'), 'utf8');
+    expect(license).toContain('Apache License');
+  });
+  it('documents the existing Desktop Commander app without embedding secrets or runtime caches', async () => {
+    const { capabilityDir, outputDir, routerSkillPath } = await setupPackageFixture();
+    await buildCommanderPluginPackage({ capabilityDir, outputDir, routerSkillPath });
+
+    const packageMeta = JSON.parse(await readFile(path.join(outputDir, 'commander-package.json'), 'utf8')) as Record<string, any>;
+    expect(packageMeta.app).toMatchObject({
+      name: 'Desktop Commander',
+      protocol: 'mcp',
+      endpoint: '/mcp',
+    });
+    const serialized = JSON.stringify(packageMeta).toLowerCase();
+    expect(serialized).not.toContain('api_key');
+    expect(serialized).not.toContain('cmdr_live_');
+    expect(serialized).not.toContain('oauth.json');
+    expect(serialized).not.toContain('control-plane-api-key');
+  });
+});

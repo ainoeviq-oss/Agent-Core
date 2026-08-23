@@ -78,3 +78,19 @@ npm run build
 ```
 
 The production launcher defaults runtime state to `runtime\data` and `runtime\logs`; both are ignored by Git. Override `COMMANDER_DATA_DIR`, `COMMANDER_LOG_DIR`, or semicolon-separated `COMMANDER_ALLOWED_ROOTS` when a different deployment scope is required.
+
+## Hybrid Capability Registry
+
+Commander indexes the local `awesome-korean-agent-skills` catalog into a deferred registry under `F:\Projects\Commander-MCP\capabilities`.
+
+Current registry primitives: `capability_recommend`, `capability_search`, `capability_get`, `skill_load`, `capability_dependencies`, and `capability_coverage`.
+
+Catalog entries stay metadata-only until selected. `skill_load` rejects anything that is not an audited `native_ready` skill. External sources must pass source resolution, license verification, function analysis, and safety review before normalization.
+
+Build the local Commander plugin source package with:
+
+```powershell
+npm run build:plugin
+```
+
+The package contains the native Commander Capability Router plus audited native-ready skills and references the already-connected Desktop Commander MCP app. Generated package output is ignored by Git; credentials, runtime OAuth state, external caches, and quarantine material are never packaged.
