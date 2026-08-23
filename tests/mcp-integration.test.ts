@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { access, mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
@@ -12,6 +13,11 @@ import { createRuntimeServices } from '../src/runtime/services.js';
 
 const roots: string[] = [];
 const servers: Server[] = [];
+const GATED_TOOLS = [
+  'list_directory', 'read_file', 'read_multiple_files', 'write_file', 'edit_file',
+  'create_directory', 'move_file', 'get_file_info', 'search_files', 'execute_command',
+  'start_process',
+] as const;
 
 async function setup() {
   const root = await mkdtemp(path.join(os.tmpdir(), 'agent-core-int-'));
@@ -27,7 +33,7 @@ async function setup() {
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   servers.push(server);
   const port = (server.address() as AddressInfo).port;
-  return { baseUrl: `http://127.0.0.1:${port}`, created };
+  return { root, baseUrl: `http://127.0.0.1:${port}`, created };
 }
 
 async function mcpRequest(baseUrl: string, key: string, body: unknown) {
@@ -43,66 +49,96 @@ async function mcpRequest(baseUrl: string, key: string, body: unknown) {
   return { response, json: await response.json() as Record<string, any> };
 }
 
+async function call(baseUrl: string, key: string, name: string, args: Record<string, unknown> = {}) {
+  return mcpRequest(baseUrl, key, {
+    jsonrpc: '2.0', id: 10, method: 'tools/call', params: { name, arguments: args },
+  });
+}
+function parsed(result: Record<string, any>) {
+  return JSON.parse(result.json.result.content[0].text) as Record<string, any>;
+}
+
+function routeErrorCode(result: Record<string, any>) {
+  return parsed(result).error?.code as string | undefined;
+}
+
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
 describe('Agent Core MCP integration', () => {
-  it('initializes as agent-core and exposes the hybrid operational and capability tools', async () => {
+  it('initializes v0.5.0 with exactly 23 automatic-routing tools and schemas', async () => {
     const { baseUrl, created } = await setup();
     const initialize = await mcpRequest(baseUrl, created.key, {
       jsonrpc: '2.0', id: 1, method: 'initialize',
       params: {
-        protocolVersion: '2025-11-25',
-        capabilities: {},
+        protocolVersion: '2025-11-25', capabilities: {},
         clientInfo: { name: 'agent-core-test', version: '1.0.0' },
       },
     });
     expect(initialize.response.status).toBe(200);
     expect(initialize.json.result.serverInfo).toMatchObject({
-      name: 'agent-core',
-      version: '0.4.0',
+      name: 'agent-core', version: '0.5.0',
     });
-
     const listed = await mcpRequest(baseUrl, created.key, {
       jsonrpc: '2.0', id: 2, method: 'tools/list', params: {},
     });
-    expect(listed.response.status).toBe(200);
-    expect(listed.json.result.tools.map((tool: { name: string }) => tool.name)).toEqual(expect.arrayContaining([
-      'agent_core_status', 'agent_core_capabilities', 'workspace_info', 'list_directory',
-      'read_file', 'write_file', 'search_files', 'execute_command', 'start_process',
-      'read_process_output', 'stop_process', 'list_processes',
-    ]));
+    const tools = listed.json.result.tools as Array<Record<string, any>>;
+    const names = tools.map((tool) => tool.name);
+    expect(names).toHaveLength(23);
+    expect(names).toContain('capability_route');
+    expect(names).not.toContain('capability_recommend');
+    for (const name of GATED_TOOLS) {
+      const tool = tools.find((entry) => entry.name === name)!;
+      expect(tool.inputSchema?.required).toContain('routeContextId');
+      expect(tool.description).toContain(
+        'Obtain routeContextId from capability_route before using this tool.',
+      );
+    }
   });
 
-  it('reports hybrid status and capabilities with deterministic structured results', async () => {
+  it('reports the automatic-routing stage and authenticated principal', async () => {
     const { baseUrl, created } = await setup();
-    const status = await mcpRequest(baseUrl, created.key, {
-      jsonrpc: '2.0', id: 3, method: 'tools/call',
-      params: { name: 'agent_core_status', arguments: {} },
-    });
+    const status = await call(baseUrl, created.key, 'agent_core_status');
     expect(status.json.result.structuredContent).toMatchObject({
-      service: 'agent-core',
-      serverName: 'agent-core',
-      version: '0.4.0',
+      service: 'agent-core', serverName: 'agent-core', version: '0.5.0',
       authentication: 'bearer-api-key',
       key: { id: created.metadata.id, name: 'integration-client' },
     });
-
-    const capabilities = await mcpRequest(baseUrl, created.key, {
-      jsonrpc: '2.0', id: 4, method: 'tools/call',
-      params: { name: 'agent_core_capabilities', arguments: {} },
-    });
+    const capabilities = await call(baseUrl, created.key, 'agent_core_capabilities');
     expect(capabilities.json.result.structuredContent).toMatchObject({
-      stage: 'v3-hybrid-capability-registry',
+      stage: 'v4-automatic-capability-routing',
       enabled: expect.arrayContaining([
-        'mcp.streamable_http', 'auth.api_key', 'auth.oauth2',
-        'tool.read_file', 'tool.write_file', 'tool.search_files', 'tool.execute_command',
-        'tool.capability_recommend', 'tool.capability_search', 'tool.skill_load',
+        'routing.capability_route', 'routing.principal_bound_context',
+        'routing.execution_gate', 'tool.capability_route', 'tool.write_file',
       ]),
-      deferred: expect.arrayContaining(['git.semantic_tools', 'gui.automation']),
     });
   });
-});
 
+  it('routes an atomic proof flow and rejects a bypass with no filesystem side effect', async () => {
+    const { root, baseUrl, created } = await setup();
+    const routed = await call(baseUrl, created.key, 'capability_route', {
+      task: 'Create a small proof file', context: `Workspace root is ${root}`,
+    });
+    const route = parsed(routed);
+    expect(route).toMatchObject({ mode: 'atomic_direct', requiredSkillLoads: [] });
+    const routeContextId = route.routeContextId as string;
+
+    const proof = path.join(root, 'route-proof.txt');
+    const written = await call(baseUrl, created.key, 'write_file', {
+      path: proof, content: 'Agent Core automatic routing works', routeContextId,
+    });
+    expect(written.json.result.isError).not.toBe(true);
+    const read = await call(baseUrl, created.key, 'read_file', { path: proof, routeContextId });
+    expect(read.json.result.content[0].text).toContain('Agent Core automatic routing works');
+
+    const bypassPath = path.join(root, `bypass-${randomUUID()}.txt`);
+    const bypass = await call(baseUrl, created.key, 'write_file', {
+      path: bypassPath, content: 'must not exist', routeContextId: randomUUID(),
+    });
+    expect(bypass.json.result.isError).toBe(true);
+    expect(routeErrorCode(bypass)).toBe('ROUTE_NOT_FOUND');
+    await expect(access(bypassPath)).rejects.toThrow();
+  });
+});
