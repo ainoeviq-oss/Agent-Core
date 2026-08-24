@@ -83,3 +83,37 @@ describe('Agent Core key CLI', () => {
     expect(harness.stderr.join('\n')).toContain('Usage:');
   });
 });
+
+describe('Agent Core OAuth reset CLI', () => {
+  it('resets grants from the canonical data directory and imports legacy clients', async () => {
+    const harness = await cliHarness();
+    const { FileOAuthStore } = await import('../src/oauth/store.js');
+    const keyStore = new FileKeyStore(harness.dataDir);
+    const key = await keyStore.create('custom-local-cli');
+    const activeStore = new FileOAuthStore(harness.dataDir);
+    const activeClient = await activeStore.registerClient({
+      clientName: 'Existing', redirectUris: ['https://chatgpt.com/connector/oauth/existing'],
+      grantTypes: ['authorization_code', 'refresh_token'], responseTypes: ['code'],
+      tokenEndpointAuthMethod: 'client_secret_post',
+    });
+    const tokens = await activeStore.issueTokens({
+      clientId: activeClient.client_id, resource: 'https://example.test/mcp', scopes: ['mcp:tools'],
+      keyId: key.metadata.id, keyName: key.metadata.name,
+    });
+    const legacyDir = path.join(path.dirname(harness.dataDir), 'data-current');
+    const legacyStore = new FileOAuthStore(legacyDir);
+    const legacyClient = await legacyStore.registerClient({
+      clientName: 'ChatGPT', redirectUris: ['https://chatgpt.com/connector/oauth/QTOb4VcHdCsW'],
+      grantTypes: ['authorization_code', 'refresh_token'], responseTypes: ['code'],
+      tokenEndpointAuthMethod: 'client_secret_post',
+    });
+
+    harness.stdout.length = 0;
+    expect(await harness.execute(['reset-oauth', legacyDir])).toBe(0);
+    const result = JSON.parse(harness.stdout.at(-1)!);
+    expect(result).toMatchObject({ clientsImported: 1, grantsCleared: true });
+    expect(await activeStore.getClient(legacyClient.client_id)).not.toBeNull();
+    expect(await activeStore.verifyAccessToken(tokens.accessToken)).toBeNull();
+    expect((await keyStore.verify(key.key))?.id).toBe(key.metadata.id);
+  });
+});

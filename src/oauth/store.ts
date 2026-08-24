@@ -1,6 +1,7 @@
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+﻿import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { persistSerializedFile } from '../runtime/persistent-file.js';
 
 const CLIENT_ID_PREFIX = 'agent_core_client_';
 const CLIENT_SECRET_PREFIX = 'agent_core_secret_';
@@ -69,6 +70,17 @@ export interface PublicClient {
   clientId: string;
   redirectUris: string[];
 }
+
+export interface OAuthResetOptions {
+  importClientStores?: FileOAuthStore[];
+}
+
+export interface OAuthResetResult {
+  backupPath: string | null;
+  clientsPreserved: number;
+  clientsImported: number;
+  grantsCleared: true;
+}
 function hashSecret(secret: string): string {
   return createHash('sha256').update(secret).digest('base64');
 }
@@ -112,10 +124,9 @@ export class FileOAuthStore {
   private async save(file: OAuthFile): Promise<void> {
     await mkdir(this.dataDir, { recursive: true });
     const temporary = `${this.filePath}.${process.pid}.${randomUUID()}.tmp`;
-    await writeFile(temporary, `${JSON.stringify(file, null, 2)}\n`, {
-      encoding: 'utf8', mode: 0o600,
-    });
-    await rename(temporary, this.filePath);
+    const serialized = `${JSON.stringify(file, null, 2)}\n`;
+    await writeFile(temporary, serialized, { encoding: 'utf8', mode: 0o600 });
+    await persistSerializedFile(temporary, this.filePath, serialized);
   }
 
   async registerClient(input: {
@@ -264,4 +275,53 @@ export class FileOAuthStore {
       keyName: record.keyName,
     };
   }
+
+  async resetAuthorizationState(options: OAuthResetOptions = {}): Promise<OAuthResetResult> {
+    const current = await this.load();
+    let backupPath: string | null = null;
+    try {
+      await mkdir(this.dataDir, { recursive: true });
+      backupPath = path.join(this.dataDir, `oauth.backup-${Date.now()}-${randomUUID()}.json`);
+      await copyFile(this.filePath, backupPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      backupPath = null;
+    }
+
+    const clients = new Map(current.clients.map((client) => [client.clientId, client]));
+    let clientsImported = 0;
+    for (const source of options.importClientStores ?? []) {
+      if (path.resolve(source.filePath) === path.resolve(this.filePath)) continue;
+      const sourceFile = await source.load();
+      for (const client of sourceFile.clients) {
+        if (clients.has(client.clientId)) continue;
+        clients.set(client.clientId, {
+          ...client,
+          redirectUris: [...client.redirectUris],
+          grantTypes: [...client.grantTypes],
+          responseTypes: [...client.responseTypes],
+        });
+        clientsImported += 1;
+      }
+    }
+
+    const resetFile: OAuthFile = {
+      version: 1,
+      clients: [...clients.values()],
+      codes: [],
+      accessTokens: [],
+      refreshTokens: [],
+    };
+    await writeFile(this.filePath, `${JSON.stringify(resetFile, null, 2)}\n`, {
+      encoding: 'utf8', mode: 0o600,
+    });
+    return {
+      backupPath,
+      clientsPreserved: current.clients.length,
+      clientsImported,
+      grantsCleared: true,
+    };
+  }
+
 }
+

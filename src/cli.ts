@@ -1,6 +1,8 @@
+import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { FileKeyStore } from './auth/key-store.js';
 import { loadConfig } from './config.js';
+import { FileOAuthStore } from './oauth/store.js';
 
 export interface CliOptions {
   dataDir?: string;
@@ -14,6 +16,7 @@ const USAGE = [
   '  agent-core list-keys',
   '  agent-core revoke-key <id>',
   '  agent-core rotate-key <id>',
+  '  agent-core reset-oauth [legacy-data-dir]',
 ].join('\n');
 
 export async function runCli(args: string[], options: CliOptions = {}): Promise<number> {
@@ -49,6 +52,15 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
         if (!value) return usageError(stderr);
         const rotated = await store.rotate(value);
         stdout(JSON.stringify(rotated, null, 2));
+        return 0;
+      }
+      case 'reset-oauth': {
+        const oauthStore = new FileOAuthStore(dataDir);
+        const importClientStores = value
+          ? [new FileOAuthStore(path.resolve(value))]
+          : [];
+        const result = await oauthStore.resetAuthorizationState({ importClientStores });
+        stdout(JSON.stringify(result, null, 2));
         return 0;
       }
       default:

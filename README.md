@@ -1,4 +1,4 @@
-# Agent Core MCP
+﻿# Agent Core MCP
 
 Agent Core MCP is a Windows-hosted custom MCP gateway that provides a stable foundation for Agent-Core-style capabilities in a different controlled scope.
 
@@ -11,15 +11,32 @@ V2 exposes a guarded operational toolset for filesystem, search, PowerShell exec
 - Authentication: `Authorization: Bearer agent_core_live_...`
 - Server identity: `agent-core`
 
-## Install
+## Start Agent Core
 
-```powershell
-cd F:\Projects\Agent-Core
-npm install
-npm run build
+For normal use there is one public launcher:
+
+```text
+Start-Agent-Core.bat
 ```
 
-Or double-click `Start-Agent-Core.bat`. The launcher installs dependencies when missing, builds, and starts the server.
+Double-click it from the Agent Core root. It resolves the current project location, discovers Node.js and the tunnel client, installs dependencies when missing, builds the runtime, performs a safe controlled takeover of matching live services, then starts the tray manager in the background. The tray manager owns the MCP server, Secure MCP Tunnel, health checks, watchdog recovery, restart actions, OAuth re-auth/reset, and optional Windows autostart.
+
+You do **not** need to launch the VBS, PowerShell tray script, or tray installer separately; those files are internal implementation helpers.
+
+### Moving the Agent Core folder
+
+Agent Core does not depend on a fixed `F:\Projects\Agent-Core` path. To relocate it safely: exit Agent Core from the tray, move the complete `Agent-Core` folder, then run `Start-Agent-Core.bat` once from the new location. Root-derived runtime/data/log/capability/tunnel-profile paths are rebound automatically. If autostart is enabled, its stable LocalAppData locator is refreshed to the new root.
+
+### Tray controls
+
+```text
+Exit temporarily: tray menu -> Exit Agent Core
+Restart:          tray menu -> Restart All
+OAuth re-auth:     tray menu -> Reset OAuth / Re-auth
+Autostart:         tray menu -> Start with Windows: On/Off
+```
+
+`Exit Agent Core` stops only identity-validated Agent Core/tunnel processes owned by the tray manager. It preserves runtime data, logs, capabilities, tunnel profile, OAuth/key state, and secrets.
 
 ## Create an API Key
 

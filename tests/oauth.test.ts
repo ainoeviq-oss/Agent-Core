@@ -244,3 +244,57 @@ describe('Agent Core OAuth bridge', () => {
     expect(response.headers.get('www-authenticate')).toContain('scope="mcp:tools"');
   });
 });
+
+describe('Agent Core OAuth authorization-state reset', () => {
+  it('imports legacy client registrations, clears grants, and preserves custom Agent Core keys', async () => {
+    const { baseUrl, keyStore, oauthStore, externalBase } = await setup();
+    const key = await keyStore.create('custom-agent-core-local');
+    const existingClient = await oauthStore.registerClient({
+      clientName: 'Existing Client',
+      redirectUris: ['https://chatgpt.com/connector/oauth/existing'],
+      grantTypes: ['authorization_code', 'refresh_token'],
+      responseTypes: ['code'],
+      tokenEndpointAuthMethod: 'client_secret_post',
+    });
+    const oldTokens = await oauthStore.issueTokens({
+      clientId: existingClient.client_id,
+      resource: `${externalBase}/mcp`,
+      scopes: ['mcp:tools'],
+      keyId: key.metadata.id,
+      keyName: key.metadata.name,
+    });
+
+    const legacyDir = path.join(path.dirname(path.dirname(oauthStore.filePath)), 'data-current');
+    const legacyStore = new FileOAuthStore(legacyDir);
+    const legacyClient = await legacyStore.registerClient({
+      clientName: 'ChatGPT',
+      redirectUris: ['https://chatgpt.com/connector/oauth/QTOb4VcHdCsW'],
+      grantTypes: ['authorization_code', 'refresh_token'],
+      responseTypes: ['code'],
+      tokenEndpointAuthMethod: 'client_secret_post',
+    });
+    const authorize = new URLSearchParams({
+      response_type: 'code',
+      client_id: legacyClient.client_id,
+      redirect_uri: legacyClient.redirect_uris[0]!,
+      state: 'reset-state',
+      code_challenge: pkce('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~reset'),
+      code_challenge_method: 'S256',
+      resource: `${externalBase}/mcp`,
+      scope: 'mcp:tools',
+    });
+
+    expect((await fetch(`${baseUrl}/oauth/authorize?${authorize}`, { headers: forwarded })).status).toBe(400);
+    const reset = await oauthStore.resetAuthorizationState({ importClientStores: [legacyStore] });
+    expect(reset.backupPath).toBeTruthy();
+    expect(reset.clientsImported).toBe(1);
+    expect(await oauthStore.getClient(existingClient.client_id)).not.toBeNull();
+    expect(await oauthStore.getClient(legacyClient.client_id)).not.toBeNull();
+    expect(await oauthStore.verifyAccessToken(oldTokens.accessToken)).toBeNull();
+    expect((await keyStore.verify(key.key))?.id).toBe(key.metadata.id);
+
+    const after = await fetch(`${baseUrl}/oauth/authorize?${authorize}`, { headers: forwarded });
+    expect(after.status).toBe(200);
+    expect(await after.text()).toContain('Agent Core API key');
+  });
+});

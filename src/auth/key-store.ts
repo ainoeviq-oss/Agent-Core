@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { persistSerializedFile } from '../runtime/persistent-file.js';
 import type {
   CreatedKey,
   CreateKeyOptions,
@@ -53,8 +54,9 @@ export class FileKeyStore {
   private async save(file: StoredKeyFile): Promise<void> {
     await mkdir(this.dataDir, { recursive: true });
     const temporaryPath = `${this.filePath}.${process.pid}.${randomUUID()}.tmp`;
-    await writeFile(temporaryPath, `${JSON.stringify(file, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
-    await rename(temporaryPath, this.filePath);
+    const serialized = `${JSON.stringify(file, null, 2)}\n`;
+    await writeFile(temporaryPath, serialized, { encoding: 'utf8', mode: 0o600 });
+    await persistSerializedFile(temporaryPath, this.filePath, serialized);
   }
 
   async create(name: string, options: CreateKeyOptions = {}): Promise<CreatedKey> {
@@ -132,3 +134,4 @@ export class FileKeyStore {
 }
 
 export { KEY_PREFIX };
+
