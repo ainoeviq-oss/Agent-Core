@@ -14,7 +14,7 @@
     "check:brand": "node scripts/check-agent-core-brand.mjs"
   },
   "engines": {
-    "node": ">=24"
+    "node": ">=24.15.0"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
