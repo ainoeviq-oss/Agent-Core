@@ -45,7 +45,10 @@ function textBody(result: Record<string, any>) {
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
-  await Promise.all(runtimes.splice(0).map((runtime) => runtime.memory.close()));
+  await Promise.all(runtimes.splice(0).map(async (runtime) => {
+    await runtime.execution.close().catch(() => undefined);
+    await runtime.memory.close().catch(() => undefined);
+  }));
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -165,6 +168,7 @@ describe('memory-aware route context', () => {
     expect(textBody(write).error.code).toBe('ROUTE_MEMORY_GUARDRAIL_BLOCKED');
     await expect(access(target)).rejects.toThrow();
 
+    await runtime.execution.close();
     await runtime.memory.close();
   });
 

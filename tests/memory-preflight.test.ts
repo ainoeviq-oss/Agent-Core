@@ -105,6 +105,7 @@ describe('route-time deterministic memory preflight service', () => {
     expect(second.recalled.map((item) => item.memoryId)).toEqual(first.recalled.map((item) => item.memoryId));
     expect(second.snapshotHash).toBe(first.snapshotHash);
 
+    await runtime.execution.close();
     await runtime.memory.close();
     await runtime.memory.close();
   });
@@ -132,6 +133,7 @@ describe('route-time deterministic memory preflight service', () => {
     expect(result.openConflicts).toEqual([]);
     expect(result.priorFailures).toEqual([]);
     expect(result.relatedDecisions).toEqual([]);
+    await runtime.execution.close();
     await runtime.memory.close();
   });
 });

@@ -95,6 +95,7 @@ async function checkpoint(
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
   await Promise.all(runtimes.splice(0).map(async (runtime) => {
+    try { await runtime.execution.close(); } catch {}
     try { await runtime.memory.close(); } catch {}
   }));
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -164,6 +165,7 @@ describe('cross-session local continuity acceptance', () => {
     const taskBefore = await f.runtime.memory.getContinuityTask(f.scopeA, original.continuityTaskId);
     expect(taskBefore?.lastCheckpointId).toBe(closed.checkpointId);
 
+    await f.runtime.execution.close();
     await f.runtime.memory.close();
     const reopened = createRuntimeServices([f.root], path.join(f.root, 'capabilities'), undefined, f.memoryConfig);
     runtimes.push(reopened);

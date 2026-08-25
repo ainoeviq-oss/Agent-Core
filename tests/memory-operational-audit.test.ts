@@ -78,7 +78,10 @@ function readEvents(dbPath: string) {
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
-  await Promise.all(runtimes.splice(0).map((runtime) => runtime.memory.close()));
+  await Promise.all(runtimes.splice(0).map(async (runtime) => {
+    await runtime.execution.close().catch(() => undefined);
+    await runtime.memory.close().catch(() => undefined);
+  }));
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -102,6 +105,7 @@ describe('automatic operational evidence capture', () => {
     expect(visible.stdout).toContain(secret);
     expect(Object.keys(visible).sort()).toEqual(['exitCode', 'outputTruncated', 'stderr', 'stdout', 'timedOut'].sort());
 
+    await f.runtime.execution.close();
     await f.runtime.memory.close();
     const events = readEvents(f.dbPath).filter((event) => String(event.event_type).startsWith('memory.operation_'));
     expect(events.map((event) => event.event_type)).toEqual([
@@ -171,6 +175,7 @@ describe('automatic operational evidence capture', () => {
     });
     expect(rejectedFailure.hits.some((hit) => hit.kind === 'failure' && hit.valueText.includes('ROUTE_MEMORY_GUARDRAIL_BLOCKED'))).toBe(true);
 
+    await f.runtime.execution.close();
     await f.runtime.memory.close();
     const operationTypes = readEvents(f.dbPath)
       .map((event) => String(event.event_type))
@@ -218,6 +223,7 @@ describe('automatic operational evidence capture', () => {
     expect(ownerStop.result.isError).not.toBe(true);
     expect(body(ownerStop).stopped).toBe(true);
 
+    await f.runtime.execution.close();
     await f.runtime.memory.close();
     const lifecycle = readEvents(f.dbPath).filter((event) => [
       'memory.operation_observed',

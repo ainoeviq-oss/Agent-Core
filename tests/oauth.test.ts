@@ -16,6 +16,7 @@ import { createRuntimeServices } from '../src/runtime/services.js';
 
 const roots: string[] = [];
 const servers: Server[] = [];
+const runtimes: Array<ReturnType<typeof createRuntimeServices>> = [];
 
 function pkce(verifier: string): string {
   return createHash('sha256').update(verifier).digest('base64url');
@@ -30,6 +31,7 @@ async function setup() {
   const oauthService = new OAuthService(keyStore, oauthStore);
   const baseMemory = loadConfig({}, root).memory;
   const runtime = createRuntimeServices([root], path.join(root, 'capabilities'), undefined, { ...baseMemory, enabled: false });
+  runtimes.push(runtime);
   const app = createHttpHandler({
     keyStore,
     oauthService,
@@ -73,6 +75,10 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => {
     server.close(() => resolve());
   })));
+  await Promise.all(runtimes.splice(0).map(async (runtime) => {
+    await runtime.execution.close().catch(() => undefined);
+    await runtime.memory.close().catch(() => undefined);
+  }));
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
