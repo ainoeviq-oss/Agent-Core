@@ -264,6 +264,30 @@ export class ContinuityStore {
     const inputHash = hash({ task: normalizedTask, context: normalizedContext ?? null, capture: normalizedCapture });
     const operations: MemoryWorkerSqlOperation[] = [];
 
+    if (!createTask) {
+      const abandonedTurns = await this.client.query<{ id: string }>(
+        `SELECT id FROM continuity_turns
+          WHERE principal_id = ? AND IFNULL(project_id, '') = ? AND task_id = ? AND state = 'open'
+          ORDER BY created_at ASC, id COLLATE BINARY`,
+        [scope.principalId, scopeProject(scope), taskId],
+      );
+      for (const abandoned of abandonedTurns) {
+        operations.push({
+          kind: 'run',
+          sql: `UPDATE continuity_turns SET state = 'interrupted', closed_at = ?
+                WHERE id = ? AND principal_id = ? AND IFNULL(project_id, '') = ? AND state = 'open'`,
+          params: [now, abandoned.id, scope.principalId, scopeProject(scope)],
+        });
+        operations.push(eventOperation(scope, 'continuity.turn_interrupted', abandoned.id, 'continuity turn interrupted by resume', {
+          turnId: abandoned.id,
+          taskId,
+          replacementTurnId: turnId,
+          routeContextId: route,
+          reason: 'resumed_by_new_turn',
+        }, now));
+      }
+    }
+
     if (createTask) {
       operations.push({
         kind: 'run',

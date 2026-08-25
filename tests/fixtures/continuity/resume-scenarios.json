@@ -1,0 +1,9 @@
+[
+  {"id":"A","name":"completed-and-deferred-state-survives-fresh-route"},
+  {"id":"B","name":"ordered-frontier-survives-fresh-route"},
+  {"id":"C","name":"task-checkpoint-frontier-survive-memory-runtime-restart"},
+  {"id":"D","name":"unclosed-turn-becomes-interrupted-on-resume-never-completed"},
+  {"id":"E","name":"same-principal-different-projects-remain-isolated"},
+  {"id":"F","name":"same-project-different-principals-remain-isolated"},
+  {"id":"G","name":"old-memory-chatter-does-not-displace-continuity-state"}
+]
