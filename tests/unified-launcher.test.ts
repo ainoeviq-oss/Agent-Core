@@ -68,9 +68,19 @@ describe('Agent Core unified launcher', () => {
 
 describe('Agent Core portable tunnel profile', () => {
   it('keeps tunnel secret references portable across project moves', () => {
-    const profile = readFileSync(path.join(repoRoot, 'tunnel-client', 'agent-core.yaml'), 'utf8');
-    expect(profile).toContain('file:secrets/control-plane-api-key-restored.txt');
-    expect(profile).not.toMatch(/file:[A-Z]:[\\/]/i);
+    const templatePath = path.join(repoRoot, 'tunnel-client', 'agent-core.example.yaml');
+    expect(existsSync(templatePath)).toBe(true);
+
+    const profiles = [readFileSync(templatePath, 'utf8')];
+    const operatorProfilePath = path.join(repoRoot, 'tunnel-client', 'agent-core.yaml');
+    if (existsSync(operatorProfilePath)) {
+      profiles.push(readFileSync(operatorProfilePath, 'utf8'));
+    }
+
+    for (const profile of profiles) {
+      expect(profile).toContain('file:secrets/control-plane-api-key-restored.txt');
+      expect(profile).not.toMatch(/file:[A-Z]:[\\/]/i);
+    }
   });
 });
 

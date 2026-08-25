@@ -1,0 +1,19 @@
+# Non-secret portable example for the operator-owned tunnel profile.
+# Copy this file to agent-core.yaml, replace the placeholders, and keep
+# agent-core.yaml untracked. The control-plane credential stays in secrets/.
+config_version: 1
+control_plane:
+  base_url: "<control-plane-base-url>"
+  tunnel_id: "<tunnel-id>"
+  api_key: "file:secrets/control-plane-api-key-restored.txt"
+health:
+  listen_addr: "127.0.0.1:8787"
+admin_ui:
+  open_browser: false
+log:
+  level: "info"
+  format: "text"
+mcp:
+  server_urls:
+    - channel: "agent-core"
+      url: "http://127.0.0.1:8765/mcp"

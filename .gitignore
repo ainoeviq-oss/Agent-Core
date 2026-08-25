@@ -9,7 +9,8 @@ coverage/
 .vitest/
 /runtime/
 /secrets/
-/tunnel-client/
+/tunnel-client/*
+!/tunnel-client/agent-core.example.yaml
 /capabilities/
 /plugin/agent-core/generated/
 /Set-Tunnel-Key.bat
