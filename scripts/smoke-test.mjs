@@ -70,7 +70,7 @@ assert(initialized.json?.result?.serverInfo?.version === '0.5.0', 'unexpected MC
 const tools = await postMcp({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
 const listedTools = tools.json?.result?.tools ?? [];
 const toolNames = listedTools.map((tool) => tool.name);
-assert(toolNames.length === 23, `expected 23 tools, got ${toolNames.length}`);
+assert(toolNames.length === 43, `expected 43 tools, got ${toolNames.length}`);
 assert(toolNames.includes('capability_route'), 'capability_route missing');
 assert(!toolNames.includes('capability_recommend'), 'capability_recommend must be absent');
 assert(toolNames.includes('capability_coverage'), 'capability_coverage missing');

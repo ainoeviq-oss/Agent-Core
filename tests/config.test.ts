@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.js';
 
 describe('loadConfig', () => {
-  it('uses local-only network, project-local storage, and development-safe execution defaults', () => {
+  it('uses local-only network, project-local storage, and production-ready execution defaults', () => {
     const baseDir = path.resolve('F:\\Projects\\Agent-Core');
     const config = loadConfig({}, baseDir);
 
@@ -14,7 +14,7 @@ describe('loadConfig', () => {
     expect(config.capabilityDir).toBe(path.resolve(baseDir, 'capabilities'));
     expect(config.allowedRoots).toEqual([baseDir]);
     expect(config.execution).toEqual({
-      enabled: false,
+      enabled: true,
       dbPath: path.join(baseDir, 'runtime', 'execution', 'agent-core-execution.sqlite'),
       logRoot: path.join(baseDir, 'runtime', 'execution', 'runs'),
       maxConcurrency: 4,

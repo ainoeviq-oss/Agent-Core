@@ -6,10 +6,10 @@ It is designed to make concurrency, dependencies, retries, wake behavior, restar
 
 ## Rollout state
 
-The execution fabric is production-gated by Tasks 19-21, but its configuration default remains disabled until the staged live rollout in Task 22.
+The execution fabric passed the Tasks 19-21 production gates and the Task 22 Stage A/B live canaries. Stage C makes execution enabled by default for normal Agent Core startup while preserving an explicit diagnostic disable override.
 
 ```text
-AGENT_CORE_EXECUTION_ENABLED=false   # current pre-rollout default
+AGENT_CORE_EXECUTION_ENABLED=true    # production default after Task 22 Stage B live canary
 ```
 
 The v5 capability stage means the execution surface and behavior contract are production-ready; it does not bypass the staged live enablement/canary procedure.
@@ -204,7 +204,7 @@ To remove the temporary override:
 Remove-Item Env:AGENT_CORE_EXECUTION_ENABLED -ErrorAction SilentlyContinue
 ```
 
-Then start through the normal launcher/configuration. Task 22 controls when normal live operation changes the execution feature flag.
+Then start through the normal launcher/configuration. Normal operation now defaults execution on; set `AGENT_CORE_EXECUTION_ENABLED=false` only as an explicit diagnostic or rollback override.
 
 ## Performance gates
 

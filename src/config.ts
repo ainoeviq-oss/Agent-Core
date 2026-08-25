@@ -123,8 +123,8 @@ export function loadConfig(env: Env = process.env, baseDir = process.cwd()): App
   }
 
   const execution: ExecutionConfig = {
-    // Development default remains off until the staged live rollout enables it.
-    enabled: parseBoolean(env.AGENT_CORE_EXECUTION_ENABLED, false),
+    // Production default is enabled after the staged Task 22 live canary; operators can still disable it explicitly.
+    enabled: parseBoolean(env.AGENT_CORE_EXECUTION_ENABLED, true),
     dbPath: path.resolve(env.AGENT_CORE_EXECUTION_DB_PATH?.trim() || path.join(baseDir, 'runtime', 'execution', 'agent-core-execution.sqlite')),
     logRoot: path.resolve(env.AGENT_CORE_EXECUTION_LOG_ROOT?.trim() || path.join(baseDir, 'runtime', 'execution', 'runs')),
     maxConcurrency: parsePositiveInteger(env.AGENT_CORE_EXECUTION_MAX_CONCURRENCY, 4, 'AGENT_CORE_EXECUTION_MAX_CONCURRENCY'),

@@ -10,10 +10,11 @@ import { loadConfig } from '../src/config.js';
 import { createHttpHandler } from '../src/http/app.js';
 import { FileAuditLogger } from '../src/logging/audit-log.js';
 import { createMcpHttpHandler } from '../src/mcp/handler.js';
-import { createRuntimeServices } from '../src/runtime/services.js';
+import { createRuntimeServices, type RuntimeServices } from '../src/runtime/services.js';
 
 const roots: string[] = [];
 const servers: Server[] = [];
+const runtimes: RuntimeServices[] = [];
 const GATED_TOOLS = [
   'list_directory', 'read_file', 'read_multiple_files', 'write_file', 'edit_file',
   'create_directory', 'move_file', 'get_file_info', 'search_files', 'execute_command',
@@ -30,6 +31,7 @@ async function setup() {
     ...baseMemory,
     enabled: false,
   });
+  runtimes.push(runtime);
   const app = createHttpHandler({
     keyStore,
     auditLogger: new FileAuditLogger(path.join(root, 'logs')),
@@ -70,6 +72,10 @@ function routeErrorCode(result: Record<string, any>) {
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
+  await Promise.all(runtimes.splice(0).map(async (runtime) => {
+    await runtime.execution.close().catch(() => undefined);
+    await runtime.memory.close().catch(() => undefined);
+  }));
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
