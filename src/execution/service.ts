@@ -11,6 +11,12 @@ import {
   type ExecutionRunRecord,
 } from './store.js';
 import type { ExecutionScope } from './types.js';
+import {
+  ExecutionEventJournal,
+  ExecutionWakeCoordinator,
+  type ExecutionEventFilter,
+  type ExecutionEventRecord,
+} from './wake.js';
 
 export interface CreateExecutionGraphInput {
   objective: string;
@@ -25,13 +31,24 @@ export interface ExecutionRunView extends ExecutionRunRecord {
   nodes: ExecutionNodeRecord[];
 }
 
+export interface ExecutionWaitResult {
+  event: ExecutionEventRecord | null;
+  timedOut: boolean;
+  lastEventSequence: number;
+  state: ExecutionRunView;
+}
+
 export interface ExecutionServiceDependencies {
   store?: ExecutionStore;
   runner?: ExecutionRunnerLike;
+  wake?: ExecutionWakeCoordinator;
+  journal?: ExecutionEventJournal;
 }
 
 export class ExecutionService {
   readonly store: ExecutionStore;
+  readonly wake: ExecutionWakeCoordinator;
+  readonly journal: ExecutionEventJournal;
   readonly scheduler: ExecutionScheduler;
   private opened = false;
   private closed = false;
@@ -42,8 +59,10 @@ export class ExecutionService {
     dependencies: ExecutionServiceDependencies = {},
   ) {
     this.store = dependencies.store ?? new ExecutionStore();
+    this.wake = dependencies.wake ?? new ExecutionWakeCoordinator(this.store);
+    this.journal = dependencies.journal ?? new ExecutionEventJournal(this.store, this.wake);
     const runner = dependencies.runner ?? new ExecutionCommandRunner(new ExecutionLogStore(config.logRoot));
-    this.scheduler = new ExecutionScheduler(this.store, runner, { logRoot: config.logRoot });
+    this.scheduler = new ExecutionScheduler(this.store, runner, { logRoot: config.logRoot, journal: this.journal });
   }
 
   async open(): Promise<void> {
@@ -73,6 +92,15 @@ export class ExecutionService {
     });
     try {
       await this.store.persistGraph(scope, run.runId, graph.nodes);
+      await this.journal.record(scope, run.runId, 'run.created', {
+        payload: { objective: run.objective, maxConcurrency: run.maxConcurrency, nodeCount: graph.nodes.length },
+      });
+      for (const node of graph.nodes) {
+        await this.journal.record(scope, run.runId, 'node.queued', {
+          nodeId: node.id,
+          payload: { dependsOn: node.dependsOn, timeoutMs: node.timeoutMs },
+        });
+      }
     } catch (error) {
       await this.store.setRunState(scope, run.runId, 'failed').catch(() => undefined);
       throw error;
@@ -102,6 +130,49 @@ export class ExecutionService {
     const view = await this.status(scope, runId);
     if (!view) throw new ExecutionStoreError('EXECUTION_RUN_NOT_FOUND', 'Execution run was not found in authenticated scope');
     return view;
+  }
+
+  async events(
+    scope: ExecutionScope,
+    runId: string,
+    afterSequence = 0,
+    filters?: ExecutionEventFilter,
+    limit = 1000,
+  ): Promise<ExecutionEventRecord[]> {
+    this.assertReady();
+    return this.store.getEvents(scope, runId, afterSequence, filters, limit);
+  }
+
+  async wait(
+    scope: ExecutionScope,
+    runId: string,
+    afterSequence: number,
+    filters: ExecutionEventFilter | undefined,
+    timeoutMs: number,
+  ): Promise<ExecutionWaitResult> {
+    this.assertReady();
+    if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > this.config.waitMaxMs) {
+      throw new Error(`EXECUTION_WAIT_TIMEOUT_INVALID:max ${this.config.waitMaxMs}`);
+    }
+    const event = await this.wake.waitForEvent(scope, runId, afterSequence, filters, timeoutMs);
+    const state = await this.status(scope, runId);
+    if (!state) throw new ExecutionStoreError('EXECUTION_RUN_NOT_FOUND', 'Execution run was not found in authenticated scope');
+    return {
+      event,
+      timedOut: event === null,
+      lastEventSequence: state.lastEventSequence,
+      state,
+    };
+  }
+
+  async recordOutputAvailable(
+    scope: ExecutionScope,
+    runId: string,
+    nodeId: string,
+    payload: Record<string, unknown> = {},
+  ): Promise<ExecutionEventRecord | null> {
+    this.assertReady();
+    return this.journal.record(scope, runId, 'node.output_available', { nodeId, payload });
   }
 
   async close(): Promise<void> {

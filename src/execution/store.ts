@@ -4,6 +4,7 @@ import type { ValidatedExecutionNode } from './dag.js';
 import type { ExecutionAttemptPaths, ExecutionResultMarker } from './log-store.js';
 import { EXECUTION_SCHEMA_SQL, EXECUTION_SCHEMA_VERSION, INITIAL_EXECUTION_MIGRATION } from './schema.js';
 import type { ExecutionAttemptState, ExecutionNodeState, ExecutionRunState, ExecutionScope } from './types.js';
+import type { ExecutionEventFilter, ExecutionEventRecord, ExecutionEventType } from './wake.js';
 import { ExecutionWorkerClient } from './worker-client.js';
 
 export class ExecutionStoreError extends Error {
@@ -627,6 +628,110 @@ export class ExecutionStore {
       nodeId ? [runId, nodeId] : [runId],
     );
     return rows.map(mapAttempt);
+  }
+
+  async appendEvent(
+    scope: ExecutionScope,
+    runId: string,
+    eventType: ExecutionEventType,
+    options: { nodeId?: string; attemptId?: string; payload?: Record<string, unknown> } = {},
+  ): Promise<ExecutionEventRecord> {
+    await this.requireRun(scope, runId);
+    const createdAt = Date.now();
+    const payloadJson = stableExecutionJson(options.payload ?? {});
+    if (payloadJson.length > 20_000) fail('EXECUTION_EVENT_PAYLOAD_TOO_LARGE', 'Execution event payload exceeds 20000 characters');
+    const results = await this.client.transaction([
+      {
+        kind: 'query',
+        mode: 'get',
+        sql: `UPDATE execution_runs
+                 SET last_event_sequence = last_event_sequence + 1, updated_at = ?
+               WHERE id = ? AND principal_id = ? AND IFNULL(project_id, '') = ?
+               RETURNING last_event_sequence`,
+        params: [createdAt, runId, scope.principalId, scopeProject(scope)],
+      },
+      {
+        kind: 'run',
+        sql: `INSERT INTO execution_events(run_id, sequence, event_type, node_id, attempt_id, payload_json, created_at)
+              SELECT id, last_event_sequence, ?, ?, ?, ?, ?
+                FROM execution_runs
+               WHERE id = ? AND principal_id = ? AND IFNULL(project_id, '') = ?`,
+        params: [
+          eventType, options.nodeId ?? null, options.attemptId ?? null, payloadJson, createdAt,
+          runId, scope.principalId, scopeProject(scope),
+        ],
+      },
+      {
+        kind: 'query',
+        mode: 'get',
+        sql: `SELECT event.run_id, event.sequence, event.event_type, event.node_id, event.attempt_id,
+                     event.payload_json, event.created_at
+                FROM execution_events AS event
+                JOIN execution_runs AS run ON run.id = event.run_id
+               WHERE event.run_id = ? AND event.sequence = run.last_event_sequence
+                 AND run.principal_id = ? AND IFNULL(run.project_id, '') = ?`,
+        params: [runId, scope.principalId, scopeProject(scope)],
+      },
+    ]);
+    const row = results[2] as Record<string, unknown> | undefined;
+    if (!row) fail('EXECUTION_EVENT_PERSIST_FAILED', 'Execution event transaction did not return a persisted event');
+    return {
+      runId: String(row.run_id),
+      sequence: Number(row.sequence),
+      eventType: String(row.event_type) as ExecutionEventType,
+      nodeId: row.node_id == null ? undefined : String(row.node_id),
+      attemptId: row.attempt_id == null ? undefined : String(row.attempt_id),
+      payload: parseObject(String(row.payload_json)) ?? {},
+      createdAt: Number(row.created_at),
+    };
+  }
+
+  async getEvents(
+    scope: ExecutionScope,
+    runId: string,
+    afterSequence = 0,
+    filters?: ExecutionEventFilter,
+    limit = 1000,
+  ): Promise<ExecutionEventRecord[]> {
+    await this.requireRun(scope, runId);
+    if (!Number.isInteger(afterSequence) || afterSequence < 0) {
+      fail('EXECUTION_EVENT_SEQUENCE_INVALID', 'afterSequence must be a non-negative integer');
+    }
+    if (!Number.isInteger(limit) || limit < 1 || limit > 5000) {
+      fail('EXECUTION_EVENT_LIMIT_INVALID', 'event limit must be between 1 and 5000');
+    }
+    const eventTypes = [...new Set(filters?.eventTypes ?? [])];
+    const nodeIds = [...new Set(filters?.nodeIds ?? [])];
+    const params: Array<string | number | null> = [runId, scope.principalId, scopeProject(scope), afterSequence];
+    let where = `event.run_id = ? AND run.principal_id = ? AND IFNULL(run.project_id, '') = ? AND event.sequence > ?`;
+    if (eventTypes.length > 0) {
+      where += ` AND event.event_type IN (${eventTypes.map(() => '?').join(',')})`;
+      params.push(...eventTypes);
+    }
+    if (nodeIds.length > 0) {
+      where += ` AND event.node_id IN (${nodeIds.map(() => '?').join(',')})`;
+      params.push(...nodeIds);
+    }
+    params.push(limit);
+    const rows = await this.client.query<Record<string, unknown>>(
+      `SELECT event.run_id, event.sequence, event.event_type, event.node_id, event.attempt_id,
+              event.payload_json, event.created_at
+         FROM execution_events AS event
+         JOIN execution_runs AS run ON run.id = event.run_id
+        WHERE ${where}
+        ORDER BY event.sequence ASC
+        LIMIT ?`,
+      params,
+    );
+    return rows.map((row) => ({
+      runId: String(row.run_id),
+      sequence: Number(row.sequence),
+      eventType: String(row.event_type) as ExecutionEventType,
+      nodeId: row.node_id == null ? undefined : String(row.node_id),
+      attemptId: row.attempt_id == null ? undefined : String(row.attempt_id),
+      payload: parseObject(String(row.payload_json)) ?? {},
+      createdAt: Number(row.created_at),
+    }));
   }
 
   async resetNodeForRetry(scope: ExecutionScope, runId: string, nodeId: string): Promise<void> {
