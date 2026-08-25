@@ -31,26 +31,38 @@ export async function startAgentCoreService(config: AppConfig = loadConfig()): P
   const oauthService = new OAuthService(keyStore, oauthStore);
   const auditLogger = new FileAuditLogger(config.logDir);
   const runtime = createRuntimeServices(config.allowedRoots, config.capabilityDir, auditLogger, config.memory);
+  // Warm the in-process memory worker during Agent Core startup. Memory status is fail-closed:
+  // an unhealthy DB degrades only DMF while OAuth/MCP and the listener continue to start.
+  await runtime.memory.status();
   const server = createServer(createHttpHandler({
     keyStore,
     oauthService,
     auditLogger,
+    healthProvider: async () => {
+      const memory = await runtime.memory.status();
+      return { memory: { ...memory, state: runtime.memory.currentState } };
+    },
     mcpHandler: createMcpHttpHandler(runtime),
   }));
 
-  await new Promise<void>((resolve, reject) => {
-    const onError = (error: Error) => {
-      server.off('listening', onListening);
-      reject(error);
-    };
-    const onListening = () => {
-      server.off('error', onError);
-      resolve();
-    };
-    server.once('error', onError);
-    server.once('listening', onListening);
-    server.listen(config.port, config.host);
-  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const onError = (error: Error) => {
+        server.off('listening', onListening);
+        reject(error);
+      };
+      const onListening = () => {
+        server.off('error', onError);
+        resolve();
+      };
+      server.once('error', onError);
+      server.once('listening', onListening);
+      server.listen(config.port, config.host);
+    });
+  } catch (error) {
+    await runtime.memory.close();
+    throw error;
+  }
 
   const address = server.address() as AddressInfo;
   return {

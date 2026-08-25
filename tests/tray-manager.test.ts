@@ -1,4 +1,4 @@
-﻿import { closeSync, openSync, readFileSync, rmSync } from 'node:fs';
+import { closeSync, openSync, readFileSync, rmSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import net from 'node:net';
@@ -212,7 +212,7 @@ async function writeFakeBundle(root: string, tunnelPort: number) {
     "import http from 'node:http';",
     "const port = Number(process.env.AGENT_CORE_PORT);",
     "http.createServer((req,res)=>{",
-    "  if (req.url === '/health') { res.writeHead(200, {'content-type':'application/json'}); return res.end(JSON.stringify({status:'ok'})); }",
+    "  if (req.url === '/health') { res.writeHead(200, {'content-type':'application/json'}); return res.end(JSON.stringify({status:'ok',memory:{enabled:true,healthy:true,state:'healthy'},memoryDbPath:process.env.AGENT_CORE_MEMORY_DB_PATH,memoryEnabled:process.env.AGENT_CORE_MEMORY_ENABLED})); }",
     "  res.writeHead(404); res.end('missing');",
     "}).listen(port, '127.0.0.1');",
     "setInterval(()=>{}, 1000);",
@@ -278,6 +278,9 @@ describe('Agent Core tray service lifecycle', () => {
     expect(JSON.parse(started.stdout.trim()).status).toBe('running');
     await waitForPort(agentCorePort);
     await waitForPort(tunnelPort);
+    const launchedHealth = await (await fetch(`http://127.0.0.1:${agentCorePort}/health`)).json() as Record<string, any>;
+    expect(launchedHealth.memoryEnabled).toBe('true');
+    expect(path.normalize(launchedHealth.memoryDbPath)).toBe(path.normalize(path.join(root, 'runtime', 'memory', 'agent-core-memory.sqlite')));
 
     const statePath = path.join(String(config.trayRuntimeDir), 'state.json');
     const state = JSON.parse(await readFile(statePath, 'utf8'));
@@ -383,7 +386,8 @@ async function startProbeServer(root: string, name: string, port: number, kind: 
     "import http from 'node:http';",
     "const port = Number(process.argv[2]); const kind = process.argv[3];",
     "http.createServer((req,res)=>{",
-    "  if (kind === 'agent-ok') { res.writeHead(200, {'content-type':'application/json'}); return res.end(JSON.stringify({status:'ok'})); }",
+    "  if (kind === 'agent-ok') { res.writeHead(200, {'content-type':'application/json'}); return res.end(JSON.stringify({status:'ok',memory:{enabled:true,healthy:true,state:'healthy'}})); }",
+    "  if (kind === 'agent-memory-degraded') { res.writeHead(200, {'content-type':'application/json'}); return res.end(JSON.stringify({status:'ok',memory:{enabled:true,healthy:false,state:'degraded'}})); }",
     "  if (kind === 'agent-malformed') { res.writeHead(200, {'content-type':'application/json'}); return res.end('{bad'); }",
     "  if (kind === 'tunnel-ok') { res.writeHead(200); return res.end('ready'); }",
     "  res.writeHead(503); res.end('unhealthy');",
@@ -406,6 +410,21 @@ describe('Agent Core tray watchdog', () => {  slowWatchdogIt('reports healthy lo
 
     const body = JSON.parse(runTray('Probe', configPath).stdout.trim());
     expect(body.agentCore.healthy).toBe(true);
+    expect(body.agentCore.memory).toBe('Healthy');
+    expect(body.tunnel.healthy).toBe(true);
+  });
+
+  slowWatchdogIt('keeps Agent Core healthy while surfacing degraded in-process memory separately', async () => {
+    const root = await tempRoot();
+    const agentCorePort = await freePort();
+    const tunnelPort = await freePort();
+    await startProbeServer(root, 'agent-health-degraded-memory', agentCorePort, 'agent-memory-degraded');
+    await startProbeServer(root, 'tunnel-health-degraded-memory', tunnelPort, 'tunnel-ok');
+    const { configPath } = await writeConfig(root, { agentCorePort, tunnelPort });
+
+    const body = JSON.parse(runTray('Probe', configPath).stdout.trim());
+    expect(body.agentCore.healthy).toBe(true);
+    expect(body.agentCore.memory).toBe('Degraded');
     expect(body.tunnel.healthy).toBe(true);
   });
 
@@ -528,6 +547,7 @@ describe('Agent Core tray UI contract', () => {
       'Start with Windows:',
       'Exit Agent Core',
     ]) expect(source).toContain(label);
+    expect(source).toContain('Memory:');
     expect(source).toContain('System.Windows.Forms.NotifyIcon');
     expect(source).toContain('System.Windows.Forms.Timer');
     expect(source).toContain('Invoke-WatchdogTick');
@@ -569,6 +589,9 @@ describe('Agent Core tray deployment defaults', () => {
     expect(source).toContain('AGENT_CORE_TUNNEL_EXE');
     expect(source).toContain('Get-PSDrive');
     expect(source).not.toContain('[IO.Path]::GetPathRoot($root)');
+    expect(source).toContain('AGENT_CORE_MEMORY_ENABLED');
+    expect(source).toContain('AGENT_CORE_MEMORY_DB_PATH');
+    expect(source).toContain("runtime\\memory\\agent-core-memory.sqlite");
   });
 });
 

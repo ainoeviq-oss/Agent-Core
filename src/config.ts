@@ -80,7 +80,7 @@ export function loadConfig(env: Env = process.env, baseDir = process.cwd()): App
   }
 
   const memory: MemoryConfig = {
-    enabled: parseBoolean(env.AGENT_CORE_MEMORY_ENABLED, false),
+    enabled: parseBoolean(env.AGENT_CORE_MEMORY_ENABLED, true),
     enforceHardGuardrails: parseBoolean(env.AGENT_CORE_MEMORY_ENFORCE_HARD_GUARDRAILS, false),
     dbPath: path.resolve(env.AGENT_CORE_MEMORY_DB_PATH?.trim() || path.join(baseDir, 'runtime', 'memory', 'agent-core-memory.sqlite')),
     seedCap: parsePositiveInteger(env.AGENT_CORE_MEMORY_SEED_CAP, 64, 'AGENT_CORE_MEMORY_SEED_CAP'),

@@ -5,6 +5,7 @@ import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FileKeyStore } from '../src/auth/key-store.js';
+import { loadConfig } from '../src/config.js';
 import type { RoutePlan } from '../src/capabilities/route-types.js';
 import type { CapabilityRecord } from '../src/capabilities/types.js';
 import { writeRegistryGeneration } from '../src/capabilities/registry-writer.js';
@@ -58,7 +59,8 @@ async function setup() {
   const keyStore = new FileKeyStore(path.join(root, 'data'));
   const principalA = await keyStore.create('principal-a');
   const principalB = await keyStore.create('principal-b');
-  const runtime = createRuntimeServices([root], capabilityDir);
+  const baseMemory = loadConfig({}, root).memory;
+  const runtime = createRuntimeServices([root], capabilityDir, undefined, { ...baseMemory, enabled: false });
   const app = createHttpHandler({
     keyStore,
     auditLogger: new FileAuditLogger(path.join(root, 'logs')),

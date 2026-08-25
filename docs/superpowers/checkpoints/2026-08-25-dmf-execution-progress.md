@@ -35,7 +35,7 @@ Execution evidence: `F:\Projects\Agent-Core\runtime\dmf-execution\logs\`
 - [x] Task 14 - Persistence, backup, recovery, and integrity
 - [x] Task 15 - Evaluation harness for awareness
 - [x] Task 16 - Performance and scale gates
-- [ ] Task 17 â€” Launcher and lifecycle integration
+- [x] Task 17 â€” Launcher and lifecycle integration
 
 ## Guardrails
 

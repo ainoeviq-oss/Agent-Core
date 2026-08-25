@@ -286,15 +286,25 @@ function Get-ProbeService {
   $port = if ($Role -eq 'agentCore') { [int]$Config.agentCorePort } else { [int]$Config.tunnelPort }
   $owner = Get-PortOwnerProcess $port
   if (-not $owner) {
-    return [pscustomobject]@{ pid = $null; identityMatch = $false; healthy = $false }
+    $missing = [ordered]@{ pid = $null; identityMatch = $false; healthy = $false }
+    if ($Role -eq 'agentCore') { $missing.memory = 'Unavailable' }
+    return [pscustomobject]$missing
   }
-  $healthy = if ($Role -eq 'agentCore') { Test-AgentCoreHealth $Config } else { Test-TunnelHealth $Config }
+  $agentHealth = $null
+  if ($Role -eq 'agentCore') {
+    $agentHealth = Get-AgentCoreHealthDetails $Config
+    $healthy = [bool]$agentHealth.healthy
+  } else {
+    $healthy = Test-TunnelHealth $Config
+  }
   $expected = Get-ServiceExpectation $Role $Config ([int]$owner.ProcessId)
-  return [pscustomobject]@{
+  $body = [ordered]@{
     pid = [int]$owner.ProcessId
     identityMatch = [bool](Test-ServiceIdentity $owner $expected)
     healthy = [bool]$healthy
   }
+  if ($Role -eq 'agentCore') { $body.memory = [string]$agentHealth.memory }
+  return [pscustomobject]$body
 }
 
 function Invoke-Probe {
@@ -369,6 +379,22 @@ function Get-ServiceStatus {
     pid = $probe.pid
     identityMatch = [bool]$probe.identityMatch
     owned = $owned
+  }
+}
+
+function Get-AgentCoreHealthDetails {
+  param($Config)
+  try {
+    $response = Invoke-RestMethod -Uri ("http://127.0.0.1:{0}/health" -f [int]$Config.agentCorePort) -TimeoutSec 2
+    $memory = 'Unknown'
+    if ($response.PSObject.Properties['memory'] -and $response.memory) {
+      if ($response.memory.enabled -eq $false) { $memory = 'Disabled' }
+      elseif ($response.memory.healthy -eq $true) { $memory = 'Healthy' }
+      else { $memory = 'Degraded' }
+    }
+    return [pscustomobject]@{ healthy = ($response.status -eq 'ok'); memory = $memory }
+  } catch {
+    return [pscustomobject]@{ healthy = $false; memory = 'Unavailable' }
   }
 }
 
@@ -450,7 +476,8 @@ function Start-AgentCoreService {
   $stderr = Join-Path $Config.trayRuntimeDir 'agent-core.stderr.log'
   $envNames = @(
     'AGENT_CORE_DATA_DIR','AGENT_CORE_LOG_DIR','AGENT_CORE_CAPABILITY_DIR',
-    'AGENT_CORE_ALLOWED_ROOTS','AGENT_CORE_HOST','AGENT_CORE_PORT'
+    'AGENT_CORE_ALLOWED_ROOTS','AGENT_CORE_HOST','AGENT_CORE_PORT',
+    'AGENT_CORE_MEMORY_ENABLED','AGENT_CORE_MEMORY_DB_PATH'
   )
   $newValues = [ordered]@{
     AGENT_CORE_DATA_DIR = Get-AgentCoreDataDir $Config
@@ -459,6 +486,8 @@ function Start-AgentCoreService {
     AGENT_CORE_ALLOWED_ROOTS = [string]$Config.root
     AGENT_CORE_HOST = '127.0.0.1'
     AGENT_CORE_PORT = [string]$Config.agentCorePort
+    AGENT_CORE_MEMORY_ENABLED = 'true'
+    AGENT_CORE_MEMORY_DB_PATH = Join-Path $Config.root 'runtime\memory\agent-core-memory.sqlite'
   }
   $oldValues = @{}
   foreach ($name in $envNames) {
@@ -919,7 +948,9 @@ function Refresh-TrayStatus {
   $tunnelStatus = Get-TrayServiceDisplayStatus 'tunnel' $Config
   $overallStatus = Get-OverallTrayStatus $Config
   $OverallItem.Text = ('Agent Core ' + [char]0x2014 + ' ' + $overallStatus)
-  $AgentItem.Text = "MCP Server: $agentStatus"
+  $agentProbe = Get-ProbeService 'agentCore' $Config
+  $memoryStatus = if ($agentProbe.PSObject.Properties['memory']) { [string]$agentProbe.memory } else { 'Unknown' }
+  $AgentItem.Text = "MCP Server: $agentStatus | Memory: $memoryStatus"
   $TunnelItem.Text = "Tunnel: $tunnelStatus"
   $AutostartItem.Text = 'Start with Windows: ' + $(if (Get-AgentCoreAutostartEnabled $Config) { 'On' } else { 'Off' })
   $NotifyIcon.Text = "Agent Core - $overallStatus"

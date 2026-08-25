@@ -6,6 +6,7 @@ import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { FileKeyStore } from '../src/auth/key-store.js';
+import { loadConfig } from '../src/config.js';
 import { createHttpHandler } from '../src/http/app.js';
 import { FileAuditLogger } from '../src/logging/audit-log.js';
 import { createMcpHttpHandler } from '../src/mcp/handler.js';
@@ -27,11 +28,13 @@ async function setup() {
   const keyStore = new FileKeyStore(dataDir);
   const oauthStore = new FileOAuthStore(dataDir);
   const oauthService = new OAuthService(keyStore, oauthStore);
+  const baseMemory = loadConfig({}, root).memory;
+  const runtime = createRuntimeServices([root], path.join(root, 'capabilities'), undefined, { ...baseMemory, enabled: false });
   const app = createHttpHandler({
     keyStore,
     oauthService,
     auditLogger: new FileAuditLogger(path.join(root, 'logs')),
-    mcpHandler: createMcpHttpHandler(createRuntimeServices([root])),
+    mcpHandler: createMcpHttpHandler(runtime),
   });
   const server = createServer(app);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));

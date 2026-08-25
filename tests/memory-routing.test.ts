@@ -237,7 +237,11 @@ describe('memory-aware route context', () => {
   it('keeps disabled memory routing behavior unchanged and reports the disabled state explicitly', async () => {
     const root = await mkdtemp(path.join(process.env.TEMP || process.env.TMP || os.tmpdir(), 'agent-core-memory-route-disabled-'));
     roots.push(root);
-    const runtime = createRuntimeServices([root], path.join(root, 'capabilities'));
+    const baseMemory = loadConfig({}, root).memory;
+    const runtime = createRuntimeServices([root], path.join(root, 'capabilities'), undefined, {
+      ...baseMemory,
+      enabled: false,
+    });
     runtimes.push(runtime);
     const keyStore = new FileKeyStore(path.join(root, 'data'));
     const principal = await keyStore.create('disabled-memory-principal');

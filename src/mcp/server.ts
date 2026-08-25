@@ -27,9 +27,26 @@ export function createAgentCoreMcpServer(key: VerifiedKey, runtime: RuntimeServi
       authentication: z.string(),
       key: z.object({ id: z.string(), name: z.string() }),
       workspaceRoots: z.array(z.string()),
+      memory: z.object({
+        enabled: z.boolean(),
+        healthy: z.boolean(),
+        state: z.string(),
+        schemaVersion: z.number(),
+        dbPath: z.string(),
+        counts: z.record(z.string(), z.number()),
+        integrity: z.string(),
+        lastIntegrityCheckAt: z.number().optional(),
+        lastSuccessfulIntegrityCheckAt: z.number().optional(),
+        lastBackupPath: z.string().optional(),
+        lastBackupAt: z.number().optional(),
+      }),
     },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   }, async () => {
+    const memoryStatus = await runtime.memory.status({
+      principalId: key.id,
+      projectId: runtime.workspace.roots[0],
+    });
     const structuredContent = {
       service: 'agent-core',
       serverName: SERVER_NAME,
@@ -38,6 +55,7 @@ export function createAgentCoreMcpServer(key: VerifiedKey, runtime: RuntimeServi
       authentication: key.authentication ?? 'bearer-api-key',
       key: { id: key.id, name: key.name },
       workspaceRoots: runtime.workspace.roots,
+      memory: { ...memoryStatus, state: runtime.memory.currentState },
     };
     return {
       content: [{ type: 'text', text: JSON.stringify(structuredContent, null, 2) }],

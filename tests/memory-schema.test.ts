@@ -25,7 +25,7 @@ describe('deterministic memory schema and public contracts', () => {
 
     const baseDir = path.resolve('F:\\Projects\\Agent-Core');
     const config = loadConfig({}, baseDir);
-    expect(config.memory.enabled).toBe(false);
+    expect(config.memory.enabled).toBe(true);
     expect(config.memory.dbPath).toBe(path.join(baseDir, 'runtime', 'memory', 'agent-core-memory.sqlite'));
     expect(config.memory.graphNodeCap).toBe(1000);
     expect(config.memory.graphEdgeCap).toBe(10_000);

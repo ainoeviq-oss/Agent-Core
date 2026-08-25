@@ -111,7 +111,11 @@ describe('route-time deterministic memory preflight service', () => {
 
   it('keeps the default disabled memory facade inert and explicit instead of fabricating recall', async () => {
     const root = path.resolve(process.env.TEMP || process.env.TMP || os.tmpdir(), 'agent-core-preflight-disabled');
-    const runtime = createRuntimeServices([root], path.join(root, 'capabilities'));
+    const baseMemory = loadConfig({}, root).memory;
+    const runtime = createRuntimeServices([root], path.join(root, 'capabilities'), undefined, {
+      ...baseMemory,
+      enabled: false,
+    });
     const status = await runtime.memory.status();
     expect(status.enabled).toBe(false);
     expect(status.healthy).toBe(false);
