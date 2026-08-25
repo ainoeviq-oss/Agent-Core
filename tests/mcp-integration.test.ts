@@ -74,7 +74,7 @@ afterEach(async () => {
 });
 
 describe('Agent Core MCP integration', () => {
-  it('initializes v0.5.0 with exactly 31 automatic-routing and memory tools and schemas', async () => {
+  it('initializes v0.5.0 with exactly 35 automatic-routing, memory, and continuity tools and schemas', async () => {
     const { baseUrl, created } = await setup();
     const initialize = await mcpRequest(baseUrl, created.key, {
       jsonrpc: '2.0', id: 1, method: 'initialize',
@@ -92,7 +92,10 @@ describe('Agent Core MCP integration', () => {
     });
     const tools = listed.json.result.tools as Array<Record<string, any>>;
     const names = tools.map((tool) => tool.name);
-    expect(names).toHaveLength(31);
+    expect(names).toHaveLength(35);
+    for (const name of ['task_checkpoint', 'continuity_status', 'continuity_get_task', 'continuity_frontier']) {
+      expect(names).toContain(name);
+    }
     expect(names).toContain('capability_route');
     expect(names).not.toContain('capability_recommend');
     for (const name of GATED_TOOLS) {

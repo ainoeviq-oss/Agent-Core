@@ -9,6 +9,7 @@ import {
 } from '../continuity/store.js';
 import type { ContinuityCapture, ContinuityCheckpointInput, ContinuityTurnState } from '../continuity/types.js';
 import { ContinuitySnapshotBuilder, type ContinuitySnapshot } from '../continuity/snapshot.js';
+import { ContinuityPromoter, type ContinuityPromotionResult } from '../continuity/promoter.js';
 import {
   createMemoryBackup,
   readLatestMemoryBackup,
@@ -155,6 +156,16 @@ export class MemoryService {
   ): Promise<ContinuityCheckpointResult> {
     const components = await this.requireComponents();
     return components.continuity.checkpoint(scope, taskId, turnId, input);
+  }
+
+  async promoteContinuityCheckpoint(
+    scope: MemoryScope,
+    taskId: string,
+    checkpointId: string,
+    input: ContinuityCheckpointInput,
+  ): Promise<ContinuityPromotionResult> {
+    const promoter = new ContinuityPromoter(this);
+    return promoter.promote(scope, taskId, checkpointId, input);
   }
 
   async closeContinuityTurn(
