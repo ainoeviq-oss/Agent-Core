@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import type { ExecutionConfig } from '../config.js';
 import type { WorkspacePolicy } from '../runtime/workspace.js';
 import { validateExecutionDag, type ExecutionNodeSpec } from './dag.js';
 import { ExecutionLogStore } from './log-store.js';
+import type { ExecutionMemoryBridge } from './memory-bridge.js';
 import { ExecutionCommandRunner } from './runner.js';
 import { ExecutionScheduler, type ExecutionRunnerLike } from './scheduler.js';
 import {
@@ -43,6 +45,7 @@ export interface ExecutionServiceDependencies {
   runner?: ExecutionRunnerLike;
   wake?: ExecutionWakeCoordinator;
   journal?: ExecutionEventJournal;
+  memoryBridge?: ExecutionMemoryBridge;
 }
 
 export class ExecutionService {
@@ -51,6 +54,8 @@ export class ExecutionService {
   readonly journal: ExecutionEventJournal;
   readonly logs: ExecutionLogStore;
   readonly scheduler: ExecutionScheduler;
+  readonly memoryBridge?: ExecutionMemoryBridge;
+  private unsubscribeBridge?: () => void;
   private opened = false;
   private closed = false;
 
@@ -63,6 +68,12 @@ export class ExecutionService {
     this.wake = dependencies.wake ?? new ExecutionWakeCoordinator(this.store);
     this.journal = dependencies.journal ?? new ExecutionEventJournal(this.store, this.wake);
     this.logs = new ExecutionLogStore(config.logRoot);
+    this.memoryBridge = dependencies.memoryBridge;
+    if (this.memoryBridge) {
+      this.unsubscribeBridge = this.journal.subscribe((scope, event) => {
+        this.memoryBridge!.dispatch(scope, event);
+      });
+    }
     const runner = dependencies.runner ?? new ExecutionCommandRunner(this.logs);
     this.scheduler = new ExecutionScheduler(this.store, runner, { logRoot: config.logRoot, journal: this.journal });
   }
@@ -87,7 +98,7 @@ export class ExecutionService {
     const graph = await validateExecutionDag(input.nodes, { workspace: this.workspace, maxNodes: this.config.maxNodes });
     const run = await this.store.createRun(scope, {
       objective: input.objective,
-      continuityTaskId: input.continuityTaskId,
+      continuityTaskId: input.continuityTaskId ?? randomUUID(),
       originRouteContextId: input.originRouteContextId,
       maxConcurrency: requestedConcurrency,
       metadata: input.metadata,
@@ -249,6 +260,9 @@ export class ExecutionService {
     this.closed = true;
     if (!this.opened) return;
     await this.scheduler.close();
+    if (this.memoryBridge) await this.memoryBridge.drain();
+    this.unsubscribeBridge?.();
+    this.unsubscribeBridge = undefined;
     await this.store.close();
   }
 

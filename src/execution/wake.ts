@@ -104,10 +104,13 @@ export interface ExecutionEventJournalOptions {
   now?: () => number;
 }
 
+export type ExecutionPersistedEventListener = (scope: ExecutionScope, event: ExecutionEventRecord) => void | Promise<void>;
+
 export class ExecutionEventJournal {
   private readonly outputCoalesceMs: number;
   private readonly now: () => number;
   private readonly lastOutputEventAt = new Map<string, number>();
+  private readonly listeners = new Set<ExecutionPersistedEventListener>();
 
   constructor(
     readonly store: ExecutionStore,
@@ -116,6 +119,11 @@ export class ExecutionEventJournal {
   ) {
     this.outputCoalesceMs = options.outputCoalesceMs ?? 250;
     this.now = options.now ?? Date.now;
+  }
+
+  subscribe(listener: ExecutionPersistedEventListener): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
   async record(
@@ -136,6 +144,7 @@ export class ExecutionEventJournal {
       try {
         const event = await this.store.appendEvent(scope, runId, eventType, options);
         this.wake.publish(event); // persistence has completed before any signal is emitted
+        this.notify(scope, event);
         return event;
       } catch (error) {
         if (this.lastOutputEventAt.get(key) === now) this.lastOutputEventAt.delete(key);
@@ -145,6 +154,20 @@ export class ExecutionEventJournal {
 
     const event = await this.store.appendEvent(scope, runId, eventType, options);
     this.wake.publish(event); // persist-before-signal invariant
+        this.notify(scope, event);
     return event;
+  }
+
+  private notify(scope: ExecutionScope, event: ExecutionEventRecord): void {
+    for (const listener of this.listeners) {
+      try {
+        const result = listener(scope, event);
+        if (result && typeof (result as Promise<void>).catch === 'function') {
+          void (result as Promise<void>).catch(() => undefined);
+        }
+      } catch {
+        // Persisted execution truth and wake delivery must not fail because a downstream observer failed.
+      }
+    }
   }
 }

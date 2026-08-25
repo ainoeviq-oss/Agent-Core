@@ -766,6 +766,104 @@ export class ExecutionStore {
     }));
   }
 
+  async enqueueMemorySync(
+    scope: ExecutionScope,
+    runId: string,
+    eventSequence: number | undefined,
+    syncKey: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    await this.requireRun(scope, runId);
+    const normalizedKey = boundedText(syncKey, 'syncKey', 5_000);
+    const payloadJson = stableExecutionJson(payload);
+    if (payloadJson.length > 50_000) fail('EXECUTION_SYNC_PAYLOAD_TOO_LARGE', 'Execution memory sync payload exceeds 50000 characters');
+    const now = Date.now();
+    await this.client.transaction([{
+      kind: 'run',
+      sql: `INSERT INTO execution_memory_sync_queue(
+              id, run_id, event_sequence, sync_key, payload_json, state, attempts, last_error, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, 'queued', 0, NULL, ?, ?)
+            ON CONFLICT(sync_key) DO NOTHING`,
+      params: [randomUUID(), runId, eventSequence ?? null, normalizedKey, payloadJson, now, now],
+    }]);
+  }
+
+  async listMemorySyncQueue(
+    scope: ExecutionScope,
+    limit = 100,
+  ): Promise<Array<{
+    queueId: string;
+    runId: string;
+    eventSequence?: number;
+    syncKey: string;
+    payload: Record<string, unknown>;
+    state: 'queued' | 'syncing' | 'failed';
+    attempts: number;
+    lastError?: string;
+    createdAt: number;
+    updatedAt: number;
+  }>> {
+    assertScope(scope);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000) {
+      fail('EXECUTION_SYNC_LIMIT_INVALID', 'sync queue limit must be between 1 and 1000');
+    }
+    const rows = await this.client.query<Record<string, unknown>>(
+      `SELECT queue.id, queue.run_id, queue.event_sequence, queue.sync_key, queue.payload_json,
+              queue.state, queue.attempts, queue.last_error, queue.created_at, queue.updated_at
+         FROM execution_memory_sync_queue AS queue
+         JOIN execution_runs AS run ON run.id = queue.run_id
+        WHERE run.principal_id = ? AND IFNULL(run.project_id, '') = ?
+          AND queue.state IN ('queued','syncing','failed')
+        ORDER BY queue.created_at ASC, queue.id COLLATE BINARY ASC
+        LIMIT ?`,
+      [scope.principalId, scopeProject(scope), limit],
+    );
+    return rows.map((row) => ({
+      queueId: String(row.id),
+      runId: String(row.run_id),
+      eventSequence: row.event_sequence == null ? undefined : Number(row.event_sequence),
+      syncKey: String(row.sync_key),
+      payload: parseObject(String(row.payload_json)) ?? {},
+      state: String(row.state) as 'queued' | 'syncing' | 'failed',
+      attempts: Number(row.attempts),
+      lastError: row.last_error == null ? undefined : String(row.last_error),
+      createdAt: Number(row.created_at),
+      updatedAt: Number(row.updated_at),
+    }));
+  }
+
+  async countMemorySyncQueue(scope: ExecutionScope): Promise<number> {
+    assertScope(scope);
+    const rows = await this.client.query<{ count: number }>(
+      `SELECT count(*) AS count
+         FROM execution_memory_sync_queue AS queue
+         JOIN execution_runs AS run ON run.id = queue.run_id
+        WHERE run.principal_id = ? AND IFNULL(run.project_id, '') = ?
+          AND queue.state IN ('queued','syncing','failed')`,
+      [scope.principalId, scopeProject(scope)],
+    );
+    return Number(rows[0]?.count ?? 0);
+  }
+
+  async markMemorySyncState(
+    scope: ExecutionScope,
+    queueId: string,
+    state: 'syncing' | 'synced' | 'failed',
+    error?: string,
+  ): Promise<void> {
+    assertScope(scope);
+    const now = Date.now();
+    await this.client.transaction([{
+      kind: 'run',
+      sql: `UPDATE execution_memory_sync_queue
+               SET state = ?, attempts = attempts + 1, last_error = ?, updated_at = ?
+             WHERE id = ? AND run_id IN (
+               SELECT id FROM execution_runs WHERE principal_id = ? AND IFNULL(project_id, '') = ?
+             )`,
+      params: [state, error ? error.slice(0, 2_000) : null, now, queueId, scope.principalId, scopeProject(scope)],
+    }]);
+  }
+
   async resetNodeForRetry(scope: ExecutionScope, runId: string, nodeId: string): Promise<void> {
     const run = await this.requireRun(scope, runId);
     const node = await this.getNode(scope, runId, nodeId);

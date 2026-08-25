@@ -13,6 +13,19 @@ export interface ContinuityPromotionResult {
   memoryIds: string[];
 }
 
+export interface ExecutionProcessCheckpointInput {
+  runId: string;
+  eventSequence: number;
+  state: string;
+  startedAt?: number;
+  finishedAt?: number;
+  evidence: Array<{
+    nodeId: string;
+    state: string;
+    attemptCount: number;
+  }>;
+}
+
 function digest(value: string): string {
   return createHash('sha256').update(value.normalize('NFKC').trim(), 'utf8').digest('hex').slice(0, 24);
 }
@@ -103,5 +116,39 @@ export class ContinuityPromoter {
     }
 
     return result;
+  }
+
+  async promoteExecutionProcessCheckpoint(
+    scope: MemoryScope,
+    taskId: string,
+    input: ExecutionProcessCheckpointInput,
+  ): Promise<MemoryCommitResult> {
+    return this.writer.commit({
+      scope,
+      canonicalKey: `continuity.process_checkpoint.${taskId}.${input.runId}.${input.eventSequence}`,
+      kind: 'artifact',
+      value: {
+        taskId,
+        runId: input.runId,
+        eventSequence: input.eventSequence,
+        state: input.state,
+        checkpointType: 'execution_process',
+        summary: 'execution process checkpoint',
+        taskCompleted: false,
+        ...(input.startedAt === undefined ? {} : { startedAt: input.startedAt }),
+        ...(input.finishedAt === undefined ? {} : { finishedAt: input.finishedAt }),
+        evidence: input.evidence,
+      },
+      importance: 0.82,
+      sourceType: 'execution_process_checkpoint',
+      sourceRef: input.runId,
+      metadata: {
+        taskId,
+        runId: input.runId,
+        eventSequence: input.eventSequence,
+        taskCompleted: false,
+      },
+      revisionAuthority: 'structured_state',
+    });
   }
 }
