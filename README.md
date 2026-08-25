@@ -179,6 +179,6 @@ Local generated skill packages include provenance/license evidence and remain ig
 
 ## Releases
 
-Stable tags are built through the repository release workflow. A successful stable release is gated by dependency install, build, full tests, brand checks, release-metadata checks, package construction, checksums, GitHub Release publication, and GitHub Packages publication of the plugin source package under the `stable` dist-tag.
+Stable release artifacts are generated reproducibly with the repository release tooling and are accepted only after dependency install, build, full tests, brand checks, release-metadata checks, package construction, and checksum verification. Publication can be performed by the tag-triggered workflow when GitHub-hosted Actions is available or by an authenticated local release operator using the same verified artifacts. GitHub Packages publication uses the `stable` dist-tag.
 
 Release history and behavior changes are recorded in [`CHANGELOG.md`](CHANGELOG.md).
