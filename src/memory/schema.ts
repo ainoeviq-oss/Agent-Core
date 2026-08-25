@@ -3,7 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 export const MEMORY_SCHEMA_VERSION = 1;
 export const INITIAL_MEMORY_MIGRATION = '001_initial_memory';
 
-const INITIAL_SCHEMA_SQL = `
+export const MEMORY_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS memory_schema_migrations (
   version INTEGER PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
@@ -129,6 +129,18 @@ CREATE INDEX IF NOT EXISTS idx_memory_contexts_route
 CREATE INDEX IF NOT EXISTS idx_memory_access_recent
   ON memory_access_log(memory_id, accessed_at DESC);
 
+CREATE TRIGGER IF NOT EXISTS trg_memory_events_append_only_update
+BEFORE UPDATE ON memory_events
+BEGIN
+  SELECT RAISE(ABORT, 'memory_events is append-only');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_memory_events_append_only_delete
+BEFORE DELETE ON memory_events
+BEGIN
+  SELECT RAISE(ABORT, 'memory_events is append-only');
+END;
+
 CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
   memory_id UNINDEXED,
   principal_id UNINDEXED,
@@ -154,7 +166,7 @@ export function initializeMemorySchema(db: DatabaseSync): void {
   if (!applied) {
     db.exec('BEGIN IMMEDIATE');
     try {
-      db.exec(INITIAL_SCHEMA_SQL);
+      db.exec(MEMORY_SCHEMA_SQL);
       db.prepare('INSERT INTO memory_schema_migrations(version, name, applied_at) VALUES (?, ?, ?)')
         .run(MEMORY_SCHEMA_VERSION, INITIAL_MEMORY_MIGRATION, Date.now());
       db.exec(`PRAGMA user_version = ${MEMORY_SCHEMA_VERSION}`);
@@ -168,34 +180,36 @@ export function initializeMemorySchema(db: DatabaseSync): void {
   }
 }
 
+export const MEMORY_FTS_REBUILD_SQL = `
+DELETE FROM memory_fts;
+INSERT INTO memory_fts(memory_id, principal_id, project_id, canonical_key, anchors, value_text, state, kind)
+SELECT
+  item.id,
+  item.principal_id,
+  COALESCE(item.project_id, ''),
+  item.canonical_key,
+  COALESCE((
+    SELECT group_concat(anchor, ' ')
+    FROM (
+      SELECT anchor
+      FROM memory_anchors
+      WHERE memory_id = item.id
+      ORDER BY anchor COLLATE BINARY
+    )
+  ), ''),
+  revision.value_text,
+  item.state,
+  item.kind
+FROM memory_items AS item
+JOIN memory_revisions AS revision ON revision.id = item.current_revision_id
+WHERE item.state <> 'tombstoned'
+ORDER BY item.id COLLATE BINARY;
+`;
+
 export function rebuildMemoryFts(db: DatabaseSync): void {
   db.exec('BEGIN IMMEDIATE');
   try {
-    db.exec('DELETE FROM memory_fts');
-    db.exec(`
-      INSERT INTO memory_fts(memory_id, principal_id, project_id, canonical_key, anchors, value_text, state, kind)
-      SELECT
-        item.id,
-        item.principal_id,
-        COALESCE(item.project_id, ''),
-        item.canonical_key,
-        COALESCE((
-          SELECT group_concat(anchor, ' ')
-          FROM (
-            SELECT anchor
-            FROM memory_anchors
-            WHERE memory_id = item.id
-            ORDER BY anchor COLLATE BINARY
-          )
-        ), ''),
-        revision.value_text,
-        item.state,
-        item.kind
-      FROM memory_items AS item
-      JOIN memory_revisions AS revision ON revision.id = item.current_revision_id
-      WHERE item.state <> 'tombstoned'
-      ORDER BY item.id COLLATE BINARY
-    `);
+    db.exec(MEMORY_FTS_REBUILD_SQL);
     db.exec('COMMIT');
   } catch (error) {
     db.exec('ROLLBACK');
