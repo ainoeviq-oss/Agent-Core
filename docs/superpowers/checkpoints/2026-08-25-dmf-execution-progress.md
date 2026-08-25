@@ -1,4 +1,4 @@
-# Agent Core Deterministic Memory Fabric — Execution Progress
+﻿# Agent Core Deterministic Memory Fabric â€” Execution Progress
 
 Date: 2026-08-25 (Asia/Jakarta)
 Source plan: `F:\Projects\2026-08-25-agent-core-deterministic-memory-fabric-master-plan.md`
@@ -19,28 +19,28 @@ Execution evidence: `F:\Projects\Agent-Core\runtime\dmf-execution\logs\`
 
 ## Plan tasks
 
-- [x] Task 1 — Baseline and dependency gate
-- [x] Task 2 — Types, configuration, and database schema
-- [x] Task 3 — Dedicated SQLite worker
-- [x] Task 4 — Redaction, normalization, and anchors
-- [x] Task 5 — Event journal and versioned store
-- [x] Task 6 — Deterministic graph linker
-- [x] Task 7 — Personalized PageRank engine
-- [x] Task 8 — Hybrid retriever and score explanation
-- [x] Task 9 — Lifecycle, conflicts, and compaction
-- [x] Task 10 — Memory service facade and preflight
-- [x] Task 11 — Integrate DMF with capability routing
-- [x] Task 12 — Automatic operational event capture
-- [ ] Task 13 — MCP memory tools
-- [ ] Task 14 — Persistence, backup, recovery, and integrity
-- [ ] Task 15 — Evaluation harness for awareness
-- [ ] Task 16 — Performance and scale gates
-- [ ] Task 17 — Launcher and lifecycle integration
+- [x] Task 1 â€” Baseline and dependency gate
+- [x] Task 2 â€” Types, configuration, and database schema
+- [x] Task 3 â€” Dedicated SQLite worker
+- [x] Task 4 â€” Redaction, normalization, and anchors
+- [x] Task 5 â€” Event journal and versioned store
+- [x] Task 6 â€” Deterministic graph linker
+- [x] Task 7 â€” Personalized PageRank engine
+- [x] Task 8 â€” Hybrid retriever and score explanation
+- [x] Task 9 â€” Lifecycle, conflicts, and compaction
+- [x] Task 10 â€” Memory service facade and preflight
+- [x] Task 11 â€” Integrate DMF with capability routing
+- [x] Task 12 â€” Automatic operational event capture
+- [x] Task 13 - MCP memory tools
+- [ ] Task 14 â€” Persistence, backup, recovery, and integrity
+- [ ] Task 15 â€” Evaluation harness for awareness
+- [ ] Task 16 â€” Performance and scale gates
+- [ ] Task 17 â€” Launcher and lifecycle integration
 
 ## Guardrails
 
 - Use one reasoning AI only; no memory LLM, embedding model, reranker, summarizer, or hidden AI service.
 - Keep project, temp, npm cache, logs, database, backups, and diagnostics on drive F.
 - Execute contract/schema-mutating tasks sequentially; parallelize only independent audits/tests/benchmarks.
-- Follow RED → GREEN → refactor for production behavior changes.
+- Follow RED â†’ GREEN â†’ refactor for production behavior changes.
 - Create a verification checkpoint after every task and never declare stable until every Section 24 gate is proven.

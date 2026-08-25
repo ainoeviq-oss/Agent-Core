@@ -4,7 +4,12 @@ import { MemoryLinker } from './linker.js';
 import { MemoryPreflightEngine, createDisabledPreflightResult } from './preflight.js';
 import { MemoryRetriever } from './retriever.js';
 import { MEMORY_SCHEMA_VERSION } from './schema.js';
-import { MemoryStore, type RecordMemoryEventRequest } from './store.js';
+import {
+  MemoryStore,
+  type RecordMemoryEventRequest,
+  type StoredMemoryRecord,
+  type StoredMemoryRevision,
+} from './store.js';
 import type {
   MemoryCommitRequest,
   MemoryCommitResult,
@@ -37,6 +42,61 @@ export interface MemoryContextRecord {
   blockingJson: string;
   createdAt: number;
   expiresAt: number;
+}
+
+export interface MemoryProvenanceEvent {
+  eventId: string;
+  eventType: string;
+  sourceType: string;
+  sourceRef?: string;
+  redactedText: string;
+  metadata: Record<string, unknown>;
+  createdAt: number;
+}
+
+export interface MemoryGetWithProvenanceResult {
+  memory: StoredMemoryRecord;
+  revisions: StoredMemoryRevision[];
+  provenance: { events: MemoryProvenanceEvent[] };
+}
+
+export interface MemoryExplainView {
+  memoryId: string;
+  revisions: StoredMemoryRevision[];
+  anchors: Array<{ value: string; type: string }>;
+  edges: Array<{
+    fromMemoryId: string;
+    toMemoryId: string;
+    relation: string;
+    weight: number;
+    evidenceEventId?: string;
+  }>;
+  sourceEvents: MemoryProvenanceEvent[];
+  queryExplanation: MemorySearchResult['hits'][number] | null;
+}
+
+export interface MemoryExportView {
+  items: StoredMemoryRecord[];
+  revisions: StoredMemoryRevision[];
+  events: MemoryProvenanceEvent[];
+  conflicts: Array<Record<string, unknown>>;
+  truncated: boolean;
+}
+
+function parseMetadata(value: unknown): Record<string, unknown> {
+  if (typeof value !== 'string' || !value.trim()) return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function scopeProject(scope: MemoryScope): string {
+  return scope.projectId ?? '';
 }
 
 export type MemoryServiceState = 'disabled' | 'idle' | 'healthy' | 'degraded' | 'closed';
@@ -124,6 +184,162 @@ export class MemoryService {
     return components.store.listRevisions(scope, memoryId);
   }
 
+  async getWithProvenance(scope: MemoryScope, memoryId: string): Promise<MemoryGetWithProvenanceResult | null> {
+    if (!this.config.enabled) return null;
+    const components = await this.requireComponents();
+    const memory = await components.store.getMemory(scope, memoryId);
+    if (!memory) return null;
+    const revisions = await components.store.listRevisions(scope, memoryId);
+    const sourceEventIds = [...new Set(revisions.map((revision) => revision.sourceEventId).filter((id): id is string => Boolean(id)))];
+    const events = await this.loadProvenanceEvents(components.client, scope, sourceEventIds);
+    return { memory, revisions, provenance: { events } };
+  }
+
+  async explain(scope: MemoryScope, memoryId: string, query?: string): Promise<MemoryExplainView | null> {
+    if (!this.config.enabled) return null;
+    const components = await this.requireComponents();
+    const memory = await components.store.getMemory(scope, memoryId);
+    if (!memory) return null;
+    const revisions = await components.store.listRevisions(scope, memoryId);
+    const anchors = await components.client.query<Record<string, unknown>>(
+      `SELECT anchor, anchor_type
+         FROM memory_anchors AS anchor_row
+         JOIN memory_items AS item ON item.id = anchor_row.memory_id
+        WHERE anchor_row.memory_id = ? AND item.principal_id = ? AND IFNULL(item.project_id, '') = ?
+        ORDER BY anchor_type COLLATE BINARY, anchor COLLATE BINARY`,
+      [memoryId, scope.principalId, scopeProject(scope)],
+    );
+    const edges = await components.client.query<Record<string, unknown>>(
+      `SELECT edge.from_memory_id, edge.to_memory_id, edge.relation, edge.weight, edge.evidence_event_id
+         FROM memory_edges AS edge
+         JOIN memory_items AS left_item ON left_item.id = edge.from_memory_id
+         JOIN memory_items AS right_item ON right_item.id = edge.to_memory_id
+        WHERE (edge.from_memory_id = ? OR edge.to_memory_id = ?)
+          AND left_item.principal_id = ? AND IFNULL(left_item.project_id, '') = ?
+          AND right_item.principal_id = ? AND IFNULL(right_item.project_id, '') = ?
+        ORDER BY edge.from_memory_id COLLATE BINARY, edge.to_memory_id COLLATE BINARY, edge.relation COLLATE BINARY`,
+      [memoryId, memoryId, scope.principalId, scopeProject(scope), scope.principalId, scopeProject(scope)],
+    );
+    const eventIds = [...new Set([
+      ...revisions.map((revision) => revision.sourceEventId),
+      ...edges.map((edge) => edge.evidence_event_id == null ? undefined : String(edge.evidence_event_id)),
+    ].filter((id): id is string => Boolean(id)))];
+    const sourceEvents = await this.loadProvenanceEvents(components.client, scope, eventIds);
+    let queryExplanation: MemoryExplainView['queryExplanation'] = null;
+    if (query?.trim()) {
+      const search = await components.retriever.search({
+        scope,
+        query,
+        includeHistory: true,
+        limit: Math.min(this.config.recallItemBudget, 100),
+      });
+      queryExplanation = search.hits.find((hit) => hit.memoryId === memoryId) ?? null;
+    }
+    return {
+      memoryId,
+      revisions,
+      anchors: anchors.map((row) => ({ value: String(row.anchor), type: String(row.anchor_type) })),
+      edges: edges.map((row) => ({
+        fromMemoryId: String(row.from_memory_id),
+        toMemoryId: String(row.to_memory_id),
+        relation: String(row.relation),
+        weight: Number(row.weight),
+        ...(row.evidence_event_id == null ? {} : { evidenceEventId: String(row.evidence_event_id) }),
+      })),
+      sourceEvents,
+      queryExplanation,
+    };
+  }
+
+  async export(scope: MemoryScope, limit = 100): Promise<MemoryExportView> {
+    if (!this.config.enabled) return { items: [], revisions: [], events: [], conflicts: [], truncated: false };
+    if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new Error('MEMORY_EXPORT_LIMIT_INVALID');
+    const components = await this.requireComponents();
+    const project = scopeProject(scope);
+    const countRows = await components.client.query<Record<string, unknown>>(
+      `SELECT count(*) AS count FROM memory_items WHERE principal_id = ? AND IFNULL(project_id, '') = ?`,
+      [scope.principalId, project],
+    );
+    const totalItems = Number(countRows[0]?.count ?? 0);
+    const itemRows = await components.client.query<Record<string, unknown>>(
+      `SELECT item.id AS memory_id, item.principal_id, item.project_id, item.canonical_key, item.kind, item.state,
+              item.importance, item.pinned, item.enforcement, item.created_at, item.updated_at,
+              revision.id AS revision_id, revision.revision_no, revision.value_text, revision.value_json,
+              revision.value_hash, revision.source_event_id
+         FROM memory_items AS item
+         JOIN memory_revisions AS revision ON revision.id = item.current_revision_id
+        WHERE item.principal_id = ? AND IFNULL(item.project_id, '') = ?
+        ORDER BY item.updated_at DESC, item.id COLLATE BINARY
+        LIMIT ?`,
+      [scope.principalId, project, limit],
+    );
+    const itemIds = itemRows.map((row) => String(row.memory_id));
+    const items = itemRows.map((row) => ({
+      memoryId: String(row.memory_id),
+      revisionId: String(row.revision_id),
+      revisionNo: Number(row.revision_no),
+      principalId: String(row.principal_id),
+      projectId: row.project_id == null ? undefined : String(row.project_id),
+      canonicalKey: String(row.canonical_key),
+      kind: String(row.kind) as StoredMemoryRecord['kind'],
+      state: String(row.state) as StoredMemoryRecord['state'],
+      importance: Number(row.importance),
+      pinned: Number(row.pinned) === 1,
+      enforcement: String(row.enforcement) as StoredMemoryRecord['enforcement'],
+      valueText: String(row.value_text),
+      valueJson: row.value_json == null ? undefined : String(row.value_json),
+      valueHash: String(row.value_hash),
+      sourceEventId: row.source_event_id == null ? undefined : String(row.source_event_id),
+      createdAt: Number(row.created_at),
+      updatedAt: Number(row.updated_at),
+    })) satisfies StoredMemoryRecord[];
+    const revisions: StoredMemoryRevision[] = [];
+    for (const memoryId of itemIds) revisions.push(...await components.store.listRevisions(scope, memoryId));
+    const eventLimit = Math.min(5000, Math.max(limit, limit * 10));
+    const eventRows = await components.client.query<Record<string, unknown>>(
+      `SELECT id, event_type, source_type, source_ref, redacted_text, metadata_json, created_at
+         FROM memory_events
+        WHERE principal_id = ? AND IFNULL(project_id, '') = ?
+        ORDER BY created_at, id COLLATE BINARY
+        LIMIT ?`,
+      [scope.principalId, project, eventLimit],
+    );
+    const conflictRows = await components.client.query<Record<string, unknown>>(
+      `SELECT conflict.id, conflict.left_memory_id, conflict.right_memory_id, conflict.conflict_type,
+              conflict.status, conflict.evidence_json, conflict.created_at, conflict.resolved_at
+         FROM memory_conflicts AS conflict
+         JOIN memory_items AS left_item ON left_item.id = conflict.left_memory_id
+        WHERE left_item.principal_id = ? AND IFNULL(left_item.project_id, '') = ?
+        ORDER BY conflict.created_at, conflict.id COLLATE BINARY
+        LIMIT ?`,
+      [scope.principalId, project, Math.min(limit, 1000)],
+    );
+    return {
+      items,
+      revisions,
+      events: eventRows.map((row) => ({
+        eventId: String(row.id),
+        eventType: String(row.event_type),
+        sourceType: String(row.source_type),
+        sourceRef: row.source_ref == null ? undefined : String(row.source_ref),
+        redactedText: String(row.redacted_text),
+        metadata: parseMetadata(row.metadata_json),
+        createdAt: Number(row.created_at),
+      })),
+      conflicts: conflictRows.map((row) => ({
+        conflictId: String(row.id),
+        leftMemoryId: String(row.left_memory_id),
+        rightMemoryId: String(row.right_memory_id),
+        conflictType: String(row.conflict_type),
+        status: String(row.status),
+        evidence: parseMetadata(row.evidence_json),
+        createdAt: Number(row.created_at),
+        ...(row.resolved_at == null ? {} : { resolvedAt: Number(row.resolved_at) }),
+      })),
+      truncated: totalItems > limit,
+    };
+  }
+
   async forget(scope: MemoryScope, memoryId: string, reason: string): Promise<void> {
     const components = await this.requireComponents();
     await components.store.tombstoneMemory(scope, memoryId, reason);
@@ -158,7 +374,7 @@ export class MemoryService {
     };
   }
 
-  async status(): Promise<MemoryStatus> {
+  async status(scope?: MemoryScope): Promise<MemoryStatus> {
     if (!this.config.enabled) {
       return {
         enabled: false,
@@ -171,13 +387,35 @@ export class MemoryService {
     }
     try {
       const components = await this.requireComponents();
-      const [counts] = await components.client.query<Record<string, unknown>>(`SELECT
-        (SELECT count(*) FROM memory_items WHERE state = 'active') AS active_items,
-        (SELECT count(*) FROM memory_revisions) AS revisions,
-        (SELECT count(*) FROM memory_edges) AS edges,
-        (SELECT count(*) FROM memory_conflicts WHERE status = 'open') AS open_conflicts,
-        (SELECT count(*) FROM memory_items WHERE state = 'tombstoned') AS tombstones,
-        (SELECT count(*) FROM memory_fts) AS fts_rows`);
+      let counts: Record<string, unknown> | undefined;
+      if (scope) {
+        const project = scopeProject(scope);
+        [counts] = await components.client.query<Record<string, unknown>>(
+          `SELECT
+            (SELECT count(*) FROM memory_items WHERE principal_id = ? AND IFNULL(project_id, '') = ? AND state = 'active') AS active_items,
+            (SELECT count(*) FROM memory_revisions AS revision JOIN memory_items AS item ON item.id = revision.memory_id WHERE item.principal_id = ? AND IFNULL(item.project_id, '') = ?) AS revisions,
+            (SELECT count(*) FROM memory_edges AS edge JOIN memory_items AS item ON item.id = edge.from_memory_id WHERE item.principal_id = ? AND IFNULL(item.project_id, '') = ?) AS edges,
+            (SELECT count(*) FROM memory_conflicts AS conflict JOIN memory_items AS item ON item.id = conflict.left_memory_id WHERE item.principal_id = ? AND IFNULL(item.project_id, '') = ? AND conflict.status = 'open') AS open_conflicts,
+            (SELECT count(*) FROM memory_items WHERE principal_id = ? AND IFNULL(project_id, '') = ? AND state = 'tombstoned') AS tombstones,
+            (SELECT count(*) FROM memory_fts WHERE principal_id = ? AND IFNULL(project_id, '') = ?) AS fts_rows`,
+          [
+            scope.principalId, project,
+            scope.principalId, project,
+            scope.principalId, project,
+            scope.principalId, project,
+            scope.principalId, project,
+            scope.principalId, project,
+          ],
+        );
+      } else {
+        [counts] = await components.client.query<Record<string, unknown>>(`SELECT
+          (SELECT count(*) FROM memory_items WHERE state = 'active') AS active_items,
+          (SELECT count(*) FROM memory_revisions) AS revisions,
+          (SELECT count(*) FROM memory_edges) AS edges,
+          (SELECT count(*) FROM memory_conflicts WHERE status = 'open') AS open_conflicts,
+          (SELECT count(*) FROM memory_items WHERE state = 'tombstoned') AS tombstones,
+          (SELECT count(*) FROM memory_fts) AS fts_rows`);
+      }
       const integrity = await components.client.integrity();
       return {
         enabled: true,
@@ -207,6 +445,32 @@ export class MemoryService {
     }
     if (this.components) await this.components.store.close();
     this.state = 'closed';
+  }
+
+  private async loadProvenanceEvents(
+    client: MemoryWorkerClient,
+    scope: MemoryScope,
+    eventIds: string[],
+  ): Promise<MemoryProvenanceEvent[]> {
+    if (eventIds.length === 0) return [];
+    const uniqueIds = [...new Set(eventIds)].slice(0, 5000);
+    const placeholders = uniqueIds.map(() => '?').join(',');
+    const rows = await client.query<Record<string, unknown>>(
+      `SELECT id, event_type, source_type, source_ref, redacted_text, metadata_json, created_at
+         FROM memory_events
+        WHERE principal_id = ? AND IFNULL(project_id, '') = ? AND id IN (${placeholders})
+        ORDER BY created_at, id COLLATE BINARY`,
+      [scope.principalId, scopeProject(scope), ...uniqueIds],
+    );
+    return rows.map((row) => ({
+      eventId: String(row.id),
+      eventType: String(row.event_type),
+      sourceType: String(row.source_type),
+      sourceRef: row.source_ref == null ? undefined : String(row.source_ref),
+      redactedText: String(row.redacted_text),
+      metadata: parseMetadata(row.metadata_json),
+      createdAt: Number(row.created_at),
+    }));
   }
 
   private async requireComponents(): Promise<MemoryComponents> {

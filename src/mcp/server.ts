@@ -3,6 +3,7 @@ import * as z from 'zod/v4';
 import type { VerifiedKey } from '../auth/key-types.js';
 import type { RuntimeServices } from '../runtime/services.js';
 import { CAPABILITY_TOOL_NAMES, registerCapabilityTools } from './capability-tools.js';
+import { MEMORY_TOOL_NAMES, registerMemoryTools } from './memory-tools.js';
 import { OPERATIONAL_TOOL_NAMES, registerOperationalTools } from './tools.js';
 
 export const SERVER_NAME = 'agent-core';
@@ -46,7 +47,7 @@ export function createAgentCoreMcpServer(key: VerifiedKey, runtime: RuntimeServi
 
   server.registerTool('agent_core_capabilities', {
     title: 'Agent Core Capabilities',
-    description: 'Describe Agent Core automatic capability routing, authentication, operational tools, and deferred capability registry.',
+    description: 'Describe Agent Core automatic capability routing, authentication, operational tools, deterministic memory, and deferred capability registry.',
     outputSchema: {
       stage: z.string(),
       enabled: z.array(z.string()),
@@ -64,8 +65,10 @@ export function createAgentCoreMcpServer(key: VerifiedKey, runtime: RuntimeServi
         'routing.capability_route',
         'routing.principal_bound_context',
         'routing.execution_gate',
+        'memory.deterministic_fabric',
         ...OPERATIONAL_TOOL_NAMES.map((name) => `tool.${name}`),
         ...CAPABILITY_TOOL_NAMES.map((name) => `tool.${name}`),
+        ...MEMORY_TOOL_NAMES.map((name) => `tool.${name}`),
       ],
       deferred: ['git.semantic_tools', 'gui.automation', 'registry.system_admin', 'app.adapters'],
     };
@@ -77,5 +80,6 @@ export function createAgentCoreMcpServer(key: VerifiedKey, runtime: RuntimeServi
 
   registerOperationalTools(server, runtime, key);
   registerCapabilityTools(server, runtime, key);
+  registerMemoryTools(server, runtime, key);
   return server;
 }
