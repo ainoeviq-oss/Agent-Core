@@ -5,9 +5,9 @@ import { createMemoryBackup, type MemoryBackupRecord } from './backup.js';
 import { normalizeCanonicalKey, normalizeMemoryText } from './normalizer.js';
 import { redactMemoryText } from './redaction.js';
 import {
-  INITIAL_MEMORY_MIGRATION,
+  MEMORY_MIGRATIONS,
   MEMORY_FTS_REBUILD_SQL,
-  MEMORY_SCHEMA_SQL,
+
   MEMORY_SCHEMA_VERSION,
 } from './schema.js';
 import { MUTABLE_MEMORY_KINDS } from './types.js';
@@ -263,15 +263,18 @@ export class MemoryStore {
       );
     }
 
-    await this.client.exec(MEMORY_SCHEMA_SQL);
-    await this.client.transaction([
-      {
+    const migrationOperations: MemoryWorkerSqlOperation[] = [];
+    for (const migration of MEMORY_MIGRATIONS) {
+      if (migration.version <= priorUserVersion) continue;
+      migrationOperations.push({ kind: 'exec', sql: migration.sql });
+      migrationOperations.push({
         kind: 'run',
         sql: 'INSERT OR IGNORE INTO memory_schema_migrations(version, name, applied_at) VALUES (?, ?, ?)',
-        params: [MEMORY_SCHEMA_VERSION, INITIAL_MEMORY_MIGRATION, Date.now()],
-      },
-      { kind: 'exec', sql: `PRAGMA user_version = ${MEMORY_SCHEMA_VERSION}` },
-    ]);
+        params: [migration.version, migration.name, Date.now()],
+      });
+    }
+    migrationOperations.push({ kind: 'exec', sql: `PRAGMA user_version = ${MEMORY_SCHEMA_VERSION}` });
+    await this.client.transaction(migrationOperations);
     const integrity = await this.client.integrity();
     const integrityCheckedAt = Date.now();
     if (!integrity.ok) {

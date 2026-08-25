@@ -45,6 +45,7 @@ describe('deterministic memory schema and public contracts', () => {
       expect(Number(db.prepare('PRAGMA user_version').get()!.user_version)).toBe(MEMORY_SCHEMA_VERSION);
       expect(db.prepare('SELECT name FROM memory_schema_migrations ORDER BY version').all()).toEqual([
         { name: '001_initial_memory' },
+        { name: '002_continuity_ledger' },
       ]);
 
       const tables = new Set((db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table','view')").all() as Array<{ name: string }>).map((row) => row.name));

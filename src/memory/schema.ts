@@ -1,9 +1,10 @@
 import type { DatabaseSync } from 'node:sqlite';
 
-export const MEMORY_SCHEMA_VERSION = 1;
+export const MEMORY_SCHEMA_VERSION = 2;
 export const INITIAL_MEMORY_MIGRATION = '001_initial_memory';
+export const CONTINUITY_MEMORY_MIGRATION = '002_continuity_ledger';
 
-export const MEMORY_SCHEMA_SQL = `
+export const MEMORY_SCHEMA_V1_SQL = `
 CREATE TABLE IF NOT EXISTS memory_schema_migrations (
   version INTEGER PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
@@ -154,29 +155,136 @@ CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
 );
 `;
 
+export const CONTINUITY_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS continuity_tasks (
+  id TEXT PRIMARY KEY,
+  principal_id TEXT NOT NULL,
+  project_id TEXT,
+  parent_task_id TEXT REFERENCES continuity_tasks(id),
+  title TEXT NOT NULL,
+  objective TEXT,
+  acceptance_json TEXT NOT NULL DEFAULT '[]',
+  constraints_json TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL CHECK (status IN (
+    'planned', 'ready', 'running', 'blocked', 'deferred',
+    'completed', 'failed', 'cancelled', 'interrupted'
+  )),
+  priority REAL NOT NULL DEFAULT 0,
+  blocker_json TEXT NOT NULL DEFAULT '[]',
+  last_checkpoint_id TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  completed_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS continuity_turns (
+  id TEXT PRIMARY KEY,
+  principal_id TEXT NOT NULL,
+  project_id TEXT,
+  route_context_id TEXT NOT NULL,
+  task_id TEXT NOT NULL REFERENCES continuity_tasks(id) ON DELETE CASCADE,
+  input_text TEXT NOT NULL,
+  input_hash TEXT NOT NULL,
+  context_text TEXT,
+  state TEXT NOT NULL CHECK (state IN ('open', 'closed', 'interrupted')),
+  created_at INTEGER NOT NULL,
+  closed_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS continuity_task_dependencies (
+  task_id TEXT NOT NULL REFERENCES continuity_tasks(id) ON DELETE CASCADE,
+  depends_on_task_id TEXT NOT NULL REFERENCES continuity_tasks(id) ON DELETE CASCADE,
+  dependency_type TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY(task_id, depends_on_task_id, dependency_type),
+  CHECK (task_id <> depends_on_task_id)
+);
+
+CREATE TABLE IF NOT EXISTS continuity_checkpoints (
+  id TEXT PRIMARY KEY,
+  principal_id TEXT NOT NULL,
+  project_id TEXT,
+  task_id TEXT NOT NULL REFERENCES continuity_tasks(id) ON DELETE CASCADE,
+  route_context_id TEXT NOT NULL,
+  phase TEXT NOT NULL,
+  summary_json TEXT NOT NULL,
+  evidence_json TEXT NOT NULL DEFAULT '[]',
+  state_hash TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS continuity_frontier (
+  id TEXT PRIMARY KEY,
+  principal_id TEXT NOT NULL,
+  project_id TEXT,
+  source_task_id TEXT NOT NULL REFERENCES continuity_tasks(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  rationale TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('candidate', 'approved', 'deferred', 'dismissed', 'completed')),
+  dependency_task_ids_json TEXT NOT NULL DEFAULT '[]',
+  priority REAL NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_continuity_tasks_scope_status
+  ON continuity_tasks(principal_id, project_id, status, priority DESC, updated_at DESC, id);
+CREATE INDEX IF NOT EXISTS idx_continuity_tasks_parent
+  ON continuity_tasks(parent_task_id, updated_at DESC, id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_continuity_turns_scope_route
+  ON continuity_turns(principal_id, IFNULL(project_id, ''), route_context_id);
+CREATE INDEX IF NOT EXISTS idx_continuity_turns_scope_state
+  ON continuity_turns(principal_id, project_id, state, created_at DESC, id);
+CREATE INDEX IF NOT EXISTS idx_continuity_task_dependencies_depends
+  ON continuity_task_dependencies(depends_on_task_id, task_id);
+CREATE INDEX IF NOT EXISTS idx_continuity_checkpoints_task_created
+  ON continuity_checkpoints(principal_id, project_id, task_id, created_at DESC, id);
+CREATE INDEX IF NOT EXISTS idx_continuity_checkpoints_route
+  ON continuity_checkpoints(principal_id, route_context_id, created_at DESC, id);
+CREATE INDEX IF NOT EXISTS idx_continuity_frontier_scope_status
+  ON continuity_frontier(principal_id, project_id, status, priority DESC, updated_at DESC, id);
+CREATE INDEX IF NOT EXISTS idx_continuity_frontier_source_task
+  ON continuity_frontier(source_task_id, status, priority DESC, id);
+`;
+
+export interface MemoryMigration {
+  version: number;
+  name: string;
+  sql: string;
+}
+
+export const MEMORY_MIGRATIONS: readonly MemoryMigration[] = [
+  { version: 1, name: INITIAL_MEMORY_MIGRATION, sql: MEMORY_SCHEMA_V1_SQL },
+  { version: 2, name: CONTINUITY_MEMORY_MIGRATION, sql: CONTINUITY_SCHEMA_SQL },
+] as const;
+
+export const MEMORY_SCHEMA_SQL = `${MEMORY_SCHEMA_V1_SQL}\n${CONTINUITY_SCHEMA_SQL}`;
+
 export function initializeMemorySchema(db: DatabaseSync): void {
   db.exec('PRAGMA foreign_keys = ON');
-  db.exec(`CREATE TABLE IF NOT EXISTS memory_schema_migrations (
-    version INTEGER PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE,
-    applied_at INTEGER NOT NULL
-  )`);
+  const versionRow = db.prepare('PRAGMA user_version').get() as { user_version?: number } | undefined;
+  const priorUserVersion = Number(versionRow?.user_version ?? 0);
+  if (!Number.isInteger(priorUserVersion) || priorUserVersion < 0) {
+    throw new Error('Memory schema user_version is invalid');
+  }
+  if (priorUserVersion > MEMORY_SCHEMA_VERSION) {
+    throw new Error(`Memory schema version ${priorUserVersion} is newer than runtime ${MEMORY_SCHEMA_VERSION}`);
+  }
+  if (priorUserVersion === MEMORY_SCHEMA_VERSION) return;
 
-  const applied = db.prepare('SELECT 1 AS present FROM memory_schema_migrations WHERE version = ?').get(MEMORY_SCHEMA_VERSION);
-  if (!applied) {
-    db.exec('BEGIN IMMEDIATE');
-    try {
-      db.exec(MEMORY_SCHEMA_SQL);
-      db.prepare('INSERT INTO memory_schema_migrations(version, name, applied_at) VALUES (?, ?, ?)')
-        .run(MEMORY_SCHEMA_VERSION, INITIAL_MEMORY_MIGRATION, Date.now());
-      db.exec(`PRAGMA user_version = ${MEMORY_SCHEMA_VERSION}`);
-      db.exec('COMMIT');
-    } catch (error) {
-      db.exec('ROLLBACK');
-      throw error;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const migration of MEMORY_MIGRATIONS) {
+      if (migration.version <= priorUserVersion) continue;
+      db.exec(migration.sql);
+      db.prepare('INSERT OR IGNORE INTO memory_schema_migrations(version, name, applied_at) VALUES (?, ?, ?)')
+        .run(migration.version, migration.name, Date.now());
     }
-  } else {
     db.exec(`PRAGMA user_version = ${MEMORY_SCHEMA_VERSION}`);
+    db.exec('COMMIT');
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
   }
 }
 
