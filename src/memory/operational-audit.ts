@@ -39,7 +39,7 @@ export function summarizeOperationalInput(toolName: string, input: Record<string
   const allowed = [
     'path', 'source', 'destination', 'cwd', 'depth', 'maxEntries', 'startLine', 'lineCount', 'maxBytes',
     'mode', 'expectedReplacements', 'query', 'maxResults', 'timeoutMs', 'contentBytes', 'oldStringBytes',
-    'newStringBytes',
+    'newStringBytes', 'sessionId', 'stdoutBytes', 'stderrBytes', 'signal', 'startedAt', 'finishedAt', 'stopped',
   ];
   for (const key of allowed) {
     const value = safeScalar(input[key]);
@@ -67,6 +67,7 @@ export function summarizeOperationalResult(result: unknown): Record<string, unkn
   const safeKeys = [
     'path', 'mode', 'bytes', 'replacements', 'source', 'destination', 'created', 'exitCode', 'timedOut',
     'outputTruncated', 'sessionId', 'pid', 'running', 'truncated', 'count', 'total',
+    'stdoutBytes', 'stderrBytes', 'signal', 'startedAt', 'finishedAt', 'stopped',
   ];
   for (const key of safeKeys) {
     const value = safeScalar(record[key]);
@@ -176,6 +177,20 @@ export class OperationalMemoryAudit {
     await this.safeFailureMemory(routeContextId, toolName, inputSummary, affectedPaths, errorValue);
   }
 
+  async lifecycle(
+    routeContextId: string,
+    toolName: string,
+    phase: 'observed' | 'stop_requested' | 'stop_succeeded' | 'terminal',
+    input: Record<string, unknown>,
+    result?: unknown,
+  ): Promise<void> {
+    await this.safeRecord(`memory.operation_${phase}`, routeContextId, toolName, {
+      input: summarizeOperationalInput(toolName, input),
+      ...(result === undefined ? {} : { result: summarizeOperationalResult(result) }),
+      affectedPaths: pathList(input),
+      verification: verification(undefined),
+    });
+  }
   private scope() {
     return {
       principalId: this.key.id,

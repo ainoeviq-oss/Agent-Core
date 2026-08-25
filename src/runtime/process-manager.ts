@@ -11,8 +11,32 @@ const BLOCKED = new Set([
 
 const MAX_OUTPUT_BYTES = 256 * 1024;
 
+export interface ProcessSessionOwner {
+  principalId: string;
+  projectId?: string;
+  originRouteContextId?: string;
+}
+
+export interface ProcessTerminalSnapshot {
+  sessionId: string;
+  pid: number | null;
+  cwd: string;
+  exitCode: number | null;
+  signal: NodeJS.Signals | null;
+  running: false;
+  outputTruncated: boolean;
+  stdoutBytes: number;
+  stderrBytes: number;
+  startedAt: string;
+  finishedAt: string;
+}
+
 export interface ExecuteOptions { cwd: string; timeoutMs?: number }
-export interface StartOptions { cwd: string }
+export interface StartOptions {
+  cwd: string;
+  owner?: ProcessSessionOwner;
+  onTerminal?: (snapshot: ProcessTerminalSnapshot) => void | Promise<void>;
+}
 export interface ProcessResult {
   exitCode: number | null;
   stdout: string;
@@ -25,6 +49,7 @@ interface Session {
   sessionId: string;
   command: string;
   cwd: string;
+  owner?: ProcessSessionOwner;
   child: ChildProcessWithoutNullStreams;
   stdout: string;
   stderr: string;
@@ -32,7 +57,18 @@ interface Session {
   exitCode: number | null;
   signal: NodeJS.Signals | null;
   startedAt: string;
+  finishedAt?: string;
   exited: boolean;
+  terminalNotified: boolean;
+  terminalEvidence?: Promise<void>;
+  onTerminal?: (snapshot: ProcessTerminalSnapshot) => void | Promise<void>;
+}
+
+export class ProcessSessionError extends Error {
+  constructor(public readonly code: string, message: string) {
+    super(message);
+    this.name = 'ProcessSessionError';
+  }
 }
 
 function commandName(segment: string): string {
@@ -64,6 +100,19 @@ function spawnPowerShell(command: string, cwd: string): ChildProcessWithoutNullS
     windowsHide: true,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
+}
+
+function normalizeOwner(owner: ProcessSessionOwner | undefined): ProcessSessionOwner | undefined {
+  if (!owner) return undefined;
+  const principalId = owner.principalId?.trim();
+  if (!principalId) throw new ProcessSessionError('PROCESS_OWNER_INVALID', 'Process owner principalId is required');
+  const projectId = owner.projectId?.trim() || undefined;
+  const originRouteContextId = owner.originRouteContextId?.trim() || undefined;
+  return { principalId, ...(projectId ? { projectId } : {}), ...(originRouteContextId ? { originRouteContextId } : {}) };
+}
+
+function sameOwner(actual: ProcessSessionOwner, requested: ProcessSessionOwner): boolean {
+  return actual.principalId === requested.principalId && (actual.projectId ?? '') === (requested.projectId ?? '');
 }
 
 export class ProcessManager {
@@ -101,12 +150,14 @@ export class ProcessManager {
   async start(command: string, options: StartOptions): Promise<{ sessionId: string; pid: number | null; cwd: string }> {
     assertCommandAllowed(command);
     const cwd = await this.workspace.resolveExisting(options.cwd);
+    const owner = normalizeOwner(options.owner);
     const child = spawnPowerShell(command, cwd);
     const sessionId = `proc_${randomUUID()}`;
     const session: Session = {
       sessionId,
       command,
       cwd,
+      ...(owner ? { owner } : {}),
       child,
       stdout: '',
       stderr: '',
@@ -115,6 +166,8 @@ export class ProcessManager {
       signal: null,
       startedAt: new Date().toISOString(),
       exited: false,
+      terminalNotified: false,
+      ...(options.onTerminal ? { onTerminal: options.onTerminal } : {}),
     };
     this.sessions.set(sessionId, session);
 
@@ -131,11 +184,15 @@ export class ProcessManager {
     child.once('error', (error) => {
       session.stderr += `${error.message}\n`;
       session.exited = true;
+      session.finishedAt = new Date().toISOString();
+      this.notifyTerminal(session);
     });
     child.once('exit', (code, signal) => {
       session.exitCode = code;
       session.signal = signal;
       session.exited = true;
+      session.finishedAt = new Date().toISOString();
+      this.notifyTerminal(session);
     });
 
     await new Promise<void>((resolve) => {
@@ -151,9 +208,14 @@ export class ProcessManager {
     return { sessionId, pid: child.pid ?? null, cwd };
   }
 
-  read(sessionId: string): { sessionId: string; stdout: string; stderr: string; running: boolean; exitCode: number | null; outputTruncated: boolean } {
-    const session = this.sessions.get(sessionId);
-    if (!session) throw new Error(`Unknown process session: ${sessionId}`);
+  sessionContext(sessionId: string, owner?: ProcessSessionOwner): ProcessSessionOwner {
+    const session = this.requireSession(sessionId, owner);
+    if (!session.owner) throw new ProcessSessionError('PROCESS_SESSION_OWNER_MISSING', 'Process session has no stored owner');
+    return { ...session.owner };
+  }
+
+  read(sessionId: string, owner?: ProcessSessionOwner): { sessionId: string; stdout: string; stderr: string; running: boolean; exitCode: number | null; outputTruncated: boolean } {
+    const session = this.requireSession(sessionId, owner);
     return {
       sessionId,
       stdout: session.stdout,
@@ -164,30 +226,81 @@ export class ProcessManager {
     };
   }
 
-  list(): Array<{ sessionId: string; pid: number | null; command: string; cwd: string; running: boolean; exitCode: number | null; startedAt: string }> {
-    return [...this.sessions.values()].map((session) => ({
-      sessionId: session.sessionId,
-      pid: session.child.pid ?? null,
-      command: session.command,
-      cwd: session.cwd,
-      running: !session.exited,
-      exitCode: session.exitCode,
-      startedAt: session.startedAt,
-    }));
+  list(owner?: ProcessSessionOwner): Array<{ sessionId: string; pid: number | null; command: string; cwd: string; running: boolean; exitCode: number | null; startedAt: string }> {
+    const requested = owner ? normalizeOwner(owner)! : undefined;
+    return [...this.sessions.values()]
+      .filter((session) => !requested || (!!session.owner && sameOwner(session.owner, requested)))
+      .map((session) => ({
+        sessionId: session.sessionId,
+        pid: session.child.pid ?? null,
+        command: session.command,
+        cwd: session.cwd,
+        running: !session.exited,
+        exitCode: session.exitCode,
+        startedAt: session.startedAt,
+      }));
   }
 
-  async stop(sessionId: string): Promise<{ sessionId: string; stopped: boolean }> {
-    const session = this.sessions.get(sessionId);
-    if (!session) throw new Error(`Unknown process session: ${sessionId}`);
+  async stop(sessionId: string, owner?: ProcessSessionOwner): Promise<{ sessionId: string; stopped: boolean }> {
+    const session = this.requireSession(sessionId, owner);
     if (session.exited) return { sessionId, stopped: true };
 
     session.child.kill();
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, 750);
-      session.child.once('exit', () => { clearTimeout(timer); resolve(); });
-    });
-    if (!session.exited) session.child.kill('SIGKILL');
+    await this.waitForExit(session, 750);
+    if (!session.exited) {
+      session.child.kill('SIGKILL');
+      await this.waitForExit(session, 750);
+    }
+    if (session.terminalEvidence) await session.terminalEvidence;
     return { sessionId, stopped: true };
+  }
+
+  private requireSession(sessionId: string, owner?: ProcessSessionOwner): Session {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new ProcessSessionError('PROCESS_SESSION_NOT_FOUND', 'Process session was not found');
+    if (owner) {
+      const requested = normalizeOwner(owner)!;
+      if (!session.owner || !sameOwner(session.owner, requested)) {
+        throw new ProcessSessionError('PROCESS_SESSION_NOT_FOUND', 'Process session was not found');
+      }
+    }
+    return session;
+  }
+
+  private async waitForExit(session: Session, timeoutMs: number): Promise<void> {
+    if (session.exited) return;
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, timeoutMs);
+      session.child.once('exit', () => { clearTimeout(timer); resolve(); });
+      session.child.once('error', () => { clearTimeout(timer); resolve(); });
+    });
+  }
+
+  private notifyTerminal(session: Session): void {
+    if (session.terminalNotified || !session.exited) return;
+    session.terminalNotified = true;
+    if (!session.onTerminal) return;
+    const snapshot: ProcessTerminalSnapshot = {
+      sessionId: session.sessionId,
+      pid: session.child.pid ?? null,
+      cwd: session.cwd,
+      exitCode: session.exitCode,
+      signal: session.signal,
+      running: false,
+      outputTruncated: session.outputTruncated,
+      stdoutBytes: Buffer.byteLength(session.stdout, 'utf8'),
+      stderrBytes: Buffer.byteLength(session.stderr, 'utf8'),
+      startedAt: session.startedAt,
+      finishedAt: session.finishedAt ?? new Date().toISOString(),
+    };
+    try {
+      session.terminalEvidence = Promise.resolve(session.onTerminal(snapshot))
+        .then(() => undefined)
+        .catch(() => undefined);
+    } catch {
+      session.terminalEvidence = Promise.resolve();
+      // Terminal evidence callbacks are best-effort and must not alter process lifecycle.
+    }
   }
 }
 

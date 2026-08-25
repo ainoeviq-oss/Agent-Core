@@ -50,6 +50,14 @@ async function routeGuarded<T>(
 const ROUTE_REQUIRED_DESCRIPTION = 'Obtain routeContextId from capability_route before using this tool.';
 const routedDescription = (description: string) => `${description} ${ROUTE_REQUIRED_DESCRIPTION}`;
 
+function processOwner(runtime: RuntimeServices, key: VerifiedKey, originRouteContextId?: string) {
+  return {
+    principalId: key.id,
+    projectId: runtime.workspace.roots[0],
+    ...(originRouteContextId ? { originRouteContextId } : {}),
+  };
+}
+
 export const OPERATIONAL_TOOL_NAMES = [
   'workspace_info', 'list_directory', 'read_file', 'read_multiple_files',
   'write_file', 'edit_file', 'create_directory', 'move_file', 'get_file_info',
@@ -240,33 +248,72 @@ export function registerOperationalTools(
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
   }, async ({ command, cwd, routeContextId }) => {
     const resolvedCwd = cwd ?? runtime.workspace.roots[0]!;
+    const audit = new OperationalMemoryAudit(runtime, key);
     return routeGuarded(
       runtime, key, routeContextId, 'start_process',
-      () => runtime.processes.start(command, { cwd: resolvedCwd }),
+      () => runtime.processes.start(command, {
+        cwd: resolvedCwd,
+        owner: processOwner(runtime, key, routeContextId),
+        onTerminal: (snapshot) => audit.lifecycle(
+          routeContextId,
+          'start_process',
+          'terminal',
+          { sessionId: snapshot.sessionId },
+          snapshot,
+        ),
+      }),
       { command, cwd: resolvedCwd },
     );
   });
 
   server.registerTool('read_process_output', {
     title: 'Read Process Output',
-    description: 'Read the bounded stdout/stderr snapshot and state of a Agent Core process session.',
+    description: 'Read the bounded stdout/stderr snapshot and state of an owned Agent Core process session.',
     inputSchema: { sessionId: z.string().min(1) },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   }, async ({ sessionId }) => {
-    try { return textResult(runtime.processes.read(sessionId)); }
-    catch (error) { return errorResult(error); }
+    const owner = processOwner(runtime, key);
+    const audit = new OperationalMemoryAudit(runtime, key);
+    try {
+      const context = runtime.processes.sessionContext(sessionId, owner);
+      const result = runtime.processes.read(sessionId, owner);
+      await audit.lifecycle(
+        context.originRouteContextId ?? sessionId,
+        'read_process_output',
+        'observed',
+        { sessionId },
+        result,
+      );
+      return textResult(result);
+    } catch (error) {
+      return errorResult(error);
+    }
   });
 
   server.registerTool('stop_process', {
     title: 'Stop Process',
-    description: 'Stop a Agent Core-managed process session.',
+    description: 'Stop an owned Agent Core-managed process session without requiring its original route to still be active.',
     inputSchema: { sessionId: z.string().min(1) },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-  }, async ({ sessionId }) => guarded(() => runtime.processes.stop(sessionId)));
+  }, async ({ sessionId }) => {
+    const owner = processOwner(runtime, key);
+    const audit = new OperationalMemoryAudit(runtime, key);
+    try {
+      const context = runtime.processes.sessionContext(sessionId, owner);
+      const before = runtime.processes.read(sessionId, owner);
+      const sourceRef = context.originRouteContextId ?? sessionId;
+      await audit.lifecycle(sourceRef, 'stop_process', 'stop_requested', { sessionId }, before);
+      const result = await runtime.processes.stop(sessionId, owner);
+      await audit.lifecycle(sourceRef, 'stop_process', 'stop_succeeded', { sessionId }, result);
+      return textResult(result);
+    } catch (error) {
+      return errorResult(error);
+    }
+  });
 
   server.registerTool('list_processes', {
     title: 'List Processes',
-    description: 'List only the process sessions started and tracked by this Agent Core runtime.',
+    description: 'List only process sessions owned by the authenticated principal in the current project.',
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-  }, async () => textResult({ processes: runtime.processes.list() }));
+  }, async () => textResult({ processes: runtime.processes.list(processOwner(runtime, key)) }));
 }

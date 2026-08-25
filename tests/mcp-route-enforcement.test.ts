@@ -180,7 +180,10 @@ describe('Agent Core route enforcement', () => {
     const { root, runtime, principalA, baseUrl } = await setup();
     const started = await runtime.processes.start(
       "Write-Output 'route-recovery-ready'; Start-Sleep -Seconds 30",
-      { cwd: root },
+      {
+        cwd: root,
+        owner: { principalId: principalA.metadata.id, projectId: root },
+      },
     );
 
     const stopped = await call(baseUrl, principalA.key, 'stop_process', {

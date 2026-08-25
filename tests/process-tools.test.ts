@@ -52,4 +52,23 @@ describe('ProcessManager', () => {
     const stopped = await manager.stop(started.sessionId);
     expect(stopped.stopped).toBe(true);
   });
+
+  it('binds background sessions to principal/project/origin route and hides them from a different owner', async () => {
+    const { root, manager } = await setup();
+    const ownerA = { principalId: 'principal-a', projectId: root, originRouteContextId: 'route-a' };
+    const ownerB = { principalId: 'principal-b', projectId: root, originRouteContextId: 'route-b' };
+    const started = await manager.start("Write-Output 'owned-ready'; Start-Sleep -Seconds 5", {
+      cwd: root,
+      owner: ownerA,
+    });
+
+    expect(manager.sessionContext(started.sessionId, ownerA)).toEqual(ownerA);
+    expect(manager.read(started.sessionId, ownerA).stdout).toContain('owned-ready');
+    expect(manager.list(ownerA).map((item) => item.sessionId)).toContain(started.sessionId);
+    expect(manager.list(ownerB).map((item) => item.sessionId)).not.toContain(started.sessionId);
+    expect(() => manager.read(started.sessionId, ownerB)).toThrow(/not found/i);
+    await expect(manager.stop(started.sessionId, ownerB)).rejects.toThrow(/not found/i);
+
+    expect((await manager.stop(started.sessionId, ownerA)).stopped).toBe(true);
+  });
 });

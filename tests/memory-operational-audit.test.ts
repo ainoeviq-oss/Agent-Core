@@ -47,6 +47,7 @@ async function fixture(enforceHardGuardrails = false) {
   runtimes.push(runtime);
   const keyStore = new FileKeyStore(path.join(root, 'data'));
   const principal = await keyStore.create('operational-audit-principal');
+  const otherPrincipal = await keyStore.create('operational-audit-other-principal');
   const server = createServer(createHttpHandler({
     keyStore,
     auditLogger: new FileAuditLogger(path.join(root, 'logs')),
@@ -59,6 +60,7 @@ async function fixture(enforceHardGuardrails = false) {
     dbPath,
     runtime,
     principal,
+    otherPrincipal,
     baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
     scope: { principalId: principal.metadata.id, projectId: root },
   };
@@ -176,4 +178,64 @@ describe('automatic operational evidence capture', () => {
     expect(operationTypes).toContain('memory.operation_failed');
     expect(operationTypes).toContain('memory.operation_rejected');
   });
+  it('binds background process ownership beyond route TTL semantics and records read/stop/terminal lifecycle evidence', async () => {
+    const f = await fixture(false);
+    const route = body(await call(f.baseUrl, f.principal.key, 'capability_route', {
+      task: 'Implement and run a long-running background process, then inspect and stop that owned session.',
+      context: 'Use start_process; later reads and stop must use stored session ownership rather than the original route.',
+    }));
+    for (const required of route.requiredSkillLoads ?? []) {
+      const loaded = await call(f.baseUrl, f.principal.key, 'skill_load', {
+        id: required.id,
+        routeContextId: route.routeContextId,
+      });
+      expect(loaded.result.isError).not.toBe(true);
+    }
+
+    const started = await call(f.baseUrl, f.principal.key, 'start_process', {
+      command: "Write-Output 'lifecycle-ready'; Start-Sleep -Seconds 5",
+      cwd: f.root,
+      routeContextId: route.routeContextId,
+    });
+    expect(started.result.isError).not.toBe(true);
+    const sessionId = body(started).sessionId as string;
+    expect(sessionId).toMatch(/^proc_/);
+
+    const otherRead = await call(f.baseUrl, f.otherPrincipal.key, 'read_process_output', { sessionId });
+    expect(otherRead.result.isError).toBe(true);
+    const otherStop = await call(f.baseUrl, f.otherPrincipal.key, 'stop_process', { sessionId });
+    expect(otherStop.result.isError).toBe(true);
+    const otherList = body(await call(f.baseUrl, f.otherPrincipal.key, 'list_processes', {}));
+    expect(otherList.processes.map((item: any) => item.sessionId)).not.toContain(sessionId);
+
+    const ownerRead = await call(f.baseUrl, f.principal.key, 'read_process_output', { sessionId });
+    expect(ownerRead.result.isError).not.toBe(true);
+    expect(body(ownerRead).stdout).toContain('lifecycle-ready');
+    const ownerList = body(await call(f.baseUrl, f.principal.key, 'list_processes', {}));
+    expect(ownerList.processes.map((item: any) => item.sessionId)).toContain(sessionId);
+
+    const ownerStop = await call(f.baseUrl, f.principal.key, 'stop_process', { sessionId });
+    expect(ownerStop.result.isError).not.toBe(true);
+    expect(body(ownerStop).stopped).toBe(true);
+
+    await f.runtime.memory.close();
+    const lifecycle = readEvents(f.dbPath).filter((event) => [
+      'memory.operation_observed',
+      'memory.operation_stop_requested',
+      'memory.operation_stop_succeeded',
+      'memory.operation_terminal',
+    ].includes(String(event.event_type)));
+    expect(lifecycle.map((event) => event.event_type)).toEqual(expect.arrayContaining([
+      'memory.operation_observed',
+      'memory.operation_stop_requested',
+      'memory.operation_stop_succeeded',
+      'memory.operation_terminal',
+    ]));
+    expect(lifecycle.every((event) => event.source_ref === route.routeContextId)).toBe(true);
+    const terminal = lifecycle.find((event) => event.event_type === 'memory.operation_terminal')!;
+    const terminalMetadata = JSON.parse(String(terminal.metadata_json)) as Record<string, any>;
+    expect(terminalMetadata.result.stdout).toBeUndefined();
+    expect(terminalMetadata.result.stdoutBytes).toBeGreaterThan(0);
+    expect(terminalMetadata.input.sessionId).toBe(sessionId);
+  }, 15_000);
 });
