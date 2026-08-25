@@ -30,6 +30,16 @@ export interface MemoryConfig {
   scoreWeights: MemoryScoreWeights;
 }
 
+export interface ExecutionConfig {
+  enabled: boolean;
+  dbPath: string;
+  logRoot: string;
+  maxConcurrency: number;
+  maxNodes: number;
+  waitMaxMs: number;
+  busyTimeoutMs: number;
+}
+
 export interface AppConfig {
   host: string;
   port: number;
@@ -38,6 +48,7 @@ export interface AppConfig {
   capabilityDir: string;
   allowedRoots: string[];
   memory: MemoryConfig;
+  execution: ExecutionConfig;
 }
 
 type Env = Record<string, string | undefined>;
@@ -111,6 +122,17 @@ export function loadConfig(env: Env = process.env, baseDir = process.cwd()): App
     throw new Error('AGENT_CORE_MEMORY_PPR_EPSILON must be positive');
   }
 
+  const execution: ExecutionConfig = {
+    // Development default remains off until the staged live rollout enables it.
+    enabled: parseBoolean(env.AGENT_CORE_EXECUTION_ENABLED, false),
+    dbPath: path.resolve(env.AGENT_CORE_EXECUTION_DB_PATH?.trim() || path.join(baseDir, 'runtime', 'execution', 'agent-core-execution.sqlite')),
+    logRoot: path.resolve(env.AGENT_CORE_EXECUTION_LOG_ROOT?.trim() || path.join(baseDir, 'runtime', 'execution', 'runs')),
+    maxConcurrency: parsePositiveInteger(env.AGENT_CORE_EXECUTION_MAX_CONCURRENCY, 4, 'AGENT_CORE_EXECUTION_MAX_CONCURRENCY'),
+    maxNodes: parsePositiveInteger(env.AGENT_CORE_EXECUTION_MAX_NODES, 128, 'AGENT_CORE_EXECUTION_MAX_NODES'),
+    waitMaxMs: parsePositiveInteger(env.AGENT_CORE_EXECUTION_WAIT_MAX_MS, 60_000, 'AGENT_CORE_EXECUTION_WAIT_MAX_MS'),
+    busyTimeoutMs: parsePositiveInteger(env.AGENT_CORE_EXECUTION_BUSY_TIMEOUT_MS, 5_000, 'AGENT_CORE_EXECUTION_BUSY_TIMEOUT_MS'),
+  };
+
   return {
     host: env.AGENT_CORE_HOST?.trim() || '127.0.0.1',
     port,
@@ -119,5 +141,6 @@ export function loadConfig(env: Env = process.env, baseDir = process.cwd()): App
     capabilityDir: path.resolve(env.AGENT_CORE_CAPABILITY_DIR?.trim() || path.join(baseDir, 'capabilities')),
     allowedRoots: parseRoots(env.AGENT_CORE_ALLOWED_ROOTS, baseDir),
     memory,
+    execution,
   };
 }
