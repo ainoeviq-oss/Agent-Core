@@ -20,7 +20,7 @@ Execution evidence: `F:\Projects\Agent-Core\runtime\dmf-execution\logs\`
 ## Plan tasks
 
 - [x] Task 1 — Baseline and dependency gate
-- [ ] Task 2 — Types, configuration, and database schema
+- [x] Task 2 — Types, configuration, and database schema
 - [ ] Task 3 — Dedicated SQLite worker
 - [ ] Task 4 — Redaction, normalization, and anchors
 - [ ] Task 5 — Event journal and versioned store
