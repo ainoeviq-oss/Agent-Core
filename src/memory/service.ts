@@ -134,9 +134,9 @@ export class MemoryService {
     const rows = await components.client.query<Record<string, unknown>>(
       `SELECT id, route_context_id, query_text, query_hash, result_json, blocking_json, created_at, expires_at
          FROM memory_contexts
-        WHERE id = ? AND principal_id = ?
+        WHERE id = ? AND principal_id = ? AND expires_at > ?
         LIMIT 1`,
-      [contextId, scope.principalId],
+      [contextId, scope.principalId, Date.now()],
     );
     const row = rows[0];
     if (!row) return null;

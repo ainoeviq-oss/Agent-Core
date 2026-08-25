@@ -11,6 +11,7 @@ export interface MemoryScoreWeights {
 
 export interface MemoryConfig {
   enabled: boolean;
+  enforceHardGuardrails: boolean;
   dbPath: string;
   seedCap: number;
   graphNodeCap: number;
@@ -80,6 +81,7 @@ export function loadConfig(env: Env = process.env, baseDir = process.cwd()): App
 
   const memory: MemoryConfig = {
     enabled: parseBoolean(env.AGENT_CORE_MEMORY_ENABLED, false),
+    enforceHardGuardrails: parseBoolean(env.AGENT_CORE_MEMORY_ENFORCE_HARD_GUARDRAILS, false),
     dbPath: path.resolve(env.AGENT_CORE_MEMORY_DB_PATH?.trim() || path.join(baseDir, 'runtime', 'memory', 'agent-core-memory.sqlite')),
     seedCap: parsePositiveInteger(env.AGENT_CORE_MEMORY_SEED_CAP, 64, 'AGENT_CORE_MEMORY_SEED_CAP'),
     graphNodeCap: parsePositiveInteger(env.AGENT_CORE_MEMORY_GRAPH_NODE_CAP, 1000, 'AGENT_CORE_MEMORY_GRAPH_NODE_CAP'),

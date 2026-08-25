@@ -17,7 +17,11 @@ export function routeErrorResult(error: unknown) {
     content: [{
       type: 'text' as const,
       text: JSON.stringify({
-        error: { code: error.code, message: error.message },
+        error: {
+          code: error.code,
+          message: error.message,
+          ...(error.details ? { details: error.details } : {}),
+        },
       }, null, 2),
     }],
     isError: true as const,

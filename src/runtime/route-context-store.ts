@@ -10,16 +10,44 @@ export type AgentCoreRouteErrorCode =
   | 'ROUTE_EXPIRED'
   | 'ROUTE_PRINCIPAL_MISMATCH'
   | 'ROUTE_TOOL_NOT_ALLOWED'
-  | 'ROUTE_SKILL_REQUIRED';
+  | 'ROUTE_SKILL_REQUIRED'
+  | 'ROUTE_MEMORY_GUARDRAIL_BLOCKED';
 
 export class AgentCoreRouteError extends Error {
   constructor(
     public readonly code: AgentCoreRouteErrorCode,
     message: string,
+    public readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'AgentCoreRouteError';
   }
+}
+
+export interface RouteReservation {
+  routeContextId: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface RouteMemoryGuardrailRef {
+  memoryId: string;
+  revisionId?: string;
+  canonicalKey?: string;
+  sourceEventId?: string;
+}
+
+export interface RouteMemorySnapshot {
+  memoryContextId: string;
+  memorySnapshotHash: string;
+  blockingGuardrailMemoryIds: string[];
+  blockingGuardrails?: RouteMemoryGuardrailRef[];
+  enforceHardGuardrails: boolean;
+}
+
+export interface RouteCreateOptions {
+  reservation?: RouteReservation;
+  memorySnapshot?: RouteMemorySnapshot;
 }
 
 export interface RouteContext extends RoutePlan {
@@ -28,6 +56,7 @@ export interface RouteContext extends RoutePlan {
   loadedSkillIds: string[];
   createdAt: string;
   expiresAt: string;
+  memorySnapshot?: RouteMemorySnapshot;
 }
 export interface RouteContextStoreOptions {
   now?: () => number;
@@ -53,17 +82,33 @@ export class RouteContextStore {
     this.auditLogger = options.auditLogger ?? NOOP_ROUTING_AUDIT_LOGGER;
   }
 
-  create(principalId: string, plan: RoutePlan): RouteContext {
-    this.pruneExpired();
-    this.pruneOldestForCapacity();
+  reserve(): RouteReservation {
     const now = this.now();
-    const context: RouteContext = {
-      ...structuredClone(plan),
+    return {
       routeContextId: randomUUID(),
-      principalId,
-      loadedSkillIds: [],
       createdAt: new Date(now).toISOString(),
       expiresAt: new Date(now + this.ttlMs).toISOString(),
+    };
+  }
+
+  create(principalId: string, plan: RoutePlan, options: RouteCreateOptions = {}): RouteContext {
+    this.pruneExpired();
+    this.pruneOldestForCapacity();
+    const reservation = options.reservation ?? this.reserve();
+    if (Date.parse(reservation.expiresAt) <= this.now()) {
+      throw new AgentCoreRouteError('ROUTE_EXPIRED', 'Reserved route context has already expired');
+    }
+    if (this.contexts.has(reservation.routeContextId)) {
+      throw new Error(`Route context already exists: ${reservation.routeContextId}`);
+    }
+    const context: RouteContext = {
+      ...structuredClone(plan),
+      routeContextId: reservation.routeContextId,
+      principalId,
+      loadedSkillIds: [],
+      createdAt: reservation.createdAt,
+      expiresAt: reservation.expiresAt,
+      ...(options.memorySnapshot ? { memorySnapshot: structuredClone(options.memorySnapshot) } : {}),
     };
     this.contexts.set(context.routeContextId, context);
     this.auditLogger.logRouting({
@@ -114,6 +159,7 @@ export class RouteContextStore {
       throw error;
     }
   }
+
   validate(
     routeContextId: string,
     principalId: string,
@@ -121,6 +167,15 @@ export class RouteContextStore {
   ): RouteContext {
     try {
       const context = this.requireOwned(routeContextId, principalId);
+      const memory = context.memorySnapshot;
+      if (memory?.enforceHardGuardrails && memory.blockingGuardrailMemoryIds.length > 0) {
+        const guardrails = memory.blockingGuardrails ?? memory.blockingGuardrailMemoryIds.map((memoryId) => ({ memoryId }));
+        throw new AgentCoreRouteError(
+          'ROUTE_MEMORY_GUARDRAIL_BLOCKED',
+          `Route is blocked by ${guardrails.length} active hard memory guardrail(s)`,
+          { memoryContextId: memory.memoryContextId, memorySnapshotHash: memory.memorySnapshotHash, guardrails },
+        );
+      }
       if (!context.allowedTools.includes(toolName)) {
         throw new AgentCoreRouteError(
           'ROUTE_TOOL_NOT_ALLOWED',
@@ -170,6 +225,7 @@ export class RouteContextStore {
     }
     return context;
   }
+
   private auditRejected(
     routeContextId: string,
     principalId: string,
@@ -196,6 +252,7 @@ export class RouteContextStore {
   private isExpired(context: RouteContext): boolean {
     return Date.parse(context.expiresAt) <= this.now();
   }
+
   private pruneExpired(exceptId?: string): void {
     for (const [id, context] of this.contexts) {
       if (id !== exceptId && this.isExpired(context)) this.contexts.delete(id);

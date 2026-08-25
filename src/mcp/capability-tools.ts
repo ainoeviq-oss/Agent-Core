@@ -1,6 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
 import type { VerifiedKey } from '../auth/key-types.js';
+import type { MemorySearchHit } from '../memory/types.js';
 import type { RuntimeServices } from '../runtime/services.js';
 
 function textResult(value: unknown) {
@@ -13,6 +14,14 @@ function errorResult(error: unknown) {
     content: [{ type: 'text' as const, text: JSON.stringify({ error: message }, null, 2) }],
     isError: true,
   };
+}
+
+function memoryConfidence(hits: MemorySearchHit[]): number {
+  if (hits.length === 0) return 0;
+  const breadth = Math.min(1, hits.length / 5);
+  const signalCoverage = hits.filter((hit) => hit.whyMatched.exact > 0 || hit.whyMatched.lexical > 0).length / hits.length;
+  const provenanceCoverage = hits.filter((hit) => Boolean(hit.sourceEventId)).length / hits.length;
+  return Number((0.4 * breadth + 0.3 * signalCoverage + 0.3 * provenanceCoverage).toFixed(6));
 }
 
 function guarded<T>(operation: () => T) {
@@ -62,8 +71,49 @@ export function registerCapabilityTools(
     },
     annotations: routeAnnotations,
   }, async ({ task, context }) => {
+    const reservation = runtime.routes.reserve();
+    const scope = {
+      principalId: key.id,
+      projectId: runtime.workspace.roots[0],
+    };
+    let memoryStatus: 'disabled' | 'healthy' | 'degraded' = runtime.memory.config.enabled ? 'healthy' : 'disabled';
+    let preflight = null as Awaited<ReturnType<typeof runtime.memory.preflight>> | null;
+
+    if (runtime.memory.config.enabled) {
+      try {
+        preflight = await runtime.memory.preflight({
+          scope,
+          routeContextId: reservation.routeContextId,
+          task,
+          context,
+          routeMetadata: { workspaceRoots: runtime.workspace.roots },
+          expiresAt: Date.parse(reservation.expiresAt),
+        });
+      } catch {
+        memoryStatus = 'degraded';
+      }
+    }
+
     const plan = runtime.router.route(task, context ?? '');
-    const route = runtime.routes.create(key.id, plan);
+    const route = runtime.routes.create(key.id, plan, {
+      reservation,
+      ...(preflight ? {
+        memorySnapshot: {
+          memoryContextId: preflight.contextId,
+          memorySnapshotHash: preflight.snapshotHash,
+          blockingGuardrailMemoryIds: preflight.blockingGuardrails.map((item) => item.memoryId),
+          blockingGuardrails: preflight.blockingGuardrails.map((item) => ({
+            memoryId: item.memoryId,
+            revisionId: item.revisionId,
+            canonicalKey: item.canonicalKey,
+            ...(item.sourceEventId ? { sourceEventId: item.sourceEventId } : {}),
+          })),
+          enforceHardGuardrails: runtime.memory.config.enforceHardGuardrails,
+        },
+      } : {}),
+    });
+
+    const memorySummary = preflight?.recalled ?? [];
     return textResult({
       routeContextId: route.routeContextId,
       tier: route.tier,
@@ -76,6 +126,15 @@ export function registerCapabilityTools(
       allowedTools: route.allowedTools,
       verification: route.verification,
       reasonCodes: route.reasonCodes,
+      memoryStatus,
+      memoryContextId: preflight?.contextId ?? null,
+      memorySummary,
+      blockingGuardrails: preflight?.blockingGuardrails ?? [],
+      openConflicts: preflight?.openConflicts ?? [],
+      priorFailures: preflight?.priorFailures ?? [],
+      relatedDecisions: preflight?.relatedDecisions ?? [],
+      memoryConfidence: memoryConfidence(memorySummary),
+      memorySnapshotHash: preflight?.snapshotHash ?? null,
       expiresAt: route.expiresAt,
     });
   });
