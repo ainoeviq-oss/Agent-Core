@@ -1,38 +1,56 @@
 # Agent Core Plugin Source
 
-This directory is the local source workspace for packaging Agent Core as one workflow capability: native Skills plus the already-connected Agent Core MCP app.
+This directory contains the tracked, reproducible source for the Agent Core plugin layer: the native Capability Router skill plus metadata that binds it to the already-connected Agent Core MCP app.
 
-## Components
+## Tracked core
 
-- `skills/agent-core-capability-router/SKILL.md` — native routing reflex for actionable tasks.
-- `generated/skills/*` — generated copies of audited `native_ready` skills only.
-- `generated/agent-core-package.json` — internal package inventory. It is **not** claimed to be an OpenAI upload manifest.
-- Agent Core app — the existing ChatGPT custom MCP app using the Secure MCP Tunnel and OAuth bridge.
+```text
+plugin/agent-core/
+├── README.md
+└── skills/
+    └── agent-core-capability-router/
+        └── SKILL.md
+```
 
-## Build
+The tracked core is intentionally small. It does not vendor OAuth state, API credentials, runtime databases, local capability caches, or third-party skill sources.
 
-From the Agent Core feature checkout:
+## Local audited expansion
+
+On a workstation with the local audited capability registry available, run:
 
 ```powershell
 npm run build:plugin
 ```
 
-The builder reads the stable registry under `F:\Projects\Agent Core-MCP\capabilities`, then packages only skills that passed source resolution, license verification, function analysis, and safety review.
+The builder materializes the native router plus only capabilities that passed the required source, license, function-analysis and safety gates. Each generated third-party skill carries its audited provenance and license evidence.
 
-Every imported skill carries its audited `PROVENANCE.json` and source `LICENSE` beside `SKILL.md`.
+Generated output is local and ignored by Git.
 
-## Agent Core v0.5 automatic routing
+## Stable release package
 
-The native Router Skill treats routing as an internal reflex. A normal user brief is preflighted with `capability_route`, the returned `routeContextId` is reused for one coherent goal, and any route-required audited skill is loaded with `skill_load(id, routeContextId)` before route-bound execution. Users should not have to name routing primitives themselves.
+The stable release workflow packages the **tracked core** rather than depending on untracked local registry state. This keeps tagged release assets reproducible from the repository alone.
 
-Only audited `native_ready` skills may be full-instruction-loaded. Reference-only, catalog-only, quarantined, unresolved, and unknown-license material remains metadata/reference material and is never loaded as executable skill guidance.
+The published plugin source package contains:
 
-After an Agent Core v0.5.0 deployment, refresh the ChatGPT app tool snapshot once with **Scan Tools / Refresh Tools**, then update the Router Skill once so ChatGPT sees `capability_route` and the route-bound schemas containing `routeContextId`.
+- the native Agent Core Capability Router skill;
+- release/package metadata;
+- plugin documentation and changelog;
+- no credentials, runtime state, local capability registry, quarantine material, or raw logs.
 
-## ChatGPT packaging boundary
+Additional audited skills remain dynamically available through Agent Core's capability registry and are not silently vendored into the stable GitHub Package.
 
-OpenAI currently documents that one Plugin may include multiple Skills and Apps, but does not publish a generic local plugin-manifest format equivalent to Agent Skills' `SKILL.md` standard. Therefore this workspace does not invent one.
+## Runtime contract
 
-When attaching this source to ChatGPT, keep the existing `Agent Core` app as the app component and use the Skills from this package as the plugin's skill components. App OAuth/tunnel credentials remain in the existing app/runtime and are never copied into the skill package.
+The native router treats capability routing as an internal preflight for actionable work:
 
-The capability registry remains deferred behind MCP. The package should not contain the entire 415-item catalog as full instructions; only audited `native_ready` skills are materialized.
+1. establish a principal/project route;
+2. rehydrate relevant memory/continuity state;
+3. inspect required capability dependencies;
+4. load full instructions only for audited `native_ready` skills;
+5. reuse the route context for route-bound operations that belong to the same coherent goal.
+
+Users should not need to manually manage route IDs during normal use.
+
+## ChatGPT boundary
+
+Agent Core's app component remains the existing authenticated MCP connection. The plugin source does not invent or embed a second app credential. Skills and app connectivity are separate concerns: credentials stay in the runtime/app boundary, while this directory carries only the safe plugin source layer.

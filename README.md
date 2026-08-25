@@ -1,127 +1,184 @@
-﻿# Agent Core MCP
+# Agent Core
 
-Agent Core MCP is a Windows-hosted custom MCP gateway that provides a stable foundation for Agent-Core-style capabilities in a different controlled scope.
+Agent Core is a **local-first, authenticated MCP control plane** that lets ChatGPT work against a bounded Windows workspace with durable memory, dependency-aware execution, evidence-backed continuity, and an operator-owned launcher/tray lifecycle.
 
-V2 exposes a guarded operational toolset for filesystem, search, PowerShell execution, and Agent Core-managed process sessions while retaining the custom API-key + OAuth bridge and Secure MCP Tunnel compatibility.
+The design keeps semantic reasoning in the connected model while Agent Core supplies the deterministic substrate around it: authentication, workspace policy, local state, command execution, event wake, recovery, and factual evidence.
 
-## Endpoint
+## What Agent Core provides
 
-- MCP: `http://127.0.0.1:8765/mcp`
-- Health: `http://127.0.0.1:8765/health`
-- Authentication: `Authorization: Bearer agent_core_live_...`
-- Server identity: `agent-core`
+| Layer | Responsibility |
+|---|---|
+| MCP gateway | Streamable HTTP MCP endpoint and tool discovery |
+| Authentication | Custom Agent Core API keys, OAuth 2.0, PKCE, refresh tokens, dynamic client registration |
+| Workspace guard | Allowed-root filesystem and process boundaries |
+| Capability routing | Principal-bound task routing and audited deferred skill loading |
+| Deterministic Memory Fabric | Local SQLite semantic memory, provenance, retrieval, backup, integrity, redaction |
+| Local Continuity | Task/checkpoint/frontier state that can be rehydrated by a later route or chat session |
+| Execution Fabric | Durable DAG execution, bounded concurrency, retries, logs, restart recovery |
+| Event wake | Persist-before-signal event delivery without busy database polling |
+| Windows lifecycle | One launcher, tray controls, watchdog recovery, tunnel supervision, optional autostart |
 
-## Start Agent Core
+## Architecture
 
-For normal use there is one public launcher:
+```text
+ChatGPT / MCP Client
+        |
+        v
++-----------------------------+
+| Agent Core MCP + OAuth      |
+| identity / route / policy   |
++-------------+---------------+
+              |
+       +------+-------+--------------------+
+       |              |                    |
+       v              v                    v
+ Capability       DMF + Continuity    Execution Fabric
+  Registry        durable context      DAG + events
+       |              |                    |
+       +--------------+---------+----------+
+                                |
+                                v
+                      Verified local actions
+                                |
+                    +-----------+-----------+
+                    |                       |
+                    v                       v
+              Files / processes       Evidence / logs
+```
+
+**Core rule:** the model interprets and decides; Agent Core persists, constrains, executes, and records reality.
+
+## Quick start
+
+Requirements:
+
+- Windows 10/11
+- Node.js 24+
+- the Agent Core project folder kept intact
+- Secure MCP Tunnel configured for remote ChatGPT access when needed
+
+For normal use, launch only:
 
 ```text
 Start-Agent-Core.bat
 ```
 
-Double-click it from the Agent Core root. It resolves the current project location, discovers Node.js and the tunnel client, installs dependencies when missing, builds the runtime, performs a safe controlled takeover of matching live services, then starts the tray manager in the background. The tray manager owns the MCP server, Secure MCP Tunnel, health checks, watchdog recovery, restart actions, OAuth re-auth/reset, and optional Windows autostart.
+The launcher resolves the current project location, installs missing dependencies, builds the runtime, performs identity-safe service takeover, then starts the tray manager in the background. Internal PowerShell/VBS helpers do not need to be launched manually.
 
-You do **not** need to launch the VBS, PowerShell tray script, or tray installer separately; those files are internal implementation helpers.
-
-### Moving the Agent Core folder
-
-Agent Core does not depend on a fixed `F:\Projects\Agent-Core` path. To relocate it safely: exit Agent Core from the tray, move the complete `Agent-Core` folder, then run `Start-Agent-Core.bat` once from the new location. Root-derived runtime/data/log/capability/tunnel-profile paths are rebound automatically. If autostart is enabled, its stable LocalAppData locator is refreshed to the new root.
-
-### Tray controls
+Default local endpoints:
 
 ```text
-Exit temporarily: tray menu -> Exit Agent Core
-Restart:          tray menu -> Restart All
-OAuth re-auth:     tray menu -> Reset OAuth / Re-auth
-Autostart:         tray menu -> Start with Windows: On/Off
+MCP     http://127.0.0.1:8765/mcp
+Health  http://127.0.0.1:8765/health
 ```
 
-`Exit Agent Core` stops only identity-validated Agent Core/tunnel processes owned by the tray manager. It preserves runtime data, logs, capabilities, tunnel profile, OAuth/key state, and secrets.
+The service remains loopback-bound. Remote ChatGPT access is provided through the configured Secure MCP Tunnel rather than by exposing the local MCP listener directly.
 
-## Create an API Key
+## Tray controls
+
+```text
+Restart:        tray menu -> Restart All
+OAuth re-auth:  tray menu -> Reset OAuth / Re-auth
+Autostart:      tray menu -> Start with Windows: On/Off
+Exit:           tray menu -> Exit Agent Core
+```
+
+`Exit Agent Core` stops only identity-validated Agent Core and tunnel processes owned by the tray manager. Runtime data, logs, OAuth/key state, capabilities, and secrets are preserved.
+
+## Tool surface
+
+Agent Core groups its MCP tools by responsibility:
+
+- **Identity & status** - runtime identity, health, workspace roots, capability stage.
+- **Filesystem & search** - bounded read/write/edit/move/info and recursive filename/content search.
+- **Processes** - guarded PowerShell execution plus owned background-process lifecycle tools.
+- **Capability routing** - route, search, inspect dependencies, load audited native-ready skills, registry coverage.
+- **Memory** - status, search, inspect, commit, revise, forget, explain, export.
+- **Continuity** - checkpoint, status, task inspection, actionable frontier.
+- **Execution** - create/start/status/wait/log/add/retry/cancel dependency-aware command runs.
+
+Route-bound mutations require a current principal/project routing context. High-risk system, storage, privilege, and escape-path operations are rejected before execution.
+
+## Persistence model
+
+Runtime state is local and intentionally separated by concern:
+
+```text
+runtime/data/       OAuth clients, key metadata, launcher state
+runtime/logs/       operational logs
+runtime/memory/     Deterministic Memory Fabric SQLite + backups
+runtime/execution/  execution SQLite + per-attempt evidence
+capabilities/       deferred/audited capability registry
+secrets/            operator-managed secrets (never packaged)
+```
+
+Generated runtime state, secrets, caches, local capability sources, and release build output are excluded from Git.
+
+## Security boundaries
+
+- MCP is bound to `127.0.0.1` by default.
+- Agent Core API keys are persisted as salted hashes; raw key material is shown only at creation/rotation time.
+- OAuth state is separate from source control.
+- Filesystem/process tools are restricted to configured workspace roots.
+- Raw execution stdout/stderr is treated as sensitive operator evidence and is never promoted wholesale into semantic memory.
+- Execution recovery never infers success from a vanished process or PID; durable result evidence is authoritative.
+- Deferred third-party capabilities cannot become executable skills until their audit gates pass.
+
+See [`SECURITY.md`](SECURITY.md) for the repository security model.
+
+## Repository layout
+
+```text
+src/                 Agent Core runtime source
+tests/               behavioral, security, recovery and performance tests
+scripts/             build, benchmark, release and Windows lifecycle tooling
+plugin/agent-core/    native Agent Core plugin source
+docs/                canonical architecture/operator documentation
+tunnel-client/        safe tunnel configuration example
+Start-Agent-Core.bat  public launcher
+```
+
+## Documentation
+
+Start with [`docs/README.md`](docs/README.md).
+
+Key documents:
+
+- [`docs/deterministic-memory.md`](docs/deterministic-memory.md)
+- [`docs/local-agent-continuity.md`](docs/local-agent-continuity.md)
+- [`docs/deterministic-execution-fabric.md`](docs/deterministic-execution-fabric.md)
+- [`docs/multi-command-wake-workflow.md`](docs/multi-command-wake-workflow.md)
+- [`docs/stability.md`](docs/stability.md)
+- [`docs/roadmap/self-fork-integration.md`](docs/roadmap/self-fork-integration.md) - planning only; not implemented
+
+## Development and verification
 
 ```powershell
-node dist\cli.js create-key chatgpt
-```
-
-The returned `key` value is shown once. The persisted `data\keys.json` stores only a salted scrypt hash and metadata.
-
-
-## Key Administration
-
-```powershell
-node dist\cli.js list-keys
-node dist\cli.js revoke-key <key-id>
-node dist\cli.js rotate-key <key-id>
-```
-
-`list-keys` never prints raw API-key material. Rotation revokes the old key and emits a new raw key once.
-
-## MCP Tools
-
-Core identity: `agent_core_status`, `agent_core_capabilities`, `workspace_info`.
-
-Filesystem: `list_directory`, `read_file`, `read_multiple_files`, `write_file`, `edit_file`, `create_directory`, `move_file`, `get_file_info`.
-
-Search: `search_files` supports filename and text-content modes.
-
-Process/terminal: `execute_command`, `start_process`, `read_process_output`, `stop_process`, `list_processes`.
-
-Deterministic memory: `memory_status`, `memory_search`, `memory_get`, `memory_commit`, `memory_revise`, `memory_forget`, `memory_explain`, `memory_export`. DMF runs inside Agent Core, is enabled by default, and stores its SQLite database under `runtime\memory` when using the unified launcher. Recovery, backup, export, forget, disable, and integrity procedures are documented in [`docs/deterministic-memory.md`](docs/deterministic-memory.md).
-
-All paths and process working directories are constrained by `AGENT_CORE_ALLOWED_ROOTS`. High-risk system/storage/privilege commands are blocked before PowerShell execution. Git semantic tools and GUI/system administration remain deferred.
-
-## HTTP Example
-
-```http
-POST /mcp
-Authorization: Bearer agent_core_live_xxxxxxxxx
-Content-Type: application/json
-Accept: application/json, text/event-stream
-```
-
-The MCP protocol version used by the installed SDK is `2025-11-25`.
-
-
-## ChatGPT Connection
-
-The local server remains bound to `127.0.0.1`. ChatGPT reaches it through the OpenAI Secure MCP Tunnel configured for this installation. OAuth discovery, Dynamic Client Registration, PKCE authorization-code exchange, and refresh tokens are implemented by Agent Core; the authorization page maps the resulting OAuth identity back to a `agent_core_live_...` Agent Core key.
-
-After an Agent Core identity or credential reset, any pre-existing ChatGPT app connection must be reconnected once and its tools scanned/refreshed so the app metadata and tool snapshot use Agent Core. Legacy credential prefixes are not accepted.
-
-The tunnel daemon must stay running for discovery and tool calls. The Agent Core runtime data directory should also remain stable across upgrades so OAuth clients/tokens and key metadata survive branch or binary changes.
-
-## Development Verification
-
-```powershell
-npm test
+npm ci
 npm run build
+npm test
+npm run check:brand
 ```
 
-The production launcher defaults runtime state to `runtime\data` and `runtime\logs`; both are ignored by Git. Override `AGENT_CORE_DATA_DIR`, `AGENT_CORE_LOG_DIR`, or semicolon-separated `AGENT_CORE_ALLOWED_ROOTS` when a different deployment scope is required.
+For the complete release gate:
 
-## Hybrid Capability Registry
+```powershell
+npm run verify:release
+npm run package:release
+```
 
-Agent Core indexes the local `awesome-korean-agent-skills` catalog into a deferred registry under `F:\Projects\Agent-Core\capabilities`.
+## Plugin packaging
 
-Current registry/routing primitives: `capability_route`, `capability_search`, `capability_get`, `skill_load`, `capability_dependencies`, and `capability_coverage`.
-
-Catalog entries stay metadata-only until selected. `skill_load` rejects anything that is not an audited `native_ready` skill. External sources must pass source resolution, license verification, function analysis, and safety review before normalization.
-
-Build the local Agent Core plugin source package with:
+The tracked plugin source contains the native Agent Core Capability Router. Local audited `native_ready` skills can additionally be materialized from the deferred capability registry with:
 
 ```powershell
 npm run build:plugin
 ```
 
-The package contains the native Agent Core Capability Router plus audited native-ready skills and references the already-connected Agent Core MCP app. Generated package output is ignored by Git; credentials, runtime OAuth state, external caches, and quarantine material are never packaged.
+Local generated skill packages include provenance/license evidence and remain ignored by Git. Release packaging deliberately uses a reproducible tracked-core bundle; runtime credentials, OAuth state, secrets, caches, quarantine material, and untracked capability sources are never included.
 
-## Agent Core v0.5 Automatic Capability Routing
+## Releases
 
-Agent Core v0.5.0 promotes routing from an optional recommendation step into an internal execution preflight. Normal user briefs are routed with `capability_route`; the returned `routeContextId` is reused across the route-required operations that belong to the same coherent goal.
+Stable tags are built through the repository release workflow. A successful stable release is gated by dependency install, build, full tests, brand checks, release-metadata checks, package construction, checksums, GitHub Release publication, and GitHub Packages publication of the plugin source package under the `stable` dist-tag.
 
-If the route selects a required audited skill, load it with `skill_load(id, routeContextId)` before route-bound execution. Only `native_ready` skills may be full-instruction-loaded; catalog-only, reference-only, quarantined, unresolved, and unknown-license material remains non-executable guidance or metadata.
-
-Automatic routing is intentionally invisible to the normal prompt surface. Users should not need to mention capability tools, route IDs, or skill-loading primitives. Routing details should surface only when a risk, dependency, required approval, or route failure materially helps the user.
-
-After deploying v0.5.0, refresh the ChatGPT Agent Core app once with **Scan Tools / Refresh Tools** and update the Agent Core Capability Router Skill once. This refresh is required so ChatGPT replaces the cached capability schema with `capability_route` and sees `routeContextId` on route-bound operational tools.
+Release history and behavior changes are recorded in [`CHANGELOG.md`](CHANGELOG.md).

@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#0b1020"/>
+      <stop offset="100%" stop-color="#131b33"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#93c5fd"/>
+    </marker>
+    <style>
+      .title{font-family:Arial,sans-serif;font-size:34px;font-weight:700;fill:#f8fafc}
+      .subtitle{font-family:Arial,sans-serif;font-size:18px;fill:#cbd5e1}
+      .h{font-family:Arial,sans-serif;font-size:21px;font-weight:700;fill:#f8fafc}
+      .t{font-family:Arial,sans-serif;font-size:16px;fill:#dbeafe}
+      .small{font-family:Arial,sans-serif;font-size:14px;fill:#cbd5e1}
+      .box{fill:#172554;stroke:#60a5fa;stroke-width:2;rx:18}
+      .brain{fill:#312e81;stroke:#a78bfa;stroke-width:3;rx:22}
+      .fork{fill:#0f3b4b;stroke:#22d3ee;stroke-width:2;rx:18}
+      .exec{fill:#173a2a;stroke:#4ade80;stroke-width:2;rx:14}
+      .memory{fill:#3b2f12;stroke:#fbbf24;stroke-width:2;rx:18}
+      .merge{fill:#4c1d3d;stroke:#f472b6;stroke-width:2;rx:18}
+      .guard{fill:#3b1c1c;stroke:#fb7185;stroke-width:2;rx:14}
+      .line{stroke:#93c5fd;stroke-width:2.5;fill:none;marker-end:url(#arrow)}
+      .dash{stroke:#64748b;stroke-width:2;stroke-dasharray:8 8;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+
+  <rect width="1600" height="1000" fill="url(#bg)"/>
+  <text x="70" y="70" class="title">Agent Core — Self-Fork + Multi-Command Architecture</text>
+  <text x="70" y="105" class="subtitle">Same-model cognitive branches coordinated by Agent Core; no hidden Codex/Claude/Gemini fallback.</text>
+
+  <rect x="565" y="145" width="470" height="110" class="brain"/>
+  <text x="800" y="185" text-anchor="middle" class="h">MAIN BRAIN / PARENT MODEL</text>
+  <text x="800" y="216" text-anchor="middle" class="t">Owns semantic intent, fork decision, and final synthesis</text>
+  <text x="800" y="240" text-anchor="middle" class="small">Same model identity; separate inference contexts are descendants, not other agents</text>
+
+  <rect x="600" y="295" width="400" height="88" class="box"/>
+  <text x="800" y="330" text-anchor="middle" class="h">Fork Decision Router</text>
+  <text x="800" y="358" text-anchor="middle" class="small">Sequential vs Multi-Command vs Self-Fork vs Hybrid</text>
+
+  <path d="M800 255 L800 295" class="line"/>
+
+  <rect x="120" y="450" width="350" height="145" class="fork"/>
+  <text x="295" y="488" text-anchor="middle" class="h">SELF-FORK A</text>
+  <text x="295" y="518" text-anchor="middle" class="t">Hypothesis / Architecture</text>
+  <text x="295" y="546" text-anchor="middle" class="small">Independent context snapshot</text>
+  <text x="295" y="570" text-anchor="middle" class="small">Structured claims + evidence only</text>
+
+  <rect x="625" y="450" width="350" height="145" class="fork"/>
+  <text x="800" y="488" text-anchor="middle" class="h">SELF-FORK B</text>
+  <text x="800" y="518" text-anchor="middle" class="t">Adversarial / Failure Search</text>
+  <text x="800" y="546" text-anchor="middle" class="small">Independent context snapshot</text>
+  <text x="800" y="570" text-anchor="middle" class="small">Can disagree with Fork A</text>
+
+  <rect x="1130" y="450" width="350" height="145" class="fork"/>
+  <text x="1305" y="488" text-anchor="middle" class="h">SELF-FORK C</text>
+  <text x="1305" y="518" text-anchor="middle" class="t">Simplifier / Alternative</text>
+  <text x="1305" y="546" text-anchor="middle" class="small">Independent context snapshot</text>
+  <text x="1305" y="570" text-anchor="middle" class="small">Produces competing evidence</text>
+
+  <path d="M800 383 C650 420 470 420 295 450" class="line"/>
+  <path d="M800 383 L800 450" class="line"/>
+  <path d="M800 383 C950 420 1130 420 1305 450" class="line"/>
+
+  <rect x="125" y="635" width="340" height="112" class="exec"/>
+  <text x="295" y="670" text-anchor="middle" class="h">Multi-Command DAG A</text>
+  <text x="295" y="700" text-anchor="middle" class="small">read • test • inspect • benchmark</text>
+  <text x="295" y="724" text-anchor="middle" class="small">parallelize independence, serialize dependency</text>
+
+  <rect x="630" y="635" width="340" height="112" class="exec"/>
+  <text x="800" y="670" text-anchor="middle" class="h">Multi-Command DAG B</text>
+  <text x="800" y="700" text-anchor="middle" class="small">evidence-producing local commands</text>
+  <text x="800" y="724" text-anchor="middle" class="small">event-driven wake, bounded concurrency</text>
+
+  <rect x="1135" y="635" width="340" height="112" class="exec"/>
+  <text x="1305" y="670" text-anchor="middle" class="h">Multi-Command DAG C</text>
+  <text x="1305" y="700" text-anchor="middle" class="small">independent local execution</text>
+  <text x="1305" y="724" text-anchor="middle" class="small">factual logs + result markers</text>
+
+  <path d="M295 595 L295 635" class="line"/>
+  <path d="M800 595 L800 635" class="line"/>
+  <path d="M1305 595 L1305 635" class="line"/>
+
+  <rect x="525" y="800" width="550" height="105" class="merge"/>
+  <text x="800" y="836" text-anchor="middle" class="h">Evidence-Weighted Merge + Parent Synthesis</text>
+  <text x="800" y="866" text-anchor="middle" class="small">No majority-vote shortcut • contradictions preserved • parent remains final authority</text>
+  <text x="800" y="890" text-anchor="middle" class="small">Only accepted conclusions become durable semantic memory</text>
+
+  <path d="M295 747 C350 785 500 795 610 815" class="line"/>
+  <path d="M800 747 L800 800" class="line"/>
+  <path d="M1305 747 C1250 785 1100 795 990 815" class="line"/>
+
+  <rect x="70" y="815" width="360" height="120" class="memory"/>
+  <text x="250" y="850" text-anchor="middle" class="h">DMF + Continuity Ledger</text>
+  <text x="250" y="880" text-anchor="middle" class="small">Merged decisions, artifacts, failures, frontier</text>
+  <text x="250" y="904" text-anchor="middle" class="small">Never private chain-of-thought</text>
+
+  <rect x="1170" y="815" width="360" height="120" class="guard"/>
+  <text x="1350" y="850" text-anchor="middle" class="h">Credential &amp; Cost Guardrail</text>
+  <text x="1350" y="880" text-anchor="middle" class="small">provider = host_same_model only</text>
+  <text x="1350" y="904" text-anchor="middle" class="small">external provider fallback = disabled</text>
+
+  <path d="M525 862 C480 862 455 865 430 875" class="dash"/>
+  <path d="M1075 862 C1120 862 1145 865 1170 875" class="dash"/>
+
+  <text x="800" y="970" text-anchor="middle" class="subtitle">Core rule: Self-Fork forks reasoning contexts; Multi-Command forks local work. Hybrid mode uses both.</text>
+</svg>

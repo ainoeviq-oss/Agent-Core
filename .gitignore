@@ -15,3 +15,4 @@ coverage/
 /plugin/agent-core/generated/
 /Set-Tunnel-Key.bat
 /Set-Tunnel-Key.ps1
+/release/

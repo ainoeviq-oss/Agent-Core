@@ -16,10 +16,7 @@ const legacy = [
   ['commander', '-'].join(''),
   oldWord,
 ];
-const migrationHistory = new Set([
-  'docs/superpowers/specs/2026-08-23-agent-core-hard-rebrand-design.md',
-  'docs/superpowers/plans/2026-08-23-agent-core-hard-rebrand.md',
-]);
+const migrationHistory = new Set();
 
 async function walk(dir) {
   const files = [];

@@ -1,8 +1,8 @@
 {
   "name": "agent-core",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "private": true,
-  "description": "Authenticated custom Agent Core MCP gateway",
+  "description": "Local-first authenticated Agent Core MCP control plane",
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -13,7 +13,10 @@
     "build:plugin": "npm run build && node scripts/build-plugin-package.mjs",
     "check:brand": "node scripts/check-agent-core-brand.mjs",
     "benchmark:memory": "npm run build && node scripts/benchmark-memory.mjs",
-    "benchmark:execution": "npm run build && node scripts/benchmark-execution.mjs"
+    "benchmark:execution": "npm run build && node scripts/benchmark-execution.mjs",
+    "verify": "npm run check:brand && npm run build && npm test",
+    "verify:release": "npm run verify && node scripts/release/check-release.mjs && node scripts/release/check-doc-links.mjs",
+    "package:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release/build-release.ps1"
   },
   "engines": {
     "node": ">=24.15.0"
@@ -26,5 +29,9 @@
     "@types/node": "^24.13.3",
     "typescript": "7.0.2",
     "vitest": "4.1.11"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rendevouz999/Agent-Core.git"
   }
 }
