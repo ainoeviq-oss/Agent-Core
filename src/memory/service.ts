@@ -8,6 +8,7 @@ import {
   type ContinuityTaskRecord,
 } from '../continuity/store.js';
 import type { ContinuityCapture, ContinuityCheckpointInput, ContinuityTurnState } from '../continuity/types.js';
+import { ContinuitySnapshotBuilder, type ContinuitySnapshot } from '../continuity/snapshot.js';
 import {
   createMemoryBackup,
   readLatestMemoryBackup,
@@ -46,6 +47,7 @@ interface MemoryComponents {
   linker: MemoryLinker;
   preflight: MemoryPreflightEngine;
   continuity: ContinuityStore;
+  continuitySnapshot: ContinuitySnapshotBuilder;
 }
 
 export interface MemoryContextRecord {
@@ -175,6 +177,12 @@ export class MemoryService {
     const components = await this.requireComponents();
     return components.continuity.listFrontier(scope, limit);
   }
+
+  async getContinuitySnapshot(scope: MemoryScope): Promise<ContinuitySnapshot> {
+    const components = await this.requireComponents();
+    return components.continuitySnapshot.build(scope);
+  }
+
   async recordEvent(request: RecordMemoryEventRequest) {
     if (!this.config.enabled) return null;
     const components = await this.requireComponents();
@@ -589,7 +597,8 @@ export class MemoryService {
     });
     const preflight = new MemoryPreflightEngine(client, retriever, lifecycle);
     const continuity = new ContinuityStore(client);
-    const components = { client, store, retriever, lifecycle, linker, preflight, continuity };
+    const continuitySnapshot = new ContinuitySnapshotBuilder(client);
+    const components = { client, store, retriever, lifecycle, linker, preflight, continuity, continuitySnapshot };
     try {
       const opened = await store.open({ dbPath: this.config.dbPath, busyTimeoutMs: this.config.busyTimeoutMs });
       this.lastIntegrityCheckAt = opened.integrityCheckedAt;
