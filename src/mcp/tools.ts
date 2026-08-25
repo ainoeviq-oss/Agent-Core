@@ -1,6 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
 import type { VerifiedKey } from '../auth/key-types.js';
+import { OperationalMemoryAudit } from '../memory/operational-audit.js';
 import type { RuntimeServices } from '../runtime/services.js';
 import { routeErrorResult, validateOperationalRoute } from './route-guard.js';
 
@@ -24,11 +25,24 @@ async function routeGuarded<T>(
   routeContextId: string,
   toolName: string,
   operation: () => Promise<T>,
+  auditInput: Record<string, unknown> = {},
 ) {
+  const audit = new OperationalMemoryAudit(runtime, key);
+  let route;
   try {
-    validateOperationalRoute(runtime, key, routeContextId, toolName);
-    return textResult(await operation());
+    route = validateOperationalRoute(runtime, key, routeContextId, toolName);
   } catch (error) {
+    await audit.rejected(routeContextId, toolName, auditInput, error);
+    return routeErrorResult(error) ?? errorResult(error);
+  }
+
+  await audit.intended(route, toolName, auditInput);
+  try {
+    const result = await operation();
+    await audit.succeeded(route, toolName, auditInput, result);
+    return textResult(result);
+  } catch (error) {
+    await audit.failed(route, toolName, auditInput, error);
     return routeErrorResult(error) ?? errorResult(error);
   }
 }
@@ -67,6 +81,7 @@ export function registerOperationalTools(
   }, async ({ path, depth, maxEntries, routeContextId }) => routeGuarded(
     runtime, key, routeContextId, 'list_directory',
     () => runtime.filesystem.listDirectory(path, depth, maxEntries),
+    { path, depth, maxEntries },
   ));
 
   server.registerTool('read_file', {
@@ -83,6 +98,7 @@ export function registerOperationalTools(
   }, async ({ path, startLine, lineCount, maxBytes, routeContextId }) => routeGuarded(
     runtime, key, routeContextId, 'read_file',
     () => runtime.filesystem.readFile(path, { startLine, lineCount, maxBytes }),
+    { path, startLine, lineCount, maxBytes },
   ));
 
   server.registerTool('read_multiple_files', {
@@ -99,6 +115,7 @@ export function registerOperationalTools(
   }, async ({ paths, startLine, lineCount, maxBytes, routeContextId }) => routeGuarded(
     runtime, key, routeContextId, 'read_multiple_files',
     () => runtime.filesystem.readMultipleFiles(paths, { startLine, lineCount, maxBytes }),
+    { paths, startLine, lineCount, maxBytes },
   ));
 
   server.registerTool('write_file', {
@@ -114,6 +131,7 @@ export function registerOperationalTools(
   }, async ({ path, content, mode, routeContextId }) => routeGuarded(
     runtime, key, routeContextId, 'write_file',
     () => runtime.filesystem.writeFile(path, content, mode),
+    { path, mode, contentBytes: Buffer.byteLength(content, 'utf8') },
   ));
 
   server.registerTool('edit_file', {
@@ -130,6 +148,12 @@ export function registerOperationalTools(
   }, async ({ path, oldString, newString, expectedReplacements, routeContextId }) => routeGuarded(
     runtime, key, routeContextId, 'edit_file',
     () => runtime.filesystem.editFile(path, oldString, newString, expectedReplacements),
+    {
+      path,
+      expectedReplacements,
+      oldStringBytes: Buffer.byteLength(oldString, 'utf8'),
+      newStringBytes: Buffer.byteLength(newString, 'utf8'),
+    },
   ));
 
   server.registerTool('create_directory', {
@@ -140,6 +164,7 @@ export function registerOperationalTools(
   }, async ({ path, routeContextId }) => routeGuarded(
     runtime, key, routeContextId, 'create_directory',
     () => runtime.filesystem.createDirectory(path),
+    { path },
   ));
 
   server.registerTool('move_file', {
@@ -154,6 +179,7 @@ export function registerOperationalTools(
   }, async ({ source, destination, routeContextId }) => routeGuarded(
     runtime, key, routeContextId, 'move_file',
     () => runtime.filesystem.moveFile(source, destination),
+    { source, destination },
   ));
 
   server.registerTool('get_file_info', {
@@ -164,6 +190,7 @@ export function registerOperationalTools(
   }, async ({ path, routeContextId }) => routeGuarded(
     runtime, key, routeContextId, 'get_file_info',
     () => runtime.filesystem.getFileInfo(path),
+    { path },
   ));
 
   server.registerTool('search_files', {
@@ -180,6 +207,7 @@ export function registerOperationalTools(
   }, async ({ path, query, mode, maxResults, routeContextId }) => routeGuarded(
     runtime, key, routeContextId, 'search_files',
     () => runtime.search.search({ path, query, mode, maxResults }),
+    { path, query, mode, maxResults },
   ));
 
   server.registerTool('execute_command', {
@@ -192,10 +220,14 @@ export function registerOperationalTools(
       routeContextId: z.string().uuid(),
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
-  }, async ({ command, cwd, timeoutMs, routeContextId }) => routeGuarded(
-    runtime, key, routeContextId, 'execute_command',
-    () => runtime.processes.execute(command, { cwd: cwd ?? runtime.workspace.roots[0]!, timeoutMs }),
-  ));
+  }, async ({ command, cwd, timeoutMs, routeContextId }) => {
+    const resolvedCwd = cwd ?? runtime.workspace.roots[0]!;
+    return routeGuarded(
+      runtime, key, routeContextId, 'execute_command',
+      () => runtime.processes.execute(command, { cwd: resolvedCwd, timeoutMs }),
+      { command, cwd: resolvedCwd, timeoutMs },
+    );
+  });
 
   server.registerTool('start_process', {
     title: 'Start Process',
@@ -206,10 +238,14 @@ export function registerOperationalTools(
       routeContextId: z.string().uuid(),
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
-  }, async ({ command, cwd, routeContextId }) => routeGuarded(
-    runtime, key, routeContextId, 'start_process',
-    () => runtime.processes.start(command, { cwd: cwd ?? runtime.workspace.roots[0]! }),
-  ));
+  }, async ({ command, cwd, routeContextId }) => {
+    const resolvedCwd = cwd ?? runtime.workspace.roots[0]!;
+    return routeGuarded(
+      runtime, key, routeContextId, 'start_process',
+      () => runtime.processes.start(command, { cwd: resolvedCwd }),
+      { command, cwd: resolvedCwd },
+    );
+  });
 
   server.registerTool('read_process_output', {
     title: 'Read Process Output',

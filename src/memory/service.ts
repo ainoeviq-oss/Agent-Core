@@ -4,7 +4,7 @@ import { MemoryLinker } from './linker.js';
 import { MemoryPreflightEngine, createDisabledPreflightResult } from './preflight.js';
 import { MemoryRetriever } from './retriever.js';
 import { MEMORY_SCHEMA_VERSION } from './schema.js';
-import { MemoryStore } from './store.js';
+import { MemoryStore, type RecordMemoryEventRequest } from './store.js';
 import type {
   MemoryCommitRequest,
   MemoryCommitResult,
@@ -53,6 +53,12 @@ export class MemoryService {
 
   get currentState(): MemoryServiceState {
     return this.state;
+  }
+
+  async recordEvent(request: RecordMemoryEventRequest) {
+    if (!this.config.enabled) return null;
+    const components = await this.requireComponents();
+    return components.store.recordEvent(request);
   }
 
   async commit(request: MemoryCommitRequest): Promise<MemoryCommitResult> {

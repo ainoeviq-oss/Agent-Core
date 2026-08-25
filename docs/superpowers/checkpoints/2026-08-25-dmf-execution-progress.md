@@ -30,7 +30,7 @@ Execution evidence: `F:\Projects\Agent-Core\runtime\dmf-execution\logs\`
 - [x] Task 9 — Lifecycle, conflicts, and compaction
 - [x] Task 10 — Memory service facade and preflight
 - [x] Task 11 — Integrate DMF with capability routing
-- [ ] Task 12 — Automatic operational event capture
+- [x] Task 12 — Automatic operational event capture
 - [ ] Task 13 — MCP memory tools
 - [ ] Task 14 — Persistence, backup, recovery, and integrity
 - [ ] Task 15 — Evaluation harness for awareness

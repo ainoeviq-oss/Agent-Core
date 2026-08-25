@@ -7,8 +7,8 @@ export function validateOperationalRoute(
   key: VerifiedKey,
   routeContextId: string,
   toolName: string,
-): void {
-  runtime.routes.validate(routeContextId, key.id, toolName);
+) {
+  return runtime.routes.validate(routeContextId, key.id, toolName);
 }
 
 export function routeErrorResult(error: unknown) {
