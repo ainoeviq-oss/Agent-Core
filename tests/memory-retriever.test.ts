@@ -75,6 +75,14 @@ describe('deterministic hybrid memory retriever', () => {
       value: 'Foreign TypeScript route proof must never cross principal scope.',
       sourceType: 'test',
     });
+    const foreignProject = await store.commitMemory({
+      scope: { principalId: 'principal-a', projectId: 'project-b' },
+      canonicalKey: 'decision.route.proof.foreign-project',
+      kind: 'decision',
+      value: 'Foreign-project TypeScript route proof must never cross project scope.',
+      sourceType: 'test',
+      explicitRelations: [{ targetMemoryId: artifact.memoryId, relation: 'explicit_relation' }],
+    });
 
     const config = loadConfig({}, process.cwd()).memory;
     const retriever = new MemoryRetriever(client, config);
@@ -96,6 +104,7 @@ describe('deterministic hybrid memory retriever', () => {
     expect(first.hits.map((hit) => hit.memoryId)).toContain(decision.memoryId);
     expect(first.hits.map((hit) => hit.memoryId)).toContain(artifact.memoryId);
     expect(first.hits.map((hit) => hit.memoryId)).not.toContain(foreign.memoryId);
+    expect(first.hits.map((hit) => hit.memoryId)).not.toContain(foreignProject.memoryId);
     expect(first.hits.every((hit) => hit.whyMatched.finalScore >= 0 && hit.whyMatched.finalScore <= 1)).toBe(true);
     expect(first.hits.some((hit) => hit.whyMatched.matchedAnchors.some((anchor) => anchor.includes('F:\\Projects\\Agent-Core')))).toBe(true);
     expect(first.hits.some((hit) => (hit.whyMatched.graphPath?.length ?? 0) >= 2)).toBe(true);

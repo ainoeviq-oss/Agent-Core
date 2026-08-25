@@ -29,6 +29,8 @@ interface SeedEvidence {
 
 type CandidateRow = {
   memory_id: string;
+  principal_id: string;
+  project_id: string | null;
   revision_id: string;
   revision_no: number;
   canonical_key: string;
@@ -60,6 +62,12 @@ function statePredicate(includeHistory: boolean): string {
   return includeHistory
     ? "item.state <> 'tombstoned'"
     : "item.state IN ('active', 'conflicted', 'completed')";
+}
+
+function stateAllowed(state: MemoryState, includeHistory: boolean): boolean {
+  return includeHistory
+    ? state !== 'tombstoned'
+    : state === 'active' || state === 'conflicted' || state === 'completed';
 }
 
 function lexicalTerms(text: string): string[] {
@@ -304,6 +312,7 @@ export class MemoryRetriever {
     const edgeMap = new Map<string, PageRankEdge>();
     let frontier = [...nodeIds].sort((a, b) => a.localeCompare(b));
     let truncated = seedIds.length > this.config.graphNodeCap;
+    const eligibility = new Map<string, boolean>([...nodeIds].map((id) => [id, true]));
 
     for (let hop = 0; hop < this.config.graphMaxHops && frontier.length > 0; hop += 1) {
       const nextFrontier: string[] = [];
@@ -311,26 +320,20 @@ export class MemoryRetriever {
         const chunk = frontier.slice(offset, offset + 200);
         const placeholders = chunk.map(() => '?').join(',');
         const rows = await this.client.query<EdgeRow>(
-          `SELECT edge.from_memory_id, edge.to_memory_id, edge.relation, edge.weight
-             FROM memory_edges AS edge
-             JOIN memory_items AS source ON source.id = edge.from_memory_id
-             JOIN memory_items AS target ON target.id = edge.to_memory_id
-            WHERE source.principal_id = ? AND IFNULL(source.project_id, '') = ?
-              AND target.principal_id = ? AND IFNULL(target.project_id, '') = ?
-              AND ${statePredicate(Boolean(request.includeHistory)).replaceAll('item.', 'source.')}
-              AND ${statePredicate(Boolean(request.includeHistory)).replaceAll('item.', 'target.')}
-              AND (edge.from_memory_id IN (${placeholders}) OR edge.to_memory_id IN (${placeholders}))
-            ORDER BY edge.weight DESC, edge.from_memory_id COLLATE BINARY, edge.to_memory_id COLLATE BINARY, edge.relation COLLATE BINARY`,
-          [
-            request.scope.principalId,
-            scopeProject(request.scope),
-            request.scope.principalId,
-            scopeProject(request.scope),
-            ...chunk,
-            ...chunk,
-          ],
+          `SELECT from_memory_id, to_memory_id, relation, weight
+             FROM memory_edges
+            WHERE from_memory_id IN (${placeholders}) OR to_memory_id IN (${placeholders})
+            ORDER BY weight DESC, from_memory_id COLLATE BINARY, to_memory_id COLLATE BINARY, relation COLLATE BINARY`,
+          [...chunk, ...chunk],
         );
+        const endpointIds = [...new Set(rows.flatMap((row) => [row.from_memory_id, row.to_memory_id]))]
+          .filter((id) => !eligibility.has(id));
+        if (endpointIds.length > 0) {
+          const checked = await this.loadGraphEligibility(request, endpointIds);
+          for (const id of endpointIds) eligibility.set(id, checked.has(id));
+        }
         for (const row of rows) {
+          if (!eligibility.get(row.from_memory_id) || !eligibility.get(row.to_memory_id)) continue;
           const edgeKey = `${row.from_memory_id}\0${row.to_memory_id}\0${row.relation}`;
           if (!edgeMap.has(edgeKey)) {
             if (edgeMap.size >= this.config.graphEdgeCap) {
@@ -371,6 +374,35 @@ export class MemoryRetriever {
     return { nodeIds, edges: [...edgeMap.values()], paths, truncated };
   }
 
+  private async loadGraphEligibility(request: MemorySearchRequest, memoryIds: string[]): Promise<Set<string>> {
+    const eligible = new Set<string>();
+    const projectId = scopeProject(request.scope);
+    for (let offset = 0; offset < memoryIds.length; offset += 400) {
+      const chunk = memoryIds.slice(offset, offset + 400);
+      if (chunk.length === 0) continue;
+      const placeholders = chunk.map(() => '?').join(',');
+      const rows = await this.client.query<{
+        id: string;
+        principal_id: string;
+        project_id: string | null;
+        state: MemoryState;
+      }>(
+        `SELECT id, principal_id, project_id, state
+           FROM memory_items
+          WHERE id IN (${placeholders})`,
+        chunk,
+      );
+      for (const row of rows) {
+        if (
+          row.principal_id === request.scope.principalId
+          && (row.project_id ?? '') === projectId
+          && stateAllowed(row.state, Boolean(request.includeHistory))
+        ) eligible.add(row.id);
+      }
+    }
+    return eligible;
+  }
+
   private async loadCandidateRows(request: MemorySearchRequest, memoryIds: string[]): Promise<CandidateRow[]> {
     const rows: CandidateRow[] = [];
     for (let offset = 0; offset < memoryIds.length; offset += 400) {
@@ -378,20 +410,26 @@ export class MemoryRetriever {
       if (chunk.length === 0) continue;
       const placeholders = chunk.map(() => '?').join(',');
       rows.push(...await this.client.query<CandidateRow>(
-        `SELECT item.id AS memory_id, revision.id AS revision_id, revision.revision_no,
+        `SELECT item.id AS memory_id, item.principal_id, item.project_id,
+                revision.id AS revision_id, revision.revision_no,
                 item.canonical_key, item.kind, item.state, item.enforcement, item.importance, item.pinned,
                 revision.value_text, revision.source_event_id, item.created_at, item.updated_at,
                 item.last_accessed_at, item.access_count
            FROM memory_items AS item
            JOIN memory_revisions AS revision ON revision.id = item.current_revision_id
-          WHERE item.principal_id = ? AND IFNULL(item.project_id, '') = ?
-            AND ${statePredicate(Boolean(request.includeHistory))}
-            AND item.id IN (${placeholders})
+          WHERE item.id IN (${placeholders})
           ORDER BY item.id COLLATE BINARY`,
-        [request.scope.principalId, scopeProject(request.scope), ...chunk],
+        chunk,
       ));
     }
-    return rows.sort((a, b) => a.memory_id.localeCompare(b.memory_id));
+    const projectId = scopeProject(request.scope);
+    return rows
+      .filter((row) => (
+        row.principal_id === request.scope.principalId
+        && (row.project_id ?? '') === projectId
+        && stateAllowed(row.state, Boolean(request.includeHistory))
+      ))
+      .sort((a, b) => a.memory_id.localeCompare(b.memory_id));
   }
 
   private async loadAnchors(memoryIds: string[]): Promise<Map<string, string[]>> {
