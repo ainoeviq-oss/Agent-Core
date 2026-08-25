@@ -210,12 +210,17 @@ async function writeFakeBundle(root: string, tunnelPort: number) {
   const tunnelProfile = path.join(root, 'agent-core.yaml');
   await writeFile(agentCoreEntry, [
     "import http from 'node:http';",
+    "import { existsSync, rmSync, writeFileSync } from 'node:fs';",
+    "import path from 'node:path';",
     "const port = Number(process.env.AGENT_CORE_PORT);",
-    "http.createServer((req,res)=>{",
-    "  if (req.url === '/health') { res.writeHead(200, {'content-type':'application/json'}); return res.end(JSON.stringify({status:'ok',memory:{enabled:true,healthy:true,state:'healthy'},memoryDbPath:process.env.AGENT_CORE_MEMORY_DB_PATH,memoryEnabled:process.env.AGENT_CORE_MEMORY_ENABLED})); }",
+    "const shutdownRequestPath = process.env.AGENT_CORE_SHUTDOWN_REQUEST_PATH;",
+    "const gracefulMarker = path.join(process.cwd(), 'graceful-agent-core-stop.marker');",
+    "const server = http.createServer((req,res)=>{",
+    "  if (req.url === '/health') { res.writeHead(200, {'content-type':'application/json'}); return res.end(JSON.stringify({status:'ok',memory:{enabled:true,healthy:true,state:'healthy'},memoryDbPath:process.env.AGENT_CORE_MEMORY_DB_PATH,memoryEnabled:process.env.AGENT_CORE_MEMORY_ENABLED,shutdownRequestPath})); }",
     "  res.writeHead(404); res.end('missing');",
-    "}).listen(port, '127.0.0.1');",
-    "setInterval(()=>{}, 1000);",
+    "});",
+    "server.listen(port, '127.0.0.1');",
+    "setInterval(()=>{ if (shutdownRequestPath && existsSync(shutdownRequestPath)) { writeFileSync(gracefulMarker, 'graceful', 'utf8'); try { rmSync(shutdownRequestPath, {force:true}); } catch {} server.close(()=>process.exit(0)); } }, 25);",
   ].join('\n'), 'utf8');
   await writeFile(tunnelEntry, [
     "import http from 'node:http';",
@@ -281,6 +286,7 @@ describe('Agent Core tray service lifecycle', () => {
     const launchedHealth = await (await fetch(`http://127.0.0.1:${agentCorePort}/health`)).json() as Record<string, any>;
     expect(launchedHealth.memoryEnabled).toBe('true');
     expect(path.normalize(launchedHealth.memoryDbPath)).toBe(path.normalize(path.join(root, 'runtime', 'memory', 'agent-core-memory.sqlite')));
+    expect(path.normalize(launchedHealth.shutdownRequestPath)).toBe(path.normalize(path.join(root, 'runtime', 'tray', 'agent-core.shutdown.request')));
 
     const statePath = path.join(String(config.trayRuntimeDir), 'state.json');
     const state = JSON.parse(await readFile(statePath, 'utf8'));
@@ -289,7 +295,10 @@ describe('Agent Core tray service lifecycle', () => {
 
     const stopped = runTray('StopBundle', configPath);
     expect(stopped.status).toBe(0);
-    expect(JSON.parse(stopped.stdout.trim()).status).toBe('stopped');
+    const stoppedBody = JSON.parse(stopped.stdout.trim());
+    expect(stoppedBody.status).toBe('stopped');
+    expect(stoppedBody.agentCore).toMatchObject({ action: 'stopped', graceful: true });
+    expect(await readFile(path.join(root, 'graceful-agent-core-stop.marker'), 'utf8')).toBe('graceful');
     managedConfigs.pop();
     await waitForPortClosed(agentCorePort);
     await waitForPortClosed(tunnelPort);

@@ -10,6 +10,7 @@ import { createMcpHttpHandler } from './mcp/handler.js';
 import { OAuthService } from './oauth/service.js';
 import { FileOAuthStore } from './oauth/store.js';
 import { createRuntimeServices, type RuntimeServices } from './runtime/services.js';
+import { watchShutdownRequest, type ShutdownRequestWatcher } from './runtime/shutdown-request.js';
 
 export interface AgentCoreService {
   server: Server;
@@ -90,13 +91,28 @@ if (entry && import.meta.url === pathToFileURL(entry).href) {
     const service = await startAgentCoreService();
     process.stdout.write(`Agent Core listening on http://${service.host}:${service.port}/mcp\n`);
     let closing = false;
+    let shutdownWatcher: ShutdownRequestWatcher | undefined;
     const gracefulClose = async () => {
       if (closing) return;
       closing = true;
-      await service.close();
+      try {
+        await service.close();
+        shutdownWatcher?.close();
+      } catch (error) {
+        closing = false;
+        throw error;
+      }
     };
-    process.once('SIGINT', () => { void gracefulClose(); });
-    process.once('SIGTERM', () => { void gracefulClose(); });
+    const reportCloseError = (error: unknown) => {
+      process.stderr.write(`Agent Core failed to close cleanly: ${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = 1;
+    };
+    const shutdownRequestPath = process.env.AGENT_CORE_SHUTDOWN_REQUEST_PATH?.trim();
+    if (shutdownRequestPath) {
+      shutdownWatcher = watchShutdownRequest(shutdownRequestPath, gracefulClose);
+    }
+    process.once('SIGINT', () => { void gracefulClose().catch(reportCloseError); });
+    process.once('SIGTERM', () => { void gracefulClose().catch(reportCloseError); });
   } catch (error) {
     process.stderr.write(`Agent Core failed to start: ${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;

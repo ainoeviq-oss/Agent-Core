@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
   [ValidateSet('Tray','Probe','StartBundle','StopBundle','RestartBundle','ResetOAuth','ControlledTakeover','WatchdogTick','TrayExit')]
   [string]$Mode = 'Tray',
@@ -470,6 +470,8 @@ function Start-AgentCoreService {
   }
 
   Ensure-TrayRuntimeDir $Config
+  $shutdownRequestPath = Join-Path $Config.trayRuntimeDir 'agent-core.shutdown.request'
+  Remove-Item -LiteralPath $shutdownRequestPath -Force -ErrorAction SilentlyContinue
   $stdin = Join-Path $Config.trayRuntimeDir 'stdin.null'
   if (-not (Test-Path -LiteralPath $stdin)) { [IO.File]::WriteAllBytes($stdin, [byte[]]@()) }
   $stdout = Join-Path $Config.trayRuntimeDir 'agent-core.stdout.log'
@@ -477,7 +479,7 @@ function Start-AgentCoreService {
   $envNames = @(
     'AGENT_CORE_DATA_DIR','AGENT_CORE_LOG_DIR','AGENT_CORE_CAPABILITY_DIR',
     'AGENT_CORE_ALLOWED_ROOTS','AGENT_CORE_HOST','AGENT_CORE_PORT',
-    'AGENT_CORE_MEMORY_ENABLED','AGENT_CORE_MEMORY_DB_PATH'
+    'AGENT_CORE_MEMORY_ENABLED','AGENT_CORE_MEMORY_DB_PATH','AGENT_CORE_SHUTDOWN_REQUEST_PATH'
   )
   $newValues = [ordered]@{
     AGENT_CORE_DATA_DIR = Get-AgentCoreDataDir $Config
@@ -488,6 +490,7 @@ function Start-AgentCoreService {
     AGENT_CORE_PORT = [string]$Config.agentCorePort
     AGENT_CORE_MEMORY_ENABLED = 'true'
     AGENT_CORE_MEMORY_DB_PATH = Join-Path $Config.root 'runtime\memory\agent-core-memory.sqlite'
+    AGENT_CORE_SHUTDOWN_REQUEST_PATH = Join-Path $Config.trayRuntimeDir 'agent-core.shutdown.request'
   }
   $oldValues = @{}
   foreach ($name in $envNames) {
@@ -578,24 +581,48 @@ function Stop-OwnedService {
     return [pscustomobject]@{ action = 'identity_mismatch'; ok = $false }
   }
 
-  Stop-Process -Id ([int]$entry.pid) -ErrorAction SilentlyContinue
-  $deadline = [DateTime]::UtcNow.AddSeconds(3)
-  while ((Get-ProcessInfoById ([int]$entry.pid)) -and [DateTime]::UtcNow -lt $deadline) {
-    Start-Sleep -Milliseconds 100
-  }
-  $remaining = Get-ProcessInfoById ([int]$entry.pid)
-  if ($remaining) {
-    $owner2 = Get-PortOwnerProcess $port
-    $ownerPid2 = if ($owner2) { [int]$owner2.ProcessId } else { -1 }
-    $expected2 = Get-ServiceExpectation $Role $Config $ownerPid2
-    if (Test-ServiceIdentity $remaining $expected2) {
-      Stop-Process -Id ([int]$entry.pid) -Force -ErrorAction SilentlyContinue
+  $graceful = $false
+  $shutdownRequestPath = $null
+  if ($Role -eq 'agentCore') {
+    try {
+      Ensure-TrayRuntimeDir $Config
+      $shutdownRequestPath = Join-Path $Config.trayRuntimeDir 'agent-core.shutdown.request'
+      [IO.File]::WriteAllText($shutdownRequestPath, "stop`n", (New-Object Text.UTF8Encoding($false)))
+      $graceDeadline = [DateTime]::UtcNow.AddSeconds(5)
+      while ((Get-ProcessInfoById ([int]$entry.pid)) -and [DateTime]::UtcNow -lt $graceDeadline) {
+        Start-Sleep -Milliseconds 100
+      }
+      $graceful = -not [bool](Get-ProcessInfoById ([int]$entry.pid))
+    } catch {
+      $graceful = $false
     }
   }
-  Clear-ServiceStateEntry $Config $Role
-  return [pscustomobject]@{ action = 'stopped'; pid = [int]$entry.pid; ok = $true }
-}
 
+  if (-not $graceful) {
+    Stop-Process -Id ([int]$entry.pid) -ErrorAction SilentlyContinue
+    $deadline = [DateTime]::UtcNow.AddSeconds(3)
+    while ((Get-ProcessInfoById ([int]$entry.pid)) -and [DateTime]::UtcNow -lt $deadline) {
+      Start-Sleep -Milliseconds 100
+    }
+    $remaining = Get-ProcessInfoById ([int]$entry.pid)
+    if ($remaining) {
+      $owner2 = Get-PortOwnerProcess $port
+      $ownerPid2 = if ($owner2) { [int]$owner2.ProcessId } else { -1 }
+      $expected2 = Get-ServiceExpectation $Role $Config $ownerPid2
+      if (Test-ServiceIdentity $remaining $expected2) {
+        Stop-Process -Id ([int]$entry.pid) -Force -ErrorAction SilentlyContinue
+      }
+    }
+  }
+
+  if ($shutdownRequestPath) {
+    Remove-Item -LiteralPath $shutdownRequestPath -Force -ErrorAction SilentlyContinue
+  }
+  Clear-ServiceStateEntry $Config $Role
+  $result = [ordered]@{ action = 'stopped'; pid = [int]$entry.pid; ok = $true }
+  if ($Role -eq 'agentCore') { $result.graceful = [bool]$graceful }
+  return [pscustomobject]$result
+}
 function Start-Bundle {
   param($Config)
   Reclaim-TrayState $Config | Out-Null

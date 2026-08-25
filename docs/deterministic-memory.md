@@ -37,6 +37,14 @@ Important states:
 
 A degraded memory database is reported separately by the tray; it is not treated as an unavailable MCP server by itself.
 
+## Clean tray shutdown on Windows
+
+Windows PowerShell `Stop-Process` does not deliver Node.js `SIGTERM`/`SIGINT` handlers. The unified tray therefore does not rely on those signals for normal Agent Core restarts or exit.
+
+For an owned Agent Core process, the tray writes a local shutdown request under `runtime\tray\agent-core.shutdown.request`. The Agent Core process watches that file in-process, closes the HTTP listener, checkpoints/closes the SQLite memory worker, consumes the request, and exits. The tray waits for that clean exit before using process termination as a bounded fallback.
+
+The fallback remains necessary for a hung or legacy process; SQLite WAL/crash recovery is still tested for that case. A normal current-version tray stop should finish without leaving memory `-wal` or `-shm` sidecars.
+
 ## Export memory safely
 
 `memory_export` is a bounded, read-only diagnostic/backup view for the authenticated principal and current project. It exports memory items, revisions, safe redacted event provenance, and conflicts. It does not export the raw `memory_events.raw_text` field.

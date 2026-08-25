@@ -1,11 +1,12 @@
 import { createServer, type Server } from 'node:http';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadConfig, type AppConfig } from '../src/config.js';
 import { startAgentCoreService } from '../src/index.js';
+import { watchShutdownRequest } from '../src/runtime/shutdown-request.js';
 
 const roots: string[] = [];
 const blockers: Server[] = [];
@@ -56,6 +57,28 @@ describe('Agent Core runtime', () => {
     await service.close();
     expect(service.server.listening).toBe(false);
     expect(service.memory.currentState).toBe('closed');
+  });
+
+  it('consumes a local shutdown request exactly once and invokes the graceful close callback', async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'agent-core-shutdown-request-'));
+    roots.push(root);
+    const requestPath = path.join(root, 'agent-core.shutdown.request');
+    let calls = 0;
+    const watcher = watchShutdownRequest(requestPath, async () => {
+      calls += 1;
+    }, { pollIntervalMs: 10 });
+
+    await writeFile(requestPath, 'stop\n', 'utf8');
+    const deadline = Date.now() + 1000;
+    while (calls === 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    expect(calls).toBe(1);
+    await expect(access(requestPath)).rejects.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(calls).toBe(1);
+    watcher.close();
   });
 
   it('rejects startup when the configured port is already in use', async () => {
