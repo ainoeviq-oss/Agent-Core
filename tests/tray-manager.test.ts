@@ -395,8 +395,9 @@ async function startProbeServer(root: string, name: string, port: number, kind: 
     "import http from 'node:http';",
     "const port = Number(process.argv[2]); const kind = process.argv[3];",
     "http.createServer((req,res)=>{",
-    "  if (kind === 'agent-ok') { res.writeHead(200, {'content-type':'application/json'}); return res.end(JSON.stringify({status:'ok',memory:{enabled:true,healthy:true,state:'healthy'}})); }",
-    "  if (kind === 'agent-memory-degraded') { res.writeHead(200, {'content-type':'application/json'}); return res.end(JSON.stringify({status:'ok',memory:{enabled:true,healthy:false,state:'degraded'}})); }",
+    "  if (kind === 'agent-ok') { res.writeHead(200, {'content-type':'application/json'}); return res.end(JSON.stringify({status:'ok',memory:{enabled:true,healthy:true,state:'healthy'},execution:{enabled:true,healthy:true,state:'healthy'}})); }",
+    "  if (kind === 'agent-memory-degraded') { res.writeHead(200, {'content-type':'application/json'}); return res.end(JSON.stringify({status:'ok',memory:{enabled:true,healthy:false,state:'degraded'},execution:{enabled:true,healthy:true,state:'healthy'}})); }",
+    "  if (kind === 'agent-execution-degraded') { res.writeHead(200, {'content-type':'application/json'}); return res.end(JSON.stringify({status:'ok',memory:{enabled:true,healthy:true,state:'healthy'},execution:{enabled:true,healthy:false,state:'degraded'}})); }",
     "  if (kind === 'agent-malformed') { res.writeHead(200, {'content-type':'application/json'}); return res.end('{bad'); }",
     "  if (kind === 'tunnel-ok') { res.writeHead(200); return res.end('ready'); }",
     "  res.writeHead(503); res.end('unhealthy');",
@@ -420,6 +421,7 @@ describe('Agent Core tray watchdog', () => {  slowWatchdogIt('reports healthy lo
     const body = JSON.parse(runTray('Probe', configPath).stdout.trim());
     expect(body.agentCore.healthy).toBe(true);
     expect(body.agentCore.memory).toBe('Healthy');
+    expect(body.agentCore.execution).toBe('Healthy');
     expect(body.tunnel.healthy).toBe(true);
   });
 
@@ -434,6 +436,21 @@ describe('Agent Core tray watchdog', () => {  slowWatchdogIt('reports healthy lo
     const body = JSON.parse(runTray('Probe', configPath).stdout.trim());
     expect(body.agentCore.healthy).toBe(true);
     expect(body.agentCore.memory).toBe('Degraded');
+    expect(body.tunnel.healthy).toBe(true);
+  });
+
+  slowWatchdogIt('keeps Agent Core healthy while surfacing degraded execution separately', async () => {
+    const root = await tempRoot();
+    const agentCorePort = await freePort();
+    const tunnelPort = await freePort();
+    await startProbeServer(root, 'agent-health-degraded-execution', agentCorePort, 'agent-execution-degraded');
+    await startProbeServer(root, 'tunnel-health-degraded-execution', tunnelPort, 'tunnel-ok');
+    const { configPath } = await writeConfig(root, { agentCorePort, tunnelPort });
+
+    const body = JSON.parse(runTray('Probe', configPath).stdout.trim());
+    expect(body.agentCore.healthy).toBe(true);
+    expect(body.agentCore.memory).toBe('Healthy');
+    expect(body.agentCore.execution).toBe('Degraded');
     expect(body.tunnel.healthy).toBe(true);
   });
 
@@ -557,6 +574,7 @@ describe('Agent Core tray UI contract', () => {
       'Exit Agent Core',
     ]) expect(source).toContain(label);
     expect(source).toContain('Memory:');
+    expect(source).toContain('Execution:');
     expect(source).toContain('System.Windows.Forms.NotifyIcon');
     expect(source).toContain('System.Windows.Forms.Timer');
     expect(source).toContain('Invoke-WatchdogTick');

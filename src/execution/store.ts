@@ -357,6 +357,17 @@ export class ExecutionStore {
     }
   }
 
+  async systemCounts(): Promise<{ activeRuns: number; queuedSync: number }> {
+    this.assertReady();
+    const rows = await this.client.query<Record<string, unknown>>(`SELECT
+      (SELECT count(*) FROM execution_runs WHERE state IN ('planned','running')) AS active_runs,
+      (SELECT count(*) FROM execution_memory_sync_queue WHERE state IN ('queued','syncing','failed')) AS queued_sync`);
+    return {
+      activeRuns: Number(rows[0]?.active_runs ?? 0),
+      queuedSync: Number(rows[0]?.queued_sync ?? 0),
+    };
+  }
+
   async createRun(scope: ExecutionScope, input: CreateExecutionRunInput): Promise<ExecutionRunRecord> {
     this.assertReady();
     assertScope(scope);

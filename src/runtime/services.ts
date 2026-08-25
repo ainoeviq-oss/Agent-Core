@@ -2,7 +2,9 @@ import path from 'node:path';
 import { CapabilityRegistry } from '../capabilities/registry-service.js';
 import { CapabilityRouter } from '../capabilities/router.js';
 import { loadConfig, type ExecutionConfig, type MemoryConfig } from '../config.js';
+import { ExecutionMemoryBridge } from '../execution/memory-bridge.js';
 import { ExecutionService } from '../execution/service.js';
+import { ExecutionStore } from '../execution/store.js';
 import type { RoutingAuditLogger } from '../logging/audit-log.js';
 import { MemoryService } from '../memory/service.js';
 import { FileSystemService } from './filesystem.js';
@@ -35,6 +37,13 @@ export function createRuntimeServices(
   const defaults = loadConfig({}, allowedRoots[0] ?? process.cwd());
   const resolvedMemoryConfig = memoryConfig ?? defaults.memory;
   const resolvedExecutionConfig = executionConfig ?? defaults.execution;
+  const memory = new MemoryService(resolvedMemoryConfig);
+  const executionStore = new ExecutionStore();
+  const executionBridge = new ExecutionMemoryBridge(executionStore, memory);
+  const execution = new ExecutionService(resolvedExecutionConfig, workspace, {
+    store: executionStore,
+    memoryBridge: executionBridge,
+  });
   return {
     workspace,
     filesystem: new FileSystemService(workspace),
@@ -45,7 +54,7 @@ export function createRuntimeServices(
     routes: new RouteContextStore(
       routingAuditLogger ? { auditLogger: routingAuditLogger } : {},
     ),
-    memory: new MemoryService(resolvedMemoryConfig),
-    execution: new ExecutionService(resolvedExecutionConfig, workspace),
+    memory,
+    execution,
   };
 }

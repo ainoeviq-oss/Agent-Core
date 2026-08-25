@@ -17,6 +17,7 @@ export interface AgentCoreService {
   host: string;
   port: number;
   memory: RuntimeServices['memory'];
+  execution: RuntimeServices['execution'];
   close(): Promise<void>;
 }
 
@@ -31,17 +32,43 @@ export async function startAgentCoreService(config: AppConfig = loadConfig()): P
   const oauthStore = new FileOAuthStore(config.dataDir);
   const oauthService = new OAuthService(keyStore, oauthStore);
   const auditLogger = new FileAuditLogger(config.logDir);
-  const runtime = createRuntimeServices(config.allowedRoots, config.capabilityDir, auditLogger, config.memory);
-  // Warm the in-process memory worker during Agent Core startup. Memory status is fail-closed:
-  // an unhealthy DB degrades only DMF while OAuth/MCP and the listener continue to start.
-  await runtime.memory.status();
+  const runtime = createRuntimeServices(
+    config.allowedRoots,
+    config.capabilityDir,
+    auditLogger,
+    config.memory,
+    config.execution,
+  );
+  // Warm independent persistence subsystems without coupling listener availability to either one.
+  await Promise.allSettled([
+    runtime.memory.status(),
+    config.execution.enabled ? runtime.execution.open() : Promise.resolve(),
+  ]);
   const server = createServer(createHttpHandler({
     keyStore,
     oauthService,
     auditLogger,
     healthProvider: async () => {
-      const memory = await runtime.memory.status();
-      return { memory: { ...memory, state: runtime.memory.currentState } };
+      const [memory, execution] = await Promise.all([
+        runtime.memory.status(),
+        runtime.execution.health(),
+      ]);
+      return {
+        memory: { ...memory, state: runtime.memory.currentState },
+        continuity: {
+          enabled: memory.enabled,
+          healthy: memory.healthy,
+          snapshotReady: memory.healthy,
+          counts: {
+            activeTasks: 0,
+            blockedTasks: 0,
+            deferredTasks: 0,
+            frontier: 0,
+            interruptedTurns: 0,
+          },
+        },
+        execution,
+      };
     },
     mcpHandler: createMcpHttpHandler(runtime),
   }));
@@ -61,7 +88,7 @@ export async function startAgentCoreService(config: AppConfig = loadConfig()): P
       server.listen(config.port, config.host);
     });
   } catch (error) {
-    await runtime.memory.close();
+    await Promise.allSettled([runtime.execution.close(), runtime.memory.close()]);
     throw error;
   }
 
@@ -71,8 +98,10 @@ export async function startAgentCoreService(config: AppConfig = loadConfig()): P
     host: config.host,
     port: address.port,
     memory: runtime.memory,
+    execution: runtime.execution,
     close: async () => {
       await closeServer(server);
+      await runtime.execution.close();
       await runtime.memory.close();
     },
   };

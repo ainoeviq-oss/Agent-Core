@@ -50,6 +50,20 @@ export interface ExecutionServiceDependencies {
   memoryBridge?: ExecutionMemoryBridge;
 }
 
+export type ExecutionServiceState = 'disabled' | 'idle' | 'healthy' | 'degraded' | 'closing' | 'closed';
+
+export interface ExecutionHealth {
+  enabled: boolean;
+  healthy: boolean;
+  state: ExecutionServiceState;
+  schemaVersion: number;
+  dbPath: string;
+  integrity: string;
+  activeRuns: number;
+  queuedSync: number;
+  lastIntegrityCheckAt?: number;
+}
+
 export class ExecutionService {
   readonly store: ExecutionStore;
   readonly wake: ExecutionWakeCoordinator;
@@ -60,12 +74,15 @@ export class ExecutionService {
   private unsubscribeBridge?: () => void;
   private opened = false;
   private closed = false;
+  private state: ExecutionServiceState;
+  private degradedReason?: string;
 
   constructor(
     readonly config: ExecutionConfig,
     readonly workspace: WorkspacePolicy,
     dependencies: ExecutionServiceDependencies = {},
   ) {
+    this.state = config.enabled ? 'idle' : 'disabled';
     this.store = dependencies.store ?? new ExecutionStore();
     this.wake = dependencies.wake ?? new ExecutionWakeCoordinator(this.store);
     this.journal = dependencies.journal ?? new ExecutionEventJournal(this.store, this.wake);
@@ -80,14 +97,72 @@ export class ExecutionService {
     this.scheduler = new ExecutionScheduler(this.store, runner, { logRoot: config.logRoot, journal: this.journal });
   }
 
+  get currentState(): ExecutionServiceState {
+    return this.state;
+  }
+
   async open(): Promise<void> {
-    if (this.closed) throw new Error('EXECUTION_SERVICE_CLOSED');
-    if (this.opened) return;
-    if (!this.config.enabled) throw new Error('EXECUTION_DISABLED');
-    await this.store.open({ dbPath: this.config.dbPath, busyTimeoutMs: this.config.busyTimeoutMs });
-    const recovery = new ExecutionRecovery(this.store, this.logs);
-    await recovery.reconcile();
-    this.opened = true;
+    if (this.closed || this.state === 'closed') throw new Error('EXECUTION_SERVICE_CLOSED');
+    if (this.opened && this.state === 'healthy') return;
+    if (!this.config.enabled) {
+      this.state = 'disabled';
+      throw new Error('EXECUTION_DISABLED');
+    }
+    if (this.state === 'degraded') throw new Error(`EXECUTION_DEGRADED:${this.degradedReason ?? 'unknown'}`);
+    try {
+      await this.store.open({ dbPath: this.config.dbPath, busyTimeoutMs: this.config.busyTimeoutMs });
+      const recovery = new ExecutionRecovery(this.store, this.logs);
+      await recovery.reconcile();
+      this.opened = true;
+      this.state = 'healthy';
+      this.degradedReason = undefined;
+    } catch (error) {
+      this.opened = false;
+      this.state = 'degraded';
+      this.degradedReason = error instanceof Error ? error.message : String(error);
+      try { await this.store.close(); } catch {}
+      throw error;
+    }
+  }
+
+  async health(scope?: ExecutionScope): Promise<ExecutionHealth> {
+    if (!this.config.enabled || this.state === 'disabled') {
+      return { enabled: false, healthy: false, state: 'disabled', schemaVersion: 1, dbPath: this.config.dbPath, integrity: 'disabled', activeRuns: 0, queuedSync: 0 };
+    }
+    if (this.state === 'idle') {
+      try { await this.open(); } catch {}
+    }
+    if (this.state !== 'healthy') {
+      return { enabled: true, healthy: false, state: this.state, schemaVersion: 1, dbPath: this.config.dbPath, integrity: `degraded:${this.degradedReason ?? this.state}`, activeRuns: 0, queuedSync: 0 };
+    }
+    try {
+      const status = await this.store.status();
+      let activeRuns = 0;
+      let queuedSync = 0;
+      if (scope) {
+        activeRuns = (await this.store.listRuns(scope, 1000)).filter((run) => run.state === 'planned' || run.state === 'running').length;
+        queuedSync = await this.store.countMemorySyncQueue(scope);
+      } else {
+        const counts = await this.store.systemCounts();
+        activeRuns = counts.activeRuns;
+        queuedSync = counts.queuedSync;
+      }
+      return {
+        enabled: true,
+        healthy: status.healthy,
+        state: status.healthy ? 'healthy' : 'degraded',
+        schemaVersion: status.schemaVersion,
+        dbPath: status.dbPath,
+        integrity: status.integrity,
+        activeRuns,
+        queuedSync,
+        ...(status.lastIntegrityCheckAt ? { lastIntegrityCheckAt: status.lastIntegrityCheckAt } : {}),
+      };
+    } catch (error) {
+      this.state = 'degraded';
+      this.degradedReason = error instanceof Error ? error.message : String(error);
+      return { enabled: true, healthy: false, state: 'degraded', schemaVersion: 1, dbPath: this.config.dbPath, integrity: `degraded:${this.degradedReason}`, activeRuns: 0, queuedSync: 0 };
+    }
   }
 
   async create(scope: ExecutionScope, input: CreateExecutionGraphInput): Promise<ExecutionRunView> {
@@ -288,17 +363,21 @@ export class ExecutionService {
   }
 
   async close(): Promise<void> {
-    if (this.closed) return;
+    if (this.closed || this.state === 'closed') return;
     this.closed = true;
-    if (!this.opened) return;
-    await this.scheduler.close();
-    if (this.memoryBridge) await this.memoryBridge.drain();
+    this.state = 'closing';
+    if (this.opened) {
+      await this.scheduler.close();
+      if (this.memoryBridge) await this.memoryBridge.drain();
+    }
     this.unsubscribeBridge?.();
     this.unsubscribeBridge = undefined;
-    await this.store.close();
+    try { await this.store.close(); } catch {}
+    this.opened = false;
+    this.state = 'closed';
   }
 
   private assertReady(): void {
-    if (!this.opened || this.closed) throw new Error('EXECUTION_SERVICE_NOT_OPEN');
+    if (!this.opened || this.closed || this.state !== 'healthy') throw new Error('EXECUTION_SERVICE_NOT_OPEN: execution service is not open');
   }
 }

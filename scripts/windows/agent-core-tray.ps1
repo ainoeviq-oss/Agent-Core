@@ -287,7 +287,7 @@ function Get-ProbeService {
   $owner = Get-PortOwnerProcess $port
   if (-not $owner) {
     $missing = [ordered]@{ pid = $null; identityMatch = $false; healthy = $false }
-    if ($Role -eq 'agentCore') { $missing.memory = 'Unavailable' }
+    if ($Role -eq 'agentCore') { $missing.memory = 'Unavailable'; $missing.execution = 'Unavailable' }
     return [pscustomobject]$missing
   }
   $agentHealth = $null
@@ -303,7 +303,7 @@ function Get-ProbeService {
     identityMatch = [bool](Test-ServiceIdentity $owner $expected)
     healthy = [bool]$healthy
   }
-  if ($Role -eq 'agentCore') { $body.memory = [string]$agentHealth.memory }
+  if ($Role -eq 'agentCore') { $body.memory = [string]$agentHealth.memory; $body.execution = [string]$agentHealth.execution }
   return [pscustomobject]$body
 }
 
@@ -392,9 +392,15 @@ function Get-AgentCoreHealthDetails {
       elseif ($response.memory.healthy -eq $true) { $memory = 'Healthy' }
       else { $memory = 'Degraded' }
     }
-    return [pscustomobject]@{ healthy = ($response.status -eq 'ok'); memory = $memory }
+    $execution = 'Unknown'
+    if ($response.PSObject.Properties['execution'] -and $response.execution) {
+      if ($response.execution.enabled -eq $false) { $execution = 'Disabled' }
+      elseif ($response.execution.healthy -eq $true) { $execution = 'Healthy' }
+      else { $execution = 'Degraded' }
+    }
+    return [pscustomobject]@{ healthy = ($response.status -eq 'ok'); memory = $memory; execution = $execution }
   } catch {
-    return [pscustomobject]@{ healthy = $false; memory = 'Unavailable' }
+    return [pscustomobject]@{ healthy = $false; memory = 'Unavailable'; execution = 'Unavailable' }
   }
 }
 
@@ -977,7 +983,8 @@ function Refresh-TrayStatus {
   $OverallItem.Text = ('Agent Core ' + [char]0x2014 + ' ' + $overallStatus)
   $agentProbe = Get-ProbeService 'agentCore' $Config
   $memoryStatus = if ($agentProbe.PSObject.Properties['memory']) { [string]$agentProbe.memory } else { 'Unknown' }
-  $AgentItem.Text = "MCP Server: $agentStatus | Memory: $memoryStatus"
+  $executionStatus = if ($agentProbe.PSObject.Properties['execution']) { [string]$agentProbe.execution } else { 'Unknown' }
+  $AgentItem.Text = "MCP Server: $agentStatus | Memory: $memoryStatus | Execution: $executionStatus"
   $TunnelItem.Text = "Tunnel: $tunnelStatus"
   $AutostartItem.Text = 'Start with Windows: ' + $(if (Get-AgentCoreAutostartEnabled $Config) { 'On' } else { 'Off' })
   $NotifyIcon.Text = "Agent Core - $overallStatus"

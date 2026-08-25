@@ -42,13 +42,54 @@ export function createAgentCoreMcpServer(key: VerifiedKey, runtime: RuntimeServi
         lastBackupPath: z.string().optional(),
         lastBackupAt: z.number().optional(),
       }),
+      continuity: z.object({
+        enabled: z.boolean(),
+        healthy: z.boolean(),
+        snapshotReady: z.boolean(),
+        counts: z.record(z.string(), z.number()),
+      }),
+      execution: z.object({
+        enabled: z.boolean(),
+        healthy: z.boolean(),
+        state: z.string(),
+        schemaVersion: z.number(),
+        dbPath: z.string(),
+        integrity: z.string(),
+        activeRuns: z.number(),
+        queuedSync: z.number(),
+        lastIntegrityCheckAt: z.number().optional(),
+      }),
     },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   }, async () => {
-    const memoryStatus = await runtime.memory.status({
+    const currentScope = {
       principalId: key.id,
       projectId: runtime.workspace.roots[0],
-    });
+    };
+    const [memoryStatus, executionStatus] = await Promise.all([
+      runtime.memory.status(currentScope),
+      runtime.execution.health(currentScope),
+    ]);
+    let continuityCounts: Record<string, number> = {
+      activeTasks: 0, recentCompleted: 0, blockedTasks: 0, deferredTasks: 0,
+      unfinishedPlans: 0, frontier: 0, interruptedTurns: 0,
+    };
+    let snapshotReady = false;
+    if (memoryStatus.healthy) {
+      try {
+        const snapshot = await runtime.memory.getContinuitySnapshot(currentScope);
+        continuityCounts = {
+          activeTasks: snapshot.activeTasks.length,
+          recentCompleted: snapshot.recentCompleted.length,
+          blockedTasks: snapshot.blockedTasks.length,
+          deferredTasks: snapshot.deferredTasks.length,
+          unfinishedPlans: snapshot.unfinishedPlans.length,
+          frontier: snapshot.frontier.length,
+          interruptedTurns: snapshot.interruptedTurns.length,
+        };
+        snapshotReady = true;
+      } catch {}
+    }
     const structuredContent = {
       service: 'agent-core',
       serverName: SERVER_NAME,
@@ -58,6 +99,13 @@ export function createAgentCoreMcpServer(key: VerifiedKey, runtime: RuntimeServi
       key: { id: key.id, name: key.name },
       workspaceRoots: runtime.workspace.roots,
       memory: { ...memoryStatus, state: runtime.memory.currentState },
+      continuity: {
+        enabled: memoryStatus.enabled,
+        healthy: memoryStatus.healthy && snapshotReady,
+        snapshotReady,
+        counts: continuityCounts,
+      },
+      execution: executionStatus,
     };
     return {
       content: [{ type: 'text', text: JSON.stringify(structuredContent, null, 2) }],
