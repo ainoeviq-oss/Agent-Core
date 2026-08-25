@@ -67,6 +67,8 @@ Search: `search_files` supports filename and text-content modes.
 
 Process/terminal: `execute_command`, `start_process`, `read_process_output`, `stop_process`, `list_processes`.
 
+Deterministic memory: `memory_status`, `memory_search`, `memory_get`, `memory_commit`, `memory_revise`, `memory_forget`, `memory_explain`, `memory_export`. DMF runs inside Agent Core, is enabled by default, and stores its SQLite database under `runtime\memory` when using the unified launcher. Recovery, backup, export, forget, disable, and integrity procedures are documented in [`docs/deterministic-memory.md`](docs/deterministic-memory.md).
+
 All paths and process working directories are constrained by `AGENT_CORE_ALLOWED_ROOTS`. High-risk system/storage/privilege commands are blocked before PowerShell execution. Git semantic tools and GUI/system administration remain deferred.
 
 ## HTTP Example
@@ -102,7 +104,7 @@ The production launcher defaults runtime state to `runtime\data` and `runtime\lo
 
 Agent Core indexes the local `awesome-korean-agent-skills` catalog into a deferred registry under `F:\Projects\Agent-Core\capabilities`.
 
-Current registry primitives: `capability_recommend`, `capability_search`, `capability_get`, `skill_load`, `capability_dependencies`, and `capability_coverage`.
+Current registry/routing primitives: `capability_route`, `capability_search`, `capability_get`, `skill_load`, `capability_dependencies`, and `capability_coverage`.
 
 Catalog entries stay metadata-only until selected. `skill_load` rejects anything that is not an audited `native_ready` skill. External sources must pass source resolution, license verification, function analysis, and safety review before normalization.
 
