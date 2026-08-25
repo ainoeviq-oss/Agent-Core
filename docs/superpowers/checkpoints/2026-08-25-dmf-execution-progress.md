@@ -37,6 +37,14 @@ Execution evidence: `F:\Projects\Agent-Core\runtime\dmf-execution\logs\`
 - [x] Task 16 - Performance and scale gates
 - [x] Task 17 â€” Launcher and lifecycle integration
 
+## Final stability
+
+- [x] Section 24 definition-of-stable gates all proven on final implementation HEAD.
+- [x] Clean detached checkout after `npm ci`: 142 packages, 0 vulnerabilities; build PASS; 48/48 files and 168/168 tests PASS.
+- [x] Same-DB determinism, restart rehydrate, synthetic-secret audit, 100k p95 target, hidden-service audit, and operational documentation PASS.
+- [x] Main-checkout hash preflight: 25 dirty/untracked files match baseline `8d7400f`, 0 diverge, 5 extra documentation artifacts identified for preservation.
+- Final evidence: `docs/superpowers/checkpoints/2026-08-25-dmf-final-stability.md`.
+
 ## Guardrails
 
 - Use one reasoning AI only; no memory LLM, embedding model, reranker, summarizer, or hidden AI service.
