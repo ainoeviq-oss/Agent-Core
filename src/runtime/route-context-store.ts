@@ -48,6 +48,9 @@ export interface RouteMemorySnapshot {
 export interface RouteCreateOptions {
   reservation?: RouteReservation;
   memorySnapshot?: RouteMemorySnapshot;
+  continuityTurnId?: string;
+  continuityTaskId?: string;
+  continuitySnapshotHash?: string;
 }
 
 export interface RouteContext extends RoutePlan {
@@ -57,6 +60,9 @@ export interface RouteContext extends RoutePlan {
   createdAt: string;
   expiresAt: string;
   memorySnapshot?: RouteMemorySnapshot;
+  continuityTurnId?: string;
+  continuityTaskId?: string;
+  continuitySnapshotHash?: string;
 }
 export interface RouteContextStoreOptions {
   now?: () => number;
@@ -109,6 +115,9 @@ export class RouteContextStore {
       createdAt: reservation.createdAt,
       expiresAt: reservation.expiresAt,
       ...(options.memorySnapshot ? { memorySnapshot: structuredClone(options.memorySnapshot) } : {}),
+      ...(options.continuityTurnId ? { continuityTurnId: options.continuityTurnId } : {}),
+      ...(options.continuityTaskId ? { continuityTaskId: options.continuityTaskId } : {}),
+      ...(options.continuitySnapshotHash ? { continuitySnapshotHash: options.continuitySnapshotHash } : {}),
     };
     this.contexts.set(context.routeContextId, context);
     this.auditLogger.logRouting({

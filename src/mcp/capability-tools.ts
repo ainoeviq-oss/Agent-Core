@@ -1,6 +1,9 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
 import type { VerifiedKey } from '../auth/key-types.js';
+import type { ContinuitySnapshot } from '../continuity/snapshot.js';
+import type { ContinuityTaskRecord } from '../continuity/store.js';
+import type { ContinuityCapture } from '../continuity/types.js';
 import type { MemorySearchHit } from '../memory/types.js';
 import type { RuntimeServices } from '../runtime/services.js';
 
@@ -57,6 +60,69 @@ const capabilityState = z.enum([
   'quarantined', 'unresolved', 'license_unknown', 'source_removed',
 ]);
 
+const continuityCaptureSchema = z.object({
+  objective: z.string().max(20_000).optional(),
+  acceptanceCriteria: z.array(z.string().max(20_000)).max(50).optional(),
+  constraints: z.array(z.string().max(20_000)).max(50).optional(),
+  parentTaskId: z.string().max(5_000).optional(),
+  resumeTaskId: z.string().max(5_000).optional(),
+});
+
+const CONTINUATION_PHRASES = new Set([
+  'lanjut',
+  'lanjutkan',
+  'lanjutkan task',
+  'lanjutkan tugas',
+  'lanjutkan pekerjaan',
+  'continue',
+  'continue task',
+  'continue work',
+  'resume',
+  'resume task',
+  'resume work',
+  'pick up where we left off',
+]);
+
+function isKnownContinuationPhrase(task: string): boolean {
+  const normalized = task
+    .normalize('NFKC')
+    .trim()
+    .toLowerCase()
+    .replace(/[.!?]+$/g, '')
+    .replace(/\s+/g, ' ');
+  return CONTINUATION_PHRASES.has(normalized);
+}
+
+function compareTaskCandidates(left: ContinuityTaskRecord, right: ContinuityTaskRecord): number {
+  if (left.priority !== right.priority) return right.priority - left.priority;
+  if (left.updatedAt !== right.updatedAt) return right.updatedAt - left.updatedAt;
+  return left.taskId < right.taskId ? -1 : left.taskId > right.taskId ? 1 : 0;
+}
+
+function resumableCandidates(snapshot: ContinuitySnapshot): ContinuityTaskRecord[] {
+  const unique = new Map<string, ContinuityTaskRecord>();
+  for (const task of snapshot.activeTasks) {
+    if (task.status === 'running') unique.set(task.taskId, task);
+  }
+  for (const task of snapshot.unfinishedPlans) {
+    if (task.status === 'interrupted') unique.set(task.taskId, task);
+  }
+  return [...unique.values()].sort(compareTaskCandidates);
+}
+
+function candidateView(task: ContinuityTaskRecord) {
+  return {
+    taskId: task.taskId,
+    title: task.title,
+    objective: task.objective ?? null,
+    status: task.status,
+    priority: task.priority,
+    updatedAt: task.updatedAt,
+  };
+}
+
+type ContinuityRouteStatus = 'disabled' | 'healthy' | 'degraded' | 'ambiguous';
+
 export function registerCapabilityTools(
   server: McpServer,
   runtime: RuntimeServices,
@@ -68,29 +134,80 @@ export function registerCapabilityTools(
     inputSchema: {
       task: z.string().min(1).max(20_000),
       context: z.string().max(20_000).optional(),
+      continuity: continuityCaptureSchema.optional(),
     },
     annotations: routeAnnotations,
-  }, async ({ task, context }) => {
+  }, async ({ task, context, continuity }) => {
     const reservation = runtime.routes.reserve();
     const scope = {
       principalId: key.id,
       projectId: runtime.workspace.roots[0],
     };
     let memoryStatus: 'disabled' | 'healthy' | 'degraded' = runtime.memory.config.enabled ? 'healthy' : 'disabled';
+    let continuityStatus: ContinuityRouteStatus = runtime.memory.config.enabled ? 'healthy' : 'disabled';
     let preflight = null as Awaited<ReturnType<typeof runtime.memory.preflight>> | null;
+    let continuitySnapshot = null as ContinuitySnapshot | null;
+    let continuityTurnId: string | null = null;
+    let continuityTaskId: string | null = null;
+    let continuityResumeCandidates: ReturnType<typeof candidateView>[] = [];
 
     if (runtime.memory.config.enabled) {
-      try {
-        preflight = await runtime.memory.preflight({
-          scope,
-          routeContextId: reservation.routeContextId,
-          task,
-          context,
-          routeMetadata: { workspaceRoots: runtime.workspace.roots },
-          expiresAt: Date.parse(reservation.expiresAt),
-        });
-      } catch {
-        memoryStatus = 'degraded';
+      const preflightPromise = runtime.memory.preflight({
+        scope,
+        routeContextId: reservation.routeContextId,
+        task,
+        context,
+        routeMetadata: { workspaceRoots: runtime.workspace.roots },
+        expiresAt: Date.parse(reservation.expiresAt),
+      });
+      const snapshotPromise = runtime.memory.getContinuitySnapshot(scope);
+      const [preflightOutcome, snapshotOutcome] = await Promise.allSettled([preflightPromise, snapshotPromise]);
+
+      if (preflightOutcome.status === 'fulfilled') preflight = preflightOutcome.value;
+      else memoryStatus = 'degraded';
+
+      if (snapshotOutcome.status === 'fulfilled') {
+        continuitySnapshot = snapshotOutcome.value;
+      } else {
+        continuityStatus = 'degraded';
+      }
+
+      if (continuitySnapshot) {
+        const capture: ContinuityCapture = continuity ? { ...continuity } : {};
+        if (!capture.resumeTaskId && isKnownContinuationPhrase(task)) {
+          const candidates = resumableCandidates(continuitySnapshot);
+          if (candidates.length === 1) {
+            capture.resumeTaskId = candidates[0]!.taskId;
+          } else if (candidates.length > 1) {
+            continuityStatus = 'ambiguous';
+            continuityResumeCandidates = candidates.map(candidateView);
+          }
+        }
+
+        if (continuityStatus !== 'ambiguous') {
+          try {
+            const started = await runtime.memory.beginContinuityTurn(
+              scope,
+              reservation.routeContextId,
+              task,
+              context,
+              capture,
+              Date.parse(reservation.expiresAt),
+            );
+            continuityTurnId = started.turnId;
+            continuityTaskId = started.taskId;
+          } catch {
+            continuityStatus = 'degraded';
+          }
+
+          if (continuityTurnId && continuityTaskId) {
+            try {
+              continuitySnapshot = await runtime.memory.getContinuitySnapshot(scope);
+            } catch {
+              continuityStatus = 'degraded';
+            }
+          }
+        }
       }
     }
 
@@ -111,6 +228,9 @@ export function registerCapabilityTools(
           enforceHardGuardrails: runtime.memory.config.enforceHardGuardrails,
         },
       } : {}),
+      ...(continuityTurnId ? { continuityTurnId } : {}),
+      ...(continuityTaskId ? { continuityTaskId } : {}),
+      ...(continuitySnapshot ? { continuitySnapshotHash: continuitySnapshot.snapshotHash } : {}),
     });
 
     const memorySummary = preflight?.recalled ?? [];
@@ -135,6 +255,12 @@ export function registerCapabilityTools(
       relatedDecisions: preflight?.relatedDecisions ?? [],
       memoryConfidence: memoryConfidence(memorySummary),
       memorySnapshotHash: preflight?.snapshotHash ?? null,
+      continuityStatus,
+      continuityTurnId,
+      continuityTaskId,
+      continuitySnapshot,
+      continuitySnapshotHash: continuitySnapshot?.snapshotHash ?? null,
+      continuityResumeCandidates,
       expiresAt: route.expiresAt,
     });
   });
