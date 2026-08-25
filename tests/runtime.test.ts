@@ -70,12 +70,21 @@ describe('Agent Core runtime', () => {
 
     await writeFile(requestPath, 'stop\n', 'utf8');
     const deadline = Date.now() + 1000;
-    while (calls === 0 && Date.now() < deadline) {
+    let requestConsumed = false;
+    while (Date.now() < deadline) {
+      if (calls === 1) {
+        try {
+          await access(requestPath);
+        } catch {
+          requestConsumed = true;
+          break;
+        }
+      }
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
 
     expect(calls).toBe(1);
-    await expect(access(requestPath)).rejects.toThrow();
+    expect(requestConsumed).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(calls).toBe(1);
     watcher.close();

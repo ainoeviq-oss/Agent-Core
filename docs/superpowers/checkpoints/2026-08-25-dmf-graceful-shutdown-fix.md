@@ -47,11 +47,13 @@ Real compiled-runtime acceptance using `dist/index.js`:
 - `PRAGMA quick_check=ok` after exit.
 - schema `user_version=1` remained readable.
 
-Full regression after the fix:
+Full regression after the production fix:
 
 - 48/48 test files PASS.
 - 169/169 tests PASS.
 - exit 0.
+
+A later full-suite run in the integrated main checkout exposed a test-only race: the callback counter became `1` just before the watcher's asynchronous `rm()` completed, so the test could inspect the request path too early. Production acceptance remained green. The test was corrected to wait for both observable completion conditions (one callback and consumed request file), then stress-run 10 consecutive times: 10/10 runs PASS, 40/40 runtime assertions PASS.
 
 ## Architectural consequence
 
