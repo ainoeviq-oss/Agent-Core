@@ -124,7 +124,7 @@ export function createAgentCoreMcpServer(key: VerifiedKey, runtime: RuntimeServi
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   }, async () => {
     const structuredContent = {
-      stage: 'v4-automatic-capability-routing',
+      stage: 'v5-local-continuity-execution-fabric',
       enabled: [
         'mcp.streamable_http', 'auth.api_key', 'auth.oauth2',
         'oauth.dynamic_client_registration', 'oauth.authorization_code_pkce',
@@ -135,6 +135,9 @@ export function createAgentCoreMcpServer(key: VerifiedKey, runtime: RuntimeServi
         'routing.execution_gate',
         'memory.deterministic_fabric',
         'continuity.local_ledger',
+        'execution.deterministic_fabric',
+        'execution.event_driven_wake',
+        'execution.evidence_bridge',
         ...OPERATIONAL_TOOL_NAMES.map((name) => `tool.${name}`),
         ...CAPABILITY_TOOL_NAMES.map((name) => `tool.${name}`),
         ...MEMORY_TOOL_NAMES.map((name) => `tool.${name}`),

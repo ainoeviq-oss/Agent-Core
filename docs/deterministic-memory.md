@@ -133,3 +133,16 @@ The raw Agent Core API key itself is not required by the memory database. Authen
 ## Deterministic behavior
 
 For identical database state, scope, query, and configuration, recall ordering and snapshot hash are deterministic. Retrieval combines SQLite FTS5/BM25, exact structured anchors, bounded graph expansion, weighted Personalized PageRank, state/importance/recency scoring, and explicit provenance. No hidden AI performs extraction, embeddings, reranking, contradiction resolution, or cleanup.
+
+
+## Continuity Ledger inside DMF
+
+DMF schema v2 also contains the Local Agent Continuity Ledger. Continuity does not create a separate database or network service; task/turn/checkpoint/frontier tables live in `agent-core-memory.sqlite` and share the same principal/project isolation, backup, integrity, worker lifecycle, and recovery boundary described above.
+
+The ledger stores observable task state only: routed turns, task objective/criteria/constraints/status, explicit task dependencies, structured evidence checkpoints, deferred work, and bounded next-work frontier. It does not store private chain-of-thought.
+
+A process exit or execution terminal state is not equivalent to semantic task completion. The semantic task closes only through a successful terminal `task_checkpoint`. An unfinished turn remains open/interrupted and can be surfaced to a later authenticated route.
+
+Continuity snapshots are bounded and deterministically ordered. Current active/deferred/blocked/frontier state is queried separately from semantic chatter so old or unrelated conversation cannot displace factual project continuation merely because it is recent.
+
+See `docs/local-agent-continuity.md` for the route/checkpoint/resume contract and `docs/deterministic-execution-fabric.md` for the separate high-frequency execution database.

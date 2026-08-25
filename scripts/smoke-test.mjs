@@ -89,7 +89,7 @@ if (expectedKeyId) {
 }
 const capabilities = await callTool(4, 'agent_core_capabilities');
 assert(capabilities.response.status === 200, 'agent_core_capabilities failed');
-assert(capabilities.json?.result?.structuredContent?.stage === 'v4-automatic-capability-routing', 'routing stage mismatch');
+assert(capabilities.json?.result?.structuredContent?.stage === 'v5-local-continuity-execution-fabric', 'routing stage mismatch');
 assert(capabilities.json?.result?.structuredContent?.enabled?.includes('routing.execution_gate'), 'routing execution gate marker missing');
 
 const coverageCall = await callTool(5, 'capability_coverage');
