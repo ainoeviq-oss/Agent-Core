@@ -112,6 +112,7 @@ export interface MemoryScoreExplanation {
   importance: number;
   recency: number;
   finalScore: number;
+  lexicalTerms?: string[];
   matchedAnchors: string[];
   graphPath?: MemoryId[];
 }
