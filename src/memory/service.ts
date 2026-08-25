@@ -1,6 +1,14 @@
 import { stat } from 'node:fs/promises';
 import type { MemoryConfig } from '../config.js';
 import {
+  ContinuityStore,
+  type ContinuityBeginTurnResult,
+  type ContinuityCheckpointResult,
+  type ContinuityFrontierRecord,
+  type ContinuityTaskRecord,
+} from '../continuity/store.js';
+import type { ContinuityCapture, ContinuityCheckpointInput, ContinuityTurnState } from '../continuity/types.js';
+import {
   createMemoryBackup,
   readLatestMemoryBackup,
   type MemoryBackupRecord,
@@ -37,6 +45,7 @@ interface MemoryComponents {
   lifecycle: MemoryLifecycle;
   linker: MemoryLinker;
   preflight: MemoryPreflightEngine;
+  continuity: ContinuityStore;
 }
 
 export interface MemoryContextRecord {
@@ -124,6 +133,48 @@ export class MemoryService {
     return this.state;
   }
 
+  async beginContinuityTurn(
+    scope: MemoryScope,
+    routeContextId: string,
+    task: string,
+    context: string | undefined,
+    capture: ContinuityCapture = {},
+    expiresAt?: number,
+  ): Promise<ContinuityBeginTurnResult> {
+    const components = await this.requireComponents();
+    return components.continuity.beginTurn(scope, routeContextId, task, context, capture, expiresAt);
+  }
+
+  async checkpointContinuity(
+    scope: MemoryScope,
+    taskId: string,
+    turnId: string,
+    input: ContinuityCheckpointInput,
+  ): Promise<ContinuityCheckpointResult> {
+    const components = await this.requireComponents();
+    return components.continuity.checkpoint(scope, taskId, turnId, input);
+  }
+
+  async closeContinuityTurn(
+    scope: MemoryScope,
+    turnId: string,
+    finalState: Exclude<ContinuityTurnState, 'open'>,
+  ): Promise<void> {
+    const components = await this.requireComponents();
+    await components.continuity.closeTurn(scope, turnId, finalState);
+  }
+
+  async getContinuityTask(scope: MemoryScope, taskId: string): Promise<ContinuityTaskRecord | null> {
+    if (!this.config.enabled) return null;
+    const components = await this.requireComponents();
+    return components.continuity.getTask(scope, taskId);
+  }
+
+  async listContinuityFrontier(scope: MemoryScope, limit = 5): Promise<ContinuityFrontierRecord[]> {
+    if (!this.config.enabled) return [];
+    const components = await this.requireComponents();
+    return components.continuity.listFrontier(scope, limit);
+  }
   async recordEvent(request: RecordMemoryEventRequest) {
     if (!this.config.enabled) return null;
     const components = await this.requireComponents();
@@ -537,7 +588,8 @@ export class MemoryService {
       candidateCap: Math.min(512, this.config.seedCap),
     });
     const preflight = new MemoryPreflightEngine(client, retriever, lifecycle);
-    const components = { client, store, retriever, lifecycle, linker, preflight };
+    const continuity = new ContinuityStore(client);
+    const components = { client, store, retriever, lifecycle, linker, preflight, continuity };
     try {
       const opened = await store.open({ dbPath: this.config.dbPath, busyTimeoutMs: this.config.busyTimeoutMs });
       this.lastIntegrityCheckAt = opened.integrityCheckedAt;
