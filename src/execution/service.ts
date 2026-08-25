@@ -49,6 +49,7 @@ export class ExecutionService {
   readonly store: ExecutionStore;
   readonly wake: ExecutionWakeCoordinator;
   readonly journal: ExecutionEventJournal;
+  readonly logs: ExecutionLogStore;
   readonly scheduler: ExecutionScheduler;
   private opened = false;
   private closed = false;
@@ -61,7 +62,8 @@ export class ExecutionService {
     this.store = dependencies.store ?? new ExecutionStore();
     this.wake = dependencies.wake ?? new ExecutionWakeCoordinator(this.store);
     this.journal = dependencies.journal ?? new ExecutionEventJournal(this.store, this.wake);
-    const runner = dependencies.runner ?? new ExecutionCommandRunner(new ExecutionLogStore(config.logRoot));
+    this.logs = new ExecutionLogStore(config.logRoot);
+    const runner = dependencies.runner ?? new ExecutionCommandRunner(this.logs);
     this.scheduler = new ExecutionScheduler(this.store, runner, { logRoot: config.logRoot, journal: this.journal });
   }
 
@@ -124,9 +126,57 @@ export class ExecutionService {
     return { ...run, nodes };
   }
 
+  async addNodes(scope: ExecutionScope, runId: string, nodes: ExecutionNodeSpec[]): Promise<ExecutionRunView> {
+    this.assertReady();
+    const current = await this.status(scope, runId);
+    if (!current) throw new ExecutionStoreError('EXECUTION_RUN_NOT_FOUND', 'Execution run was not found in authenticated scope');
+    if (current.state !== 'planned' && current.state !== 'running') {
+      throw new ExecutionStoreError('EXECUTION_RUN_NOT_EXTENSIBLE', `Nodes can only be added while run is planned or running, not ${current.state}`);
+    }
+
+    const existingSpecs: ExecutionNodeSpec[] = current.nodes.map((node) => ({
+      id: node.nodeId,
+      purpose: node.purpose,
+      command: node.command,
+      cwd: node.cwd,
+      dependsOn: [...node.dependsOn],
+      timeoutMs: node.timeoutMs,
+      continueOnFailure: node.continueOnFailure,
+    }));
+    const graph = await validateExecutionDag([...existingSpecs, ...nodes], {
+      workspace: this.workspace,
+      maxNodes: this.config.maxNodes,
+    });
+    const requestedIds = new Set(nodes.map((node) => node.id.trim()));
+    const validatedNew = graph.nodes.filter((node) => requestedIds.has(node.id));
+    if (validatedNew.length !== nodes.length) {
+      throw new ExecutionStoreError('EXECUTION_DYNAMIC_GRAPH_INVALID', 'Dynamic execution nodes did not validate one-to-one');
+    }
+
+    await this.store.appendGraphNodes(scope, runId, validatedNew);
+    for (const node of validatedNew) {
+      await this.journal.record(scope, runId, 'node.queued', {
+        nodeId: node.id,
+        payload: { dependsOn: node.dependsOn, timeoutMs: node.timeoutMs, dynamic: true },
+      });
+    }
+    if (current.state === 'running') await this.scheduler.startRun(scope, runId);
+    const view = await this.status(scope, runId);
+    if (!view) throw new ExecutionStoreError('EXECUTION_RUN_NOT_FOUND', 'Execution run was not found in authenticated scope');
+    return view;
+  }
+
   async retry(scope: ExecutionScope, runId: string, nodeId: string): Promise<ExecutionRunView> {
     this.assertReady();
     await this.scheduler.retryNode(scope, runId, nodeId);
+    const view = await this.status(scope, runId);
+    if (!view) throw new ExecutionStoreError('EXECUTION_RUN_NOT_FOUND', 'Execution run was not found in authenticated scope');
+    return view;
+  }
+
+  async cancel(scope: ExecutionScope, runId: string, nodeId?: string): Promise<ExecutionRunView> {
+    this.assertReady();
+    await this.scheduler.cancel(scope, runId, nodeId);
     const view = await this.status(scope, runId);
     if (!view) throw new ExecutionStoreError('EXECUTION_RUN_NOT_FOUND', 'Execution run was not found in authenticated scope');
     return view;
@@ -163,6 +213,25 @@ export class ExecutionService {
       lastEventSequence: state.lastEventSequence,
       state,
     };
+  }
+
+  async readLog(
+    scope: ExecutionScope,
+    runId: string,
+    nodeId: string,
+    attemptNo: number,
+    stream: 'stdout' | 'stderr',
+    offset = 0,
+    maxBytes = 64 * 1024,
+  ) {
+    this.assertReady();
+    const run = await this.store.getRun(scope, runId);
+    if (!run) throw new ExecutionStoreError('EXECUTION_RUN_NOT_FOUND', 'Execution run was not found in authenticated scope');
+    const attempts = await this.store.listAttempts(scope, runId, nodeId);
+    if (!attempts.some((attempt) => attempt.attemptNo === attemptNo)) {
+      throw new ExecutionStoreError('EXECUTION_ATTEMPT_NOT_FOUND', 'Execution attempt was not found in authenticated scope');
+    }
+    return this.logs.readLog(runId, nodeId, attemptNo, stream, offset, maxBytes);
   }
 
   async recordOutputAvailable(

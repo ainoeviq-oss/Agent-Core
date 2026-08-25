@@ -20,6 +20,11 @@ export interface ExecutionSchedulerOptions {
   journal?: ExecutionEventJournal;
 }
 
+interface ActiveExecution {
+  handle: ExecutionRunHandle;
+  settled: Promise<void>;
+}
+
 const FAILED_DEPENDENCY_STATES = new Set(['failed', 'blocked', 'interrupted', 'cancelled']);
 
 function asValidated(node: ExecutionNodeRecord): ValidatedExecutionNode {
@@ -52,7 +57,7 @@ function runTerminalEvent(state: ExecutionRunState): ExecutionEventType | null {
 
 export class ExecutionScheduler {
   private readonly locks = new Map<string, Promise<void>>();
-  private readonly active = new Map<string, ExecutionRunHandle>();
+  private readonly active = new Map<string, ActiveExecution>();
   private readonly paths: ExecutionLogStore;
   private readonly journal?: ExecutionEventJournal;
   private closing = false;
@@ -100,12 +105,74 @@ export class ExecutionScheduler {
     });
   }
 
+  async cancel(scope: ExecutionScope, runId: string, nodeId?: string): Promise<ExecutionSchedulerStatus> {
+    const settlements: Promise<void>[] = [];
+    await this.withRunLock(runId, async () => {
+      if (this.closing) throw new Error('EXECUTION_SCHEDULER_CLOSING');
+      const run = await this.store.getRun(scope, runId);
+      if (!run) throw new ExecutionStoreError('EXECUTION_RUN_NOT_FOUND', 'Execution run was not found in authenticated scope');
+
+      if (nodeId) {
+        const node = await this.store.getNode(scope, runId, nodeId);
+        if (!node) throw new ExecutionStoreError('EXECUTION_NODE_NOT_FOUND', 'Execution node was not found');
+        if (node.state === 'cancelled') return;
+        if (node.state === 'succeeded' || node.state === 'failed') {
+          throw new ExecutionStoreError('EXECUTION_CANCEL_NOT_ALLOWED', `Node ${nodeId} cannot be cancelled from state ${node.state}`);
+        }
+        const active = this.active.get(this.key(runId, nodeId));
+        if (active) {
+          active.handle.terminate('cancelled');
+          settlements.push(active.settled);
+          return;
+        }
+        await this.store.setNodeState(scope, runId, nodeId, 'cancelled');
+        await this.emit(scope, runId, 'node.cancelled', { nodeId, payload: { reason: 'explicit_cancel' } });
+        await this.reconcileAndDispatch(scope, runId);
+        return;
+      }
+
+      if (run.state === 'cancelled') return;
+      const nodes = await this.store.getNodes(scope, runId);
+      for (const node of nodes) {
+        const active = this.active.get(this.key(runId, node.nodeId));
+        if (active) {
+          active.handle.terminate('cancelled');
+          settlements.push(active.settled);
+          continue;
+        }
+        if (node.state === 'queued' || node.state === 'ready' || node.state === 'blocked') {
+          await this.store.setNodeState(scope, runId, node.nodeId, 'cancelled');
+          await this.emit(scope, runId, 'node.cancelled', {
+            nodeId: node.nodeId,
+            payload: { reason: 'explicit_run_cancel' },
+          });
+        }
+      }
+    });
+
+    if (settlements.length > 0) await Promise.allSettled(settlements);
+
+    return this.withRunLock(runId, async () => {
+      if (nodeId) {
+        await this.reconcileAndDispatch(scope, runId);
+        return this.schedulerStatus(runId);
+      }
+      const current = await this.store.getRun(scope, runId);
+      if (!current) throw new ExecutionStoreError('EXECUTION_RUN_NOT_FOUND', 'Execution run was not found in authenticated scope');
+      if (current.state !== 'cancelled') {
+        await this.store.setRunState(scope, runId, 'cancelled');
+        await this.emit(scope, runId, 'run.cancelled', { payload: { previousState: current.state } });
+      }
+      return this.schedulerStatus(runId);
+    });
+  }
+
   async close(): Promise<void> {
     if (this.closing) return;
     this.closing = true;
-    const handles = [...this.active.values()];
-    for (const handle of handles) handle.terminate('interrupted');
-    await Promise.allSettled(handles.map((handle) => handle.completion));
+    const active = [...this.active.values()];
+    for (const execution of active) execution.handle.terminate('interrupted');
+    await Promise.allSettled(active.map((execution) => execution.settled));
     await Promise.allSettled([...this.locks.values()]);
   }
 
@@ -172,40 +239,37 @@ export class ExecutionScheduler {
     }
 
     const key = this.key(runId, node.nodeId);
-    this.active.set(key, handle);
-    handle.completion.then(
-      (marker) => {
-        void this.withRunLock(runId, async () => {
-          this.active.delete(key);
-          await this.store.completeAttempt(scope, marker);
-          await this.emit(scope, runId, nodeTerminalEvent(marker), {
-            nodeId: marker.nodeId,
-            attemptId: marker.attemptId,
-            payload: {
-              attemptNo: marker.attemptNo,
-              exitCode: marker.exitCode,
-              signal: marker.signal,
-              stdoutBytes: marker.stdoutBytes,
-              stderrBytes: marker.stderrBytes,
-            },
-          });
-          await this.reconcileAndDispatch(scope, runId);
-        }).catch(() => undefined);
-      },
-      (error) => {
-        void this.withRunLock(runId, async () => {
-          this.active.delete(key);
-          const failure = error instanceof Error ? error : new Error(String(error));
-          await this.store.failAttemptStart(scope, runId, node.nodeId, attemptId, failure);
-          await this.emit(scope, runId, 'node.failed', {
-            nodeId: node.nodeId,
-            attemptId,
-            payload: { attemptNo, completionFailure: failure.message },
-          });
-          await this.reconcileAndDispatch(scope, runId);
-        }).catch(() => undefined);
-      },
+    const settled = handle.completion.then(
+      (marker) => this.withRunLock(runId, async () => {
+        this.active.delete(key);
+        await this.store.completeAttempt(scope, marker);
+        await this.emit(scope, runId, nodeTerminalEvent(marker), {
+          nodeId: marker.nodeId,
+          attemptId: marker.attemptId,
+          payload: {
+            attemptNo: marker.attemptNo,
+            exitCode: marker.exitCode,
+            signal: marker.signal,
+            stdoutBytes: marker.stdoutBytes,
+            stderrBytes: marker.stderrBytes,
+          },
+        });
+        await this.reconcileAndDispatch(scope, runId);
+      }),
+      (error) => this.withRunLock(runId, async () => {
+        this.active.delete(key);
+        const failure = error instanceof Error ? error : new Error(String(error));
+        await this.store.failAttemptStart(scope, runId, node.nodeId, attemptId, failure);
+        await this.emit(scope, runId, 'node.failed', {
+          nodeId: node.nodeId,
+          attemptId,
+          payload: { attemptNo, completionFailure: failure.message },
+        });
+        await this.reconcileAndDispatch(scope, runId);
+      }),
     );
+    this.active.set(key, { handle, settled });
+    void settled.catch(() => undefined);
   }
 
   private async propagateBlocked(scope: ExecutionScope, runId: string): Promise<void> {

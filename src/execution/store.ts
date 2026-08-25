@@ -415,6 +415,38 @@ export class ExecutionStore {
     await this.client.transaction(operations);
   }
 
+  async appendGraphNodes(scope: ExecutionScope, runId: string, nodes: ValidatedExecutionNode[]): Promise<void> {
+    this.assertReady();
+    const run = await this.requireRun(scope, runId);
+    if (run.state !== 'planned' && run.state !== 'running') {
+      fail('EXECUTION_RUN_NOT_EXTENSIBLE', `Nodes can only be added while run is planned or running, not ${run.state}`);
+    }
+    if (nodes.length < 1) fail('EXECUTION_NODES_REQUIRED', 'At least one execution node is required');
+    const now = Date.now();
+    const operations: ExecutionWorkerSqlOperation[] = [];
+    for (const node of nodes) {
+      operations.push({
+        kind: 'run',
+        sql: `INSERT INTO execution_nodes(
+          run_id,node_id,purpose,command_text,cwd,state,timeout_ms,continue_on_failure,
+          attempt_count,last_error_json,created_at,updated_at,started_at,finished_at
+        ) VALUES (?,?,?,?,?,'queued',?,?,0,NULL,?,?,NULL,NULL)`,
+        params: [runId, node.id, node.purpose, node.command, node.cwd, node.timeoutMs, node.continueOnFailure ? 1 : 0, now, now],
+      });
+    }
+    for (const node of nodes) {
+      for (const dependencyId of node.dependsOn) {
+        operations.push({
+          kind: 'run',
+          sql: `INSERT INTO execution_dependencies(run_id,node_id,depends_on_node_id,dependency_type,created_at)
+                VALUES (?,?,?,'hard',?)`,
+          params: [runId, node.id, dependencyId, now],
+        });
+      }
+    }
+    await this.client.transaction(operations);
+  }
+
   async getRun(scope: ExecutionScope, runId: string): Promise<ExecutionRunRecord | null> {
     this.assertReady();
     assertScope(scope);

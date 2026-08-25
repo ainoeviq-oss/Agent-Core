@@ -19,6 +19,11 @@ const ROUTE_REQUIRED_TOOLS = [
   'search_files',
   'execute_command',
   'start_process',
+  'execution_create',
+  'execution_start',
+  'execution_add_nodes',
+  'execution_retry',
+  'execution_cancel',
 ] as const;
 
 const ATOMIC_READ_TOOLS = [
@@ -32,6 +37,11 @@ const ATOMIC_MUTATION_TOOLS = [
   'create_directory',
   'move_file',
   'get_file_info',
+  'execution_create',
+  'execution_start',
+  'execution_add_nodes',
+  'execution_retry',
+  'execution_cancel',
 ];
 
 const riskRank: Record<CapabilityRisk, number> = {

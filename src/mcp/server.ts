@@ -4,6 +4,7 @@ import type { VerifiedKey } from '../auth/key-types.js';
 import type { RuntimeServices } from '../runtime/services.js';
 import { CAPABILITY_TOOL_NAMES, registerCapabilityTools } from './capability-tools.js';
 import { CONTINUITY_TOOL_NAMES, registerContinuityTools } from './continuity-tools.js';
+import { EXECUTION_TOOL_NAMES, registerExecutionTools } from './execution-tools.js';
 import { MEMORY_TOOL_NAMES, registerMemoryTools } from './memory-tools.js';
 import { OPERATIONAL_TOOL_NAMES, registerOperationalTools } from './tools.js';
 
@@ -90,6 +91,7 @@ export function createAgentCoreMcpServer(key: VerifiedKey, runtime: RuntimeServi
         ...CAPABILITY_TOOL_NAMES.map((name) => `tool.${name}`),
         ...MEMORY_TOOL_NAMES.map((name) => `tool.${name}`),
         ...CONTINUITY_TOOL_NAMES.map((name) => `tool.${name}`),
+        ...EXECUTION_TOOL_NAMES.map((name) => `tool.${name}`),
       ],
       deferred: ['git.semantic_tools', 'gui.automation', 'registry.system_admin', 'app.adapters'],
     };
@@ -103,5 +105,6 @@ export function createAgentCoreMcpServer(key: VerifiedKey, runtime: RuntimeServi
   registerCapabilityTools(server, runtime, key);
   registerMemoryTools(server, runtime, key);
   registerContinuityTools(server, runtime, key);
+  registerExecutionTools(server, runtime, key);
   return server;
 }
