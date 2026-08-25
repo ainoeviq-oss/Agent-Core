@@ -1,7 +1,8 @@
 import path from 'node:path';
 import { CapabilityRegistry } from '../capabilities/registry-service.js';
 import { CapabilityRouter } from '../capabilities/router.js';
-import { loadConfig, type MemoryConfig } from '../config.js';
+import { loadConfig, type ExecutionConfig, type MemoryConfig } from '../config.js';
+import { ExecutionService } from '../execution/service.js';
 import type { RoutingAuditLogger } from '../logging/audit-log.js';
 import { MemoryService } from '../memory/service.js';
 import { FileSystemService } from './filesystem.js';
@@ -19,6 +20,7 @@ export interface RuntimeServices {
   router: CapabilityRouter;
   routes: RouteContextStore;
   memory: MemoryService;
+  execution: ExecutionService;
 }
 
 export function createRuntimeServices(
@@ -26,10 +28,13 @@ export function createRuntimeServices(
   capabilityDir = path.join(allowedRoots[0] ?? process.cwd(), 'capabilities'),
   routingAuditLogger?: RoutingAuditLogger,
   memoryConfig?: MemoryConfig,
+  executionConfig?: ExecutionConfig,
 ): RuntimeServices {
   const workspace = new WorkspacePolicy(allowedRoots);
   const capabilities = CapabilityRegistry.open(capabilityDir);
-  const resolvedMemoryConfig = memoryConfig ?? loadConfig({}, allowedRoots[0] ?? process.cwd()).memory;
+  const defaults = loadConfig({}, allowedRoots[0] ?? process.cwd());
+  const resolvedMemoryConfig = memoryConfig ?? defaults.memory;
+  const resolvedExecutionConfig = executionConfig ?? defaults.execution;
   return {
     workspace,
     filesystem: new FileSystemService(workspace),
@@ -41,5 +46,6 @@ export function createRuntimeServices(
       routingAuditLogger ? { auditLogger: routingAuditLogger } : {},
     ),
     memory: new MemoryService(resolvedMemoryConfig),
+    execution: new ExecutionService(resolvedExecutionConfig, workspace),
   };
 }
