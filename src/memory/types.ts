@@ -37,6 +37,19 @@ export const MEMORY_RELATIONS = [
 
 export const MEMORY_ENFORCEMENTS = ['none', 'soft', 'hard'] as const;
 
+export const MUTABLE_MEMORY_KINDS = [
+  'fact',
+  'preference',
+  'guardrail',
+  'decision',
+  'goal',
+  'task',
+  'artifact',
+  'procedure',
+  'tool_state',
+  'project_state',
+] as const;
+
 export type MemoryKind = (typeof MEMORY_KINDS)[number];
 export type MemoryState = (typeof MEMORY_STATES)[number];
 export type MemoryRelation = (typeof MEMORY_RELATIONS)[number];
@@ -72,6 +85,7 @@ export interface MemoryCommitRequest {
   sourceRef?: string;
   metadata?: Record<string, unknown>;
   explicitRelations?: MemoryExplicitRelation[];
+  revisionAuthority?: 'structured_state';
 }
 
 export interface MemoryCommitResult {
