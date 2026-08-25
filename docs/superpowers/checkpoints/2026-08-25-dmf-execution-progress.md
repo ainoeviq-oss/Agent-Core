@@ -24,7 +24,7 @@ Execution evidence: `F:\Projects\Agent-Core\runtime\dmf-execution\logs\`
 - [x] Task 3 — Dedicated SQLite worker
 - [x] Task 4 — Redaction, normalization, and anchors
 - [x] Task 5 — Event journal and versioned store
-- [ ] Task 6 — Deterministic graph linker
+- [x] Task 6 — Deterministic graph linker
 - [ ] Task 7 — Personalized PageRank engine
 - [ ] Task 8 — Hybrid retriever and score explanation
 - [ ] Task 9 — Lifecycle, conflicts, and compaction
