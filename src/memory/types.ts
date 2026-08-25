@@ -160,6 +160,7 @@ export interface MemoryPreflightRequest {
   routeContextId: string;
   task: string;
   context?: string;
+  routeMetadata?: Record<string, unknown>;
   expiresAt: number;
 }
 
@@ -175,6 +176,10 @@ export interface MemoryPreflightResult {
   snapshotHash: string;
   recalled: MemorySearchHit[];
   blocking: MemoryGuardrailDecision;
+  blockingGuardrails: MemorySearchHit[];
+  openConflicts: Array<Record<string, unknown>>;
+  priorFailures: MemorySearchHit[];
+  relatedDecisions: MemorySearchHit[];
   expiresAt: number;
 }
 

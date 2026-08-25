@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { AppConfig } from '../src/config.js';
+import { loadConfig, type AppConfig } from '../src/config.js';
 import { startAgentCoreService } from '../src/index.js';
 
 const roots: string[] = [];
@@ -14,6 +14,7 @@ async function config(port = 0): Promise<AppConfig> {
   const root = await mkdtemp(path.join(os.tmpdir(), 'agent-core-runtime-'));
   roots.push(root);
   return {
+    ...loadConfig({}, root),
     host: '127.0.0.1',
     port,
     dataDir: path.join(root, 'data'),
@@ -37,6 +38,24 @@ describe('Agent Core runtime', () => {
 
     await service.close();
     expect(service.server.listening).toBe(false);
+  });
+
+  it('closes an initialized memory facade idempotently with the Agent Core service', async () => {
+    const runtimeConfig = await config();
+    runtimeConfig.memory = {
+      ...runtimeConfig.memory,
+      enabled: true,
+      dbPath: path.join(path.dirname(runtimeConfig.dataDir), 'runtime', 'memory', 'runtime-test.sqlite'),
+    };
+    const service = await startAgentCoreService(runtimeConfig);
+    const before = await service.memory.status();
+    expect(before.enabled).toBe(true);
+    expect(before.healthy).toBe(true);
+
+    await service.close();
+    await service.close();
+    expect(service.server.listening).toBe(false);
+    expect(service.memory.currentState).toBe('closed');
   });
 
   it('rejects startup when the configured port is already in use', async () => {

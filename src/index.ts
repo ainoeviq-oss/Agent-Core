@@ -9,12 +9,13 @@ import { FileAuditLogger } from './logging/audit-log.js';
 import { createMcpHttpHandler } from './mcp/handler.js';
 import { OAuthService } from './oauth/service.js';
 import { FileOAuthStore } from './oauth/store.js';
-import { createRuntimeServices } from './runtime/services.js';
+import { createRuntimeServices, type RuntimeServices } from './runtime/services.js';
 
 export interface AgentCoreService {
   server: Server;
   host: string;
   port: number;
+  memory: RuntimeServices['memory'];
   close(): Promise<void>;
 }
 
@@ -29,7 +30,7 @@ export async function startAgentCoreService(config: AppConfig = loadConfig()): P
   const oauthStore = new FileOAuthStore(config.dataDir);
   const oauthService = new OAuthService(keyStore, oauthStore);
   const auditLogger = new FileAuditLogger(config.logDir);
-  const runtime = createRuntimeServices(config.allowedRoots, config.capabilityDir, auditLogger);
+  const runtime = createRuntimeServices(config.allowedRoots, config.capabilityDir, auditLogger, config.memory);
   const server = createServer(createHttpHandler({
     keyStore,
     oauthService,
@@ -56,7 +57,11 @@ export async function startAgentCoreService(config: AppConfig = loadConfig()): P
     server,
     host: config.host,
     port: address.port,
-    close: () => closeServer(server),
+    memory: runtime.memory,
+    close: async () => {
+      await closeServer(server);
+      await runtime.memory.close();
+    },
   };
 }
 
