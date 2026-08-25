@@ -22,7 +22,7 @@ Execution evidence: `F:\Projects\Agent-Core\runtime\dmf-execution\logs\`
 - [x] Task 1 — Baseline and dependency gate
 - [x] Task 2 — Types, configuration, and database schema
 - [x] Task 3 — Dedicated SQLite worker
-- [ ] Task 4 — Redaction, normalization, and anchors
+- [x] Task 4 — Redaction, normalization, and anchors
 - [ ] Task 5 — Event journal and versioned store
 - [ ] Task 6 — Deterministic graph linker
 - [ ] Task 7 — Personalized PageRank engine
