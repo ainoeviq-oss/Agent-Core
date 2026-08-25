@@ -1,0 +1,12 @@
+[
+  {"id":"A","name":"Input process output continuity with deferred work and frontier"},
+  {"id":"B","name":"A and B run concurrently and C unlocks after A"},
+  {"id":"C","name":"A completion wakes the agent while B remains running"},
+  {"id":"D","name":"C depends on A and B and waits for both"},
+  {"id":"E","name":"A failure leaves B independent and explicit retry recovers dependents"},
+  {"id":"F","name":"Dynamic C depends only on A and starts while B is running"},
+  {"id":"G","name":"Fresh same-principal session resumes active run and task state"},
+  {"id":"H","name":"Restart recovery marks missing-terminal-marker work interrupted"},
+  {"id":"I","name":"DMF degraded execution queues and replays promotion exactly once"},
+  {"id":"J","name":"No task finalization remains interrupted/open rather than completed"}
+]

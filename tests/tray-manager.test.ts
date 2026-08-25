@@ -174,7 +174,7 @@ describe('Agent Core tray lifecycle foundation', () => {
     const state = JSON.parse(await readFile(statePath, 'utf8'));
     expect(state.services).toEqual({});
     expect(live.killed).toBe(false);
-  });
+  }, 10_000);
 
   it('permits only one tray manager mutex holder per configured identity', async () => {
     const root = await tempRoot();

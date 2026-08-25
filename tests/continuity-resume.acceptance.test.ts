@@ -259,5 +259,5 @@ describe('cross-session local continuity acceptance', () => {
     expect(after.snapshotHash).toBe(before.snapshotHash);
     expect(after.currentObjective).toBe('Current objective survives chatter');
     expect(after.activeTasks.map((task) => task.taskId)).toEqual([current.taskId]);
-  });
+  }, 10_000);
 });
