@@ -579,6 +579,18 @@ export class MemoryStore {
         ) VALUES (?, ?, ?, ?, ?, ?)`,
         params: [memoryId, relation.targetMemoryId, relation.relation, weight, eventId, now],
       });
+      // The master contract defines only `supersedes` as directed (old -> new).
+      // Explicit associative relations must be traversable in both directions so
+      // weighted PPR can propagate from either side of a known relationship.
+      if (relation.relation !== 'supersedes') {
+        operations.push({
+          kind: 'run',
+          sql: `INSERT OR IGNORE INTO memory_edges(
+            from_memory_id, to_memory_id, relation, weight, evidence_event_id, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?)`,
+          params: [relation.targetMemoryId, memoryId, relation.relation, weight, eventId, now],
+        });
+      }
     }
 
     operations.push({ kind: 'exec', sql: MEMORY_FTS_REBUILD_SQL });

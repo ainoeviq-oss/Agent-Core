@@ -1,0 +1,31 @@
+{
+  "scenarioA": {
+    "query": "workspace build output drive F",
+    "oldAgeMs": 63072000000
+  },
+  "scenarioB": {
+    "canonicalKey": "decision.renderer",
+    "query": "decision.renderer",
+    "oldValue": "Use renderer A for exported previews.",
+    "newValue": "Use renderer B for exported previews."
+  },
+  "scenarioC": {
+    "query": "write_file build-output.zip access denied"
+  },
+  "scenarioD": {
+    "query": "project.chain"
+  },
+  "scenarioE": {
+    "query": "deployment region"
+  },
+  "scenarioF": {
+    "query": "deployment behavior evidence"
+  },
+  "scenarioG": {
+    "task": "Review the deterministic release procedure for artifact bundle generation.",
+    "context": "Use the same project and configuration."
+  },
+  "scenarioH": {
+    "query": "restart persistent policy"
+  }
+}
