@@ -1,6 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
 import type { VerifiedKey } from '../auth/key-types.js';
+import { attachExecutionContinuity } from '../continuity/snapshot.js';
 import {
   isTerminalContinuityTaskStatus,
   normalizeContinuityCheckpointInput,
@@ -183,7 +184,15 @@ export function registerContinuityTools(server: McpServer, runtime: RuntimeServi
     const currentScope = scope(runtime, key);
     const memory = await runtime.memory.status(currentScope);
     if (!memory.enabled) return { enabled: false, healthy: false, memory, snapshot: null };
-    const snapshot = await runtime.memory.getContinuitySnapshot(currentScope);
+    let snapshot = await runtime.memory.getContinuitySnapshot(currentScope);
+    if (runtime.execution.config.enabled) {
+      try {
+        await runtime.execution.open();
+        snapshot = attachExecutionContinuity(snapshot, await runtime.execution.continuitySummary(currentScope));
+      } catch {
+        // Continuity memory remains independently available when execution is degraded.
+      }
+    }
     return { enabled: true, healthy: memory.healthy, memory, snapshot };
   }));
 

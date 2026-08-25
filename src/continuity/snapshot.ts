@@ -23,6 +23,30 @@ export interface ContinuityInterruptedTurnRecord {
   closedAt?: number;
 }
 
+export interface ExecutionContinuityRunRecord {
+  runId: string;
+  continuityTaskId?: string;
+  objective: string;
+  state: 'planned' | 'running' | 'interrupted';
+  lastEventSequence: number;
+  updatedAt: number;
+}
+
+export interface ExecutionContinuityCheckpoint {
+  runId: string;
+  continuityTaskId?: string;
+  state: 'completed' | 'failed' | 'blocked' | 'interrupted' | 'cancelled';
+  lastEventSequence: number;
+  finishedAt?: number;
+  updatedAt: number;
+}
+
+export interface ExecutionContinuitySummary {
+  activeRuns: ExecutionContinuityRunRecord[];
+  interruptedRuns: ExecutionContinuityRunRecord[];
+  lastExecutionCheckpoint: ExecutionContinuityCheckpoint | null;
+}
+
 export interface ContinuitySnapshot {
   currentObjective: string | null;
   activeTasks: ContinuityTaskRecord[];
@@ -32,6 +56,9 @@ export interface ContinuitySnapshot {
   unfinishedPlans: ContinuityTaskRecord[];
   frontier: ContinuityFrontierRecord[];
   interruptedTurns: ContinuityInterruptedTurnRecord[];
+  activeRuns?: ExecutionContinuityRunRecord[];
+  interruptedRuns?: ExecutionContinuityRunRecord[];
+  lastExecutionCheckpoint?: ExecutionContinuityCheckpoint | null;
   snapshotHash: string;
 }
 
@@ -224,4 +251,29 @@ export class ContinuitySnapshotBuilder {
     );
     return rows.map(mapTask);
   }
+}
+
+export function attachExecutionContinuity(
+  snapshot: ContinuitySnapshot,
+  summary: ExecutionContinuitySummary,
+): ContinuitySnapshot {
+  const { snapshotHash: _priorHash, ...base } = snapshot;
+  const activeRuns = [...summary.activeRuns]
+    .sort((left, right) => right.updatedAt - left.updatedAt || left.runId.localeCompare(right.runId))
+    .slice(0, 10);
+  const interruptedRuns = [...summary.interruptedRuns]
+    .sort((left, right) => right.updatedAt - left.updatedAt || left.runId.localeCompare(right.runId))
+    .slice(0, 10);
+  const payload = {
+    ...base,
+    activeRuns,
+    interruptedRuns,
+    lastExecutionCheckpoint: summary.lastExecutionCheckpoint,
+  };
+  while (JSON.stringify(payload).length > CONTINUITY_SNAPSHOT_LIMITS.characterBudget) {
+    if (interruptedRuns.length > 0) interruptedRuns.pop();
+    else if (activeRuns.length > 0) activeRuns.pop();
+    else break;
+  }
+  return { ...payload, snapshotHash: hash(payload) };
 }

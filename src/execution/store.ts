@@ -93,6 +93,13 @@ export interface ExecutionStoreStatus {
   lastIntegrityCheckAt?: number;
 }
 
+export interface ExecutionRecoverableAttempt extends ExecutionAttemptRecord {
+  principalId: string;
+  projectId?: string;
+  runState: ExecutionRunState;
+  nodeState: ExecutionNodeState;
+}
+
 type RunRow = {
   id: string;
   principal_id: string;
@@ -660,6 +667,46 @@ export class ExecutionStore {
       nodeId ? [runId, nodeId] : [runId],
     );
     return rows.map(mapAttempt);
+  }
+
+  async listRecoverableAttempts(): Promise<ExecutionRecoverableAttempt[]> {
+    this.assertReady();
+    const rows = await this.client.query<Record<string, unknown>>(
+      `SELECT attempt.id, attempt.run_id, attempt.node_id, attempt.attempt_no, attempt.state,
+              attempt.process_pid, attempt.stdout_path, attempt.stderr_path, attempt.result_path,
+              attempt.started_at, attempt.finished_at, attempt.exit_code, attempt.signal,
+              attempt.stdout_bytes, attempt.stderr_bytes, attempt.stdout_sha256, attempt.stderr_sha256,
+              attempt.error_json, run.principal_id, run.project_id, run.state AS run_state, node.state AS node_state
+         FROM execution_attempts AS attempt
+         JOIN execution_runs AS run ON run.id = attempt.run_id
+         JOIN execution_nodes AS node ON node.run_id = attempt.run_id AND node.node_id = attempt.node_id
+        WHERE attempt.state = 'running'
+        ORDER BY run.id COLLATE BINARY, node.node_id COLLATE BINARY, attempt.attempt_no`,
+    );
+    return rows.map((row) => ({
+      attemptId: String(row.id), runId: String(row.run_id), nodeId: String(row.node_id),
+      attemptNo: Number(row.attempt_no), state: String(row.state) as ExecutionAttemptState,
+      processPid: row.process_pid == null ? undefined : Number(row.process_pid),
+      stdoutPath: String(row.stdout_path), stderrPath: String(row.stderr_path), resultPath: String(row.result_path),
+      startedAt: Number(row.started_at), finishedAt: row.finished_at == null ? undefined : Number(row.finished_at),
+      exitCode: row.exit_code == null ? undefined : Number(row.exit_code), signal: row.signal == null ? undefined : String(row.signal),
+      stdoutBytes: Number(row.stdout_bytes), stderrBytes: Number(row.stderr_bytes),
+      stdoutSha256: row.stdout_sha256 == null ? undefined : String(row.stdout_sha256),
+      stderrSha256: row.stderr_sha256 == null ? undefined : String(row.stderr_sha256),
+      error: parseObject(row.error_json == null ? null : String(row.error_json)),
+      principalId: String(row.principal_id), projectId: row.project_id == null ? undefined : String(row.project_id),
+      runState: String(row.run_state) as ExecutionRunState, nodeState: String(row.node_state) as ExecutionNodeState,
+    }));
+  }
+
+  async markAttemptInterrupted(scope: ExecutionScope, runId: string, nodeId: string, attemptId: string, reason: string): Promise<void> {
+    await this.requireRun(scope, runId);
+    const now = Date.now();
+    const errorJson = stableExecutionJson({ reason: reason.slice(0, 2_000), recovery: true });
+    await this.client.transaction([
+      { kind: 'run', sql: `UPDATE execution_attempts SET state='interrupted', finished_at=?, error_json=? WHERE id=? AND run_id=? AND node_id=? AND state='running'`, params: [now, errorJson, attemptId, runId, nodeId] },
+      { kind: 'run', sql: `UPDATE execution_nodes SET state='interrupted', finished_at=?, updated_at=?, last_error_json=? WHERE run_id=? AND node_id=? AND state='running'`, params: [now, now, errorJson, runId, nodeId] },
+    ]);
   }
 
   async appendEvent(

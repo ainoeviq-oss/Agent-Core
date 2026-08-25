@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { ExecutionConfig } from '../config.js';
+import type { ExecutionContinuitySummary } from '../continuity/snapshot.js';
 import type { WorkspacePolicy } from '../runtime/workspace.js';
 import { validateExecutionDag, type ExecutionNodeSpec } from './dag.js';
 import { ExecutionLogStore } from './log-store.js';
 import type { ExecutionMemoryBridge } from './memory-bridge.js';
+import { ExecutionRecovery } from './recovery.js';
 import { ExecutionCommandRunner } from './runner.js';
 import { ExecutionScheduler, type ExecutionRunnerLike } from './scheduler.js';
 import {
@@ -83,6 +85,8 @@ export class ExecutionService {
     if (this.opened) return;
     if (!this.config.enabled) throw new Error('EXECUTION_DISABLED');
     await this.store.open({ dbPath: this.config.dbPath, busyTimeoutMs: this.config.busyTimeoutMs });
+    const recovery = new ExecutionRecovery(this.store, this.logs);
+    await recovery.reconcile();
     this.opened = true;
   }
 
@@ -243,6 +247,34 @@ export class ExecutionService {
       throw new ExecutionStoreError('EXECUTION_ATTEMPT_NOT_FOUND', 'Execution attempt was not found in authenticated scope');
     }
     return this.logs.readLog(runId, nodeId, attemptNo, stream, offset, maxBytes);
+  }
+
+  async continuitySummary(scope: ExecutionScope): Promise<ExecutionContinuitySummary> {
+    this.assertReady();
+    const runs = await this.store.listRuns(scope, 100);
+    const compact = (run: ExecutionRunRecord) => ({
+      runId: run.runId,
+      ...(run.continuityTaskId ? { continuityTaskId: run.continuityTaskId } : {}),
+      objective: run.objective.length <= 2_000 ? run.objective : `${run.objective.slice(0, 1_999)}…`,
+      state: run.state as 'planned' | 'running' | 'interrupted',
+      lastEventSequence: run.lastEventSequence,
+      updatedAt: run.updatedAt,
+    });
+    const activeRuns = runs.filter((run) => run.state === 'planned' || run.state === 'running').slice(0, 10).map(compact);
+    const interruptedRuns = runs.filter((run) => run.state === 'interrupted').slice(0, 10).map(compact);
+    const terminal = runs.find((run) => ['completed', 'failed', 'blocked', 'interrupted', 'cancelled'].includes(run.state));
+    return {
+      activeRuns,
+      interruptedRuns,
+      lastExecutionCheckpoint: terminal ? {
+        runId: terminal.runId,
+        ...(terminal.continuityTaskId ? { continuityTaskId: terminal.continuityTaskId } : {}),
+        state: terminal.state as 'completed' | 'failed' | 'blocked' | 'interrupted' | 'cancelled',
+        lastEventSequence: terminal.lastEventSequence,
+        ...(terminal.finishedAt ? { finishedAt: terminal.finishedAt } : {}),
+        updatedAt: terminal.updatedAt,
+      } : null,
+    };
   }
 
   async recordOutputAvailable(

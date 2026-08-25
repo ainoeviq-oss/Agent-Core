@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
 import type { VerifiedKey } from '../auth/key-types.js';
-import type { ContinuitySnapshot } from '../continuity/snapshot.js';
+import { attachExecutionContinuity, type ContinuitySnapshot } from '../continuity/snapshot.js';
 import type { ContinuityTaskRecord } from '../continuity/store.js';
 import type { ContinuityCapture } from '../continuity/types.js';
 import type { MemorySearchHit } from '../memory/types.js';
@@ -123,6 +123,20 @@ function candidateView(task: ContinuityTaskRecord) {
 
 type ContinuityRouteStatus = 'disabled' | 'healthy' | 'degraded' | 'ambiguous';
 
+async function attachExecutionSnapshot(
+  runtime: RuntimeServices,
+  scope: { principalId: string; projectId?: string },
+  snapshot: ContinuitySnapshot,
+): Promise<ContinuitySnapshot> {
+  if (!runtime.execution.config.enabled) return snapshot;
+  try {
+    await runtime.execution.open();
+    return attachExecutionContinuity(snapshot, await runtime.execution.continuitySummary(scope));
+  } catch {
+    return snapshot;
+  }
+}
+
 export function registerCapabilityTools(
   server: McpServer,
   runtime: RuntimeServices,
@@ -167,7 +181,7 @@ export function registerCapabilityTools(
       else memoryStatus = 'degraded';
 
       if (snapshotOutcome.status === 'fulfilled') {
-        continuitySnapshot = snapshotOutcome.value;
+        continuitySnapshot = await attachExecutionSnapshot(runtime, scope, snapshotOutcome.value);
       } else {
         continuityStatus = 'degraded';
       }
@@ -202,7 +216,11 @@ export function registerCapabilityTools(
 
           if (continuityTurnId && continuityTaskId) {
             try {
-              continuitySnapshot = await runtime.memory.getContinuitySnapshot(scope);
+              continuitySnapshot = await attachExecutionSnapshot(
+                runtime,
+                scope,
+                await runtime.memory.getContinuitySnapshot(scope),
+              );
             } catch {
               continuityStatus = 'degraded';
             }
