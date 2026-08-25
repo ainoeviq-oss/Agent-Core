@@ -27,7 +27,7 @@ Execution evidence: `F:\Projects\Agent-Core\runtime\dmf-execution\logs\`
 - [x] Task 6 — Deterministic graph linker
 - [x] Task 7 — Personalized PageRank engine
 - [x] Task 8 — Hybrid retriever and score explanation
-- [ ] Task 9 — Lifecycle, conflicts, and compaction
+- [x] Task 9 — Lifecycle, conflicts, and compaction
 - [ ] Task 10 — Memory service facade and preflight
 - [ ] Task 11 — Integrate DMF with capability routing
 - [ ] Task 12 — Automatic operational event capture

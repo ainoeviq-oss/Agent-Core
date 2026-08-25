@@ -8,6 +8,7 @@ import {
   MEMORY_SCHEMA_SQL,
   MEMORY_SCHEMA_VERSION,
 } from './schema.js';
+import { MUTABLE_MEMORY_KINDS } from './types.js';
 import type {
   MemoryCommitRequest,
   MemoryCommitResult,
@@ -256,6 +257,12 @@ export class MemoryStore {
     if (existing && existing.kind !== request.kind) {
       throw new MemoryStoreError('MEMORY_KIND_MISMATCH', 'canonicalKey already exists with a different memory kind');
     }
+    if (existing && existing.value_hash !== normalized.valueHash && request.revisionAuthority !== 'structured_state') {
+      throw new MemoryStoreError(
+        'MEMORY_REVISION_REQUIRED',
+        'Changing an existing canonical memory requires memory_revise or structured revision authority',
+      );
+    }
 
     return this.writeRevision({
       request,
@@ -271,6 +278,9 @@ export class MemoryStore {
     assertScope(request.scope);
     const current = await this.findById(request.scope, request.memoryId);
     if (!current) throw new MemoryStoreError('MEMORY_NOT_FOUND', 'Memory not found in authenticated scope');
+    if (!MUTABLE_MEMORY_KINDS.includes(current.kind as (typeof MUTABLE_MEMORY_KINDS)[number])) {
+      throw new MemoryStoreError('MEMORY_KIND_IMMUTABLE', `Memory kind "${current.kind}" cannot be revised in place`);
+    }
     const normalized = normalizeValue(request.value);
     const result = await this.writeRevision({
       request: {

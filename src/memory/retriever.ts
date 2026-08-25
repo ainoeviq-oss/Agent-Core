@@ -59,7 +59,7 @@ function scopeProject(scope: MemoryScope): string {
 function statePredicate(includeHistory: boolean): string {
   return includeHistory
     ? "item.state <> 'tombstoned'"
-    : "item.state NOT IN ('tombstoned', 'superseded')";
+    : "item.state IN ('active', 'conflicted', 'completed')";
 }
 
 function lexicalTerms(text: string): string[] {
@@ -281,7 +281,7 @@ export class MemoryRetriever {
       `SELECT memory_id, bm25(memory_fts) AS score
          FROM memory_fts
         WHERE memory_fts MATCH ? AND principal_id = ? AND project_id = ?
-          AND ${request.includeHistory ? "state <> 'tombstoned'" : "state NOT IN ('tombstoned', 'superseded')"}
+          AND ${request.includeHistory ? "state <> 'tombstoned'" : "state IN ('active', 'conflicted', 'completed')"}
         ORDER BY score ASC, memory_id COLLATE BINARY ASC
         LIMIT ?`,
       [ftsMatchQuery(terms), request.scope.principalId, scopeProject(request.scope), this.config.seedCap],
