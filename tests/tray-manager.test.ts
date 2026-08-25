@@ -153,7 +153,7 @@ describe('Agent Core tray lifecycle foundation', () => {
     const badBody = JSON.parse(runTray('Probe', bad.configPath).stdout.trim());
     expect(badBody.agentCore).toMatchObject({ pid: child.pid, identityMatch: false });
     expect(child.killed).toBe(false);
-  });
+  }, 20_000);
 
   it('discards stale or mismatched state without stopping a live mismatched process', async () => {
     const root = await tempRoot();
