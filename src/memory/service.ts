@@ -1,4 +1,10 @@
+import { stat } from 'node:fs/promises';
 import type { MemoryConfig } from '../config.js';
+import {
+  createMemoryBackup,
+  readLatestMemoryBackup,
+  type MemoryBackupRecord,
+} from './backup.js';
 import { MemoryLifecycle } from './lifecycle.js';
 import { MemoryLinker } from './linker.js';
 import { MemoryPreflightEngine, createDisabledPreflightResult } from './preflight.js';
@@ -106,6 +112,9 @@ export class MemoryService {
   private opening: Promise<MemoryComponents> | undefined;
   private state: MemoryServiceState;
   private degradedReason: string | undefined;
+  private lastIntegrityCheckAt: number | undefined;
+  private lastSuccessfulIntegrityCheckAt: number | undefined;
+  private lastBackup: MemoryBackupRecord | undefined;
 
   constructor(readonly config: MemoryConfig) {
     this.state = config.enabled ? 'idle' : 'disabled';
@@ -350,6 +359,13 @@ export class MemoryService {
     return components.lifecycle.compact(scope, now);
   }
 
+  async backup(reason = 'manual'): Promise<MemoryBackupRecord> {
+    const components = await this.requireComponents();
+    const record = await createMemoryBackup(components.client, this.config.dbPath, reason);
+    this.lastBackup = record;
+    return record;
+  }
+
   async getContext(scope: MemoryScope, contextId: string): Promise<MemoryContextRecord | null> {
     if (!this.config.enabled) return null;
     const components = await this.requireComponents();
@@ -417,15 +433,31 @@ export class MemoryService {
           (SELECT count(*) FROM memory_fts) AS fts_rows`);
       }
       const integrity = await components.client.integrity();
+      const checkedAt = Date.now();
+      this.lastIntegrityCheckAt = checkedAt;
+      if (integrity.ok) this.lastSuccessfulIntegrityCheckAt = checkedAt;
+      this.lastBackup ??= await readLatestMemoryBackup(this.config.dbPath) ?? undefined;
+      const dbBytes = await stat(this.config.dbPath).then((info) => info.size).catch(() => 0);
       return {
         enabled: true,
         healthy: integrity.ok,
         schemaVersion: MEMORY_SCHEMA_VERSION,
         dbPath: this.config.dbPath,
-        counts: Object.fromEntries(Object.entries(counts ?? {}).map(([key, value]) => [key, Number(value)])),
+        counts: {
+          ...Object.fromEntries(Object.entries(counts ?? {}).map(([key, value]) => [key, Number(value)])),
+          db_bytes: dbBytes,
+        },
         integrity: integrity.result,
+        lastIntegrityCheckAt: this.lastIntegrityCheckAt,
+        lastSuccessfulIntegrityCheckAt: this.lastSuccessfulIntegrityCheckAt,
+        ...(this.lastBackup ? {
+          lastBackupPath: this.lastBackup.backupPath,
+          lastBackupAt: this.lastBackup.createdAt,
+        } : {}),
       };
     } catch (error) {
+      this.lastIntegrityCheckAt = Date.now();
+      this.lastBackup ??= await readLatestMemoryBackup(this.config.dbPath) ?? undefined;
       return {
         enabled: true,
         healthy: false,
@@ -433,6 +465,12 @@ export class MemoryService {
         dbPath: this.config.dbPath,
         counts: {},
         integrity: `degraded:${error instanceof Error ? error.message : String(error)}`,
+        lastIntegrityCheckAt: this.lastIntegrityCheckAt,
+        lastSuccessfulIntegrityCheckAt: this.lastSuccessfulIntegrityCheckAt,
+        ...(this.lastBackup ? {
+          lastBackupPath: this.lastBackup.backupPath,
+          lastBackupAt: this.lastBackup.createdAt,
+        } : {}),
       };
     }
   }
@@ -501,12 +539,17 @@ export class MemoryService {
     const preflight = new MemoryPreflightEngine(client, retriever, lifecycle);
     const components = { client, store, retriever, lifecycle, linker, preflight };
     try {
-      await store.open({ dbPath: this.config.dbPath, busyTimeoutMs: this.config.busyTimeoutMs });
+      const opened = await store.open({ dbPath: this.config.dbPath, busyTimeoutMs: this.config.busyTimeoutMs });
+      this.lastIntegrityCheckAt = opened.integrityCheckedAt;
+      this.lastSuccessfulIntegrityCheckAt = opened.integrity === 'ok' ? opened.integrityCheckedAt : undefined;
+      if (opened.migrationBackup) this.lastBackup = opened.migrationBackup;
+      else this.lastBackup ??= await readLatestMemoryBackup(this.config.dbPath) ?? undefined;
       this.components = components;
       this.state = 'healthy';
       this.degradedReason = undefined;
       return components;
     } catch (error) {
+      this.lastIntegrityCheckAt = Date.now();
       this.state = 'degraded';
       this.degradedReason = error instanceof Error ? error.message : String(error);
       try { await store.close(); } catch {}

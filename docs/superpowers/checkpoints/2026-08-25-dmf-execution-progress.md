@@ -32,7 +32,7 @@ Execution evidence: `F:\Projects\Agent-Core\runtime\dmf-execution\logs\`
 - [x] Task 11 â€” Integrate DMF with capability routing
 - [x] Task 12 â€” Automatic operational event capture
 - [x] Task 13 - MCP memory tools
-- [ ] Task 14 â€” Persistence, backup, recovery, and integrity
+- [x] Task 14 - Persistence, backup, recovery, and integrity
 - [ ] Task 15 â€” Evaluation harness for awareness
 - [ ] Task 16 â€” Performance and scale gates
 - [ ] Task 17 â€” Launcher and lifecycle integration

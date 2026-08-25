@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { stat } from 'node:fs/promises';
 import { extractMemoryAnchors } from './anchors.js';
+import { createMemoryBackup, type MemoryBackupRecord } from './backup.js';
 import { normalizeCanonicalKey, normalizeMemoryText } from './normalizer.js';
 import { redactMemoryText } from './redaction.js';
 import {
@@ -36,6 +38,15 @@ export class MemoryStoreError extends Error {
 export interface MemoryStoreOpenOptions {
   dbPath: string;
   busyTimeoutMs?: number;
+}
+
+export interface MemoryStoreOpenResult {
+  priorUserVersion: number;
+  schemaVersion: number;
+  quickCheck: string;
+  integrity: string;
+  integrityCheckedAt: number;
+  migrationBackup?: MemoryBackupRecord;
 }
 
 export interface RecordMemoryEventRequest {
@@ -169,6 +180,16 @@ function metadataJson(metadata: Record<string, unknown> | undefined): string {
   return stableJson(sanitizeStructured(metadata ?? {}));
 }
 
+async function databaseFileExists(dbPath: string): Promise<boolean> {
+  if (dbPath === ':memory:') return false;
+  try {
+    const info = await stat(dbPath);
+    return info.isFile() && info.size > 0;
+  } catch {
+    return false;
+  }
+}
+
 function eventInsertOperation(
   eventId: string,
   request: RecordMemoryEventRequest,
@@ -207,10 +228,41 @@ export class MemoryStore {
     return new MemoryStore(new MemoryWorkerClient(options));
   }
 
-  async open(options: MemoryStoreOpenOptions): Promise<void> {
-    if (this.opened) return;
+  async open(options: MemoryStoreOpenOptions): Promise<MemoryStoreOpenResult> {
+    if (this.opened) {
+      const integrity = await this.client.integrity();
+      return {
+        priorUserVersion: MEMORY_SCHEMA_VERSION,
+        schemaVersion: MEMORY_SCHEMA_VERSION,
+        quickCheck: 'ok',
+        integrity: integrity.result,
+        integrityCheckedAt: Date.now(),
+      };
+    }
     if (this.closed) throw new MemoryStoreError('MEMORY_STORE_CLOSED', 'Memory store is closed');
-    await this.client.open({ dbPath: options.dbPath, busyTimeoutMs: options.busyTimeoutMs });
+    const existedBeforeOpen = await databaseFileExists(options.dbPath);
+    const opened = await this.client.open({ dbPath: options.dbPath, busyTimeoutMs: options.busyTimeoutMs });
+    const versionRows = await this.client.query<Record<string, unknown>>('PRAGMA user_version');
+    const priorUserVersion = Number(versionRows[0]?.user_version ?? 0);
+    if (!Number.isInteger(priorUserVersion) || priorUserVersion < 0) {
+      throw new MemoryStoreError('MEMORY_SCHEMA_VERSION_INVALID', 'SQLite user_version is invalid');
+    }
+    if (priorUserVersion > MEMORY_SCHEMA_VERSION) {
+      throw new MemoryStoreError(
+        'MEMORY_SCHEMA_NEWER_THAN_RUNTIME',
+        `Memory schema version ${priorUserVersion} is newer than runtime ${MEMORY_SCHEMA_VERSION}`,
+      );
+    }
+
+    let migrationBackup: MemoryBackupRecord | undefined;
+    if (existedBeforeOpen && priorUserVersion < MEMORY_SCHEMA_VERSION) {
+      migrationBackup = await createMemoryBackup(
+        this.client,
+        options.dbPath,
+        `pre-migration-v${priorUserVersion}-to-v${MEMORY_SCHEMA_VERSION}`,
+      );
+    }
+
     await this.client.exec(MEMORY_SCHEMA_SQL);
     await this.client.transaction([
       {
@@ -220,13 +272,30 @@ export class MemoryStore {
       },
       { kind: 'exec', sql: `PRAGMA user_version = ${MEMORY_SCHEMA_VERSION}` },
     ]);
+    const integrity = await this.client.integrity();
+    const integrityCheckedAt = Date.now();
+    if (!integrity.ok) {
+      throw new MemoryStoreError('MEMORY_INTEGRITY_FAILED', `SQLite integrity_check failed: ${integrity.result}`);
+    }
     this.opened = true;
+    return {
+      priorUserVersion,
+      schemaVersion: MEMORY_SCHEMA_VERSION,
+      quickCheck: opened.quickCheck,
+      integrity: integrity.result,
+      integrityCheckedAt,
+      ...(migrationBackup ? { migrationBackup } : {}),
+    };
   }
 
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
-    await this.client.close();
+    try {
+      if (this.opened) await this.client.checkpoint();
+    } finally {
+      await this.client.close();
+    }
   }
 
   async recordEvent(request: RecordMemoryEventRequest): Promise<MemoryEventRecord> {

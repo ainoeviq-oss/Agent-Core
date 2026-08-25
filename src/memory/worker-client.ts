@@ -1,6 +1,7 @@
 import { Worker } from 'node:worker_threads';
 import {
   createDatabaseWorkerSource,
+  type MemoryCheckpointResult,
   type MemoryWorkerOpenPayload,
   type MemoryWorkerRequest,
   type MemoryWorkerResponse,
@@ -20,6 +21,13 @@ export class MemoryWorkerError extends Error {
 
 export interface MemoryWorkerClientOptions {
   maxResponseBytes?: number;
+}
+
+export interface MemoryWorkerOpenResult {
+  dbPath: string;
+  busyTimeoutMs: number;
+  quickCheck: string;
+  checkedAt: number;
 }
 
 interface PendingRequest {
@@ -73,8 +81,8 @@ export class MemoryWorkerClient {
     });
   }
 
-  async open(payload: MemoryWorkerOpenPayload): Promise<{ dbPath: string; busyTimeoutMs: number }> {
-    return this.request('open', payload) as Promise<{ dbPath: string; busyTimeoutMs: number }>;
+  async open(payload: MemoryWorkerOpenPayload): Promise<MemoryWorkerOpenResult> {
+    return this.request('open', payload) as Promise<MemoryWorkerOpenResult>;
   }
 
   async exec(sql: string): Promise<void> {
@@ -87,6 +95,14 @@ export class MemoryWorkerClient {
 
   async transaction(operations: MemoryWorkerSqlOperation[]): Promise<unknown[]> {
     return this.request('transaction', { operations }) as Promise<unknown[]>;
+  }
+
+  async backup(backupPath: string): Promise<{ backupPath: string; createdAt: number }> {
+    return this.request('backup', { backupPath }) as Promise<{ backupPath: string; createdAt: number }>;
+  }
+
+  async checkpoint(): Promise<MemoryCheckpointResult> {
+    return this.request('checkpoint') as Promise<MemoryCheckpointResult>;
   }
 
   async integrity(): Promise<{ ok: boolean; result: string }> {

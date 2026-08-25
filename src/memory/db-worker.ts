@@ -1,4 +1,4 @@
-export type MemoryWorkerCommand = 'open' | 'exec' | 'query' | 'transaction' | 'integrity' | 'close';
+export type MemoryWorkerCommand = 'open' | 'exec' | 'query' | 'transaction' | 'backup' | 'checkpoint' | 'integrity' | 'close';
 
 export type SqlPrimitive = string | number | bigint | null | Uint8Array;
 
@@ -32,6 +32,13 @@ export interface MemoryWorkerResponse {
   error?: SerializedMemoryWorkerError;
 }
 
+export interface MemoryCheckpointResult {
+  busy: number;
+  logFrames: number;
+  checkpointedFrames: number;
+  mode: 'TRUNCATE';
+}
+
 /**
  * The evaluated worker source deliberately owns every DatabaseSync reference.
  * The parent process imports only this source factory and the typed protocol.
@@ -39,11 +46,12 @@ export interface MemoryWorkerResponse {
 export function createDatabaseWorkerSource(): string {
   return String.raw`
     const { parentPort, workerData } = require('node:worker_threads');
-    const { mkdirSync } = require('node:fs');
+    const { existsSync, mkdirSync, unlinkSync } = require('node:fs');
     const path = require('node:path');
     const { DatabaseSync } = require('node:sqlite');
 
     let db = null;
+    let currentDbPath = null;
     const maxResponseBytes = Number(workerData?.maxResponseBytes || 1048576);
 
     function errorCode(error, fallback) {
@@ -117,6 +125,16 @@ export function createDatabaseWorkerSource(): string {
       throw error;
     }
 
+    function checkpoint(database) {
+      const row = database.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get() || {};
+      return {
+        busy: Number(row.busy || 0),
+        logFrames: Number(row.log || 0),
+        checkpointedFrames: Number(row.checkpointed || 0),
+        mode: 'TRUNCATE',
+      };
+    }
+
     parentPort.on('message', (request) => {
       const id = Number(request?.id);
       const command = request?.command;
@@ -138,6 +156,7 @@ export function createDatabaseWorkerSource(): string {
               mkdirSync(path.dirname(path.resolve(payload.dbPath)), { recursive: true });
             }
             db = new DatabaseSync(payload.dbPath);
+            currentDbPath = payload.dbPath;
             db.exec('PRAGMA foreign_keys = ON');
             db.exec('PRAGMA journal_mode = WAL');
             db.exec('PRAGMA synchronous = NORMAL');
@@ -145,12 +164,14 @@ export function createDatabaseWorkerSource(): string {
             db.exec('PRAGMA busy_timeout = ' + timeout);
             if (typeof db.enableDefensive === 'function') db.enableDefensive(true);
             const check = db.prepare('PRAGMA quick_check').get();
-            if (!check || String(check.quick_check) !== 'ok') throw new Error('SQLite quick_check failed during open');
-            sendResult(id, { dbPath: payload.dbPath, busyTimeoutMs: timeout });
+            const quickCheck = String(check?.quick_check || 'unknown');
+            if (quickCheck !== 'ok') throw new Error('SQLite quick_check failed during open');
+            sendResult(id, { dbPath: payload.dbPath, busyTimeoutMs: timeout, quickCheck, checkedAt: Date.now() });
           } catch (error) {
             if (db) {
               try { db.close(); } catch {}
               db = null;
+              currentDbPath = null;
             }
             parentPort.postMessage({
               id,
@@ -211,6 +232,33 @@ export function createDatabaseWorkerSource(): string {
           return;
         }
 
+        if (command === 'backup') {
+          const database = requireDb();
+          const backupPath = request.payload?.backupPath;
+          if (typeof backupPath !== 'string' || backupPath.trim() === '' || backupPath === ':memory:') {
+            const error = new Error('backupPath is required');
+            error.code = 'MEMORY_BACKUP_PATH_INVALID';
+            throw error;
+          }
+          const resolvedBackup = path.resolve(backupPath);
+          if (currentDbPath && currentDbPath !== ':memory:' && path.resolve(currentDbPath) === resolvedBackup) {
+            const error = new Error('backupPath must differ from the live database path');
+            error.code = 'MEMORY_BACKUP_PATH_INVALID';
+            throw error;
+          }
+          mkdirSync(path.dirname(resolvedBackup), { recursive: true });
+          if (existsSync(resolvedBackup)) unlinkSync(resolvedBackup);
+          const escaped = resolvedBackup.replace(/'/g, "''");
+          database.exec("VACUUM INTO '" + escaped + "'");
+          sendResult(id, { backupPath: resolvedBackup, createdAt: Date.now() });
+          return;
+        }
+
+        if (command === 'checkpoint') {
+          sendResult(id, checkpoint(requireDb()));
+          return;
+        }
+
         if (command === 'integrity') {
           const database = requireDb();
           const row = database.prepare('PRAGMA integrity_check').get();
@@ -220,11 +268,14 @@ export function createDatabaseWorkerSource(): string {
         }
 
         if (command === 'close') {
+          let checkpointResult = null;
           if (db) {
+            checkpointResult = checkpoint(db);
             db.close();
             db = null;
+            currentDbPath = null;
           }
-          sendResult(id, { closed: true });
+          sendResult(id, { closed: true, checkpoint: checkpointResult });
           return;
         }
 

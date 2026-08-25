@@ -217,4 +217,8 @@ export interface MemoryStatus {
   dbPath: string;
   counts: Record<string, number>;
   integrity: string;
+  lastIntegrityCheckAt?: number;
+  lastSuccessfulIntegrityCheckAt?: number;
+  lastBackupPath?: string;
+  lastBackupAt?: number;
 }
