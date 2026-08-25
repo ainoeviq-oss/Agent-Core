@@ -99,6 +99,7 @@ export async function validateExecutionDag(
 
   const normalized: ValidatedExecutionNode[] = [];
   const seenIds = new Set<string>();
+  const resolvedCwds = new Map<string, Promise<string>>();
   for (const rawNode of nodes) {
     if (!rawNode || typeof rawNode !== 'object') fail('EXECUTION_NODE_INVALID', 'Each node must be an object');
     const id = typeof rawNode.id === 'string' ? rawNode.id.normalize('NFKC').trim() : '';
@@ -122,7 +123,12 @@ export async function validateExecutionDag(
     }
     let cwd: string;
     try {
-      cwd = await options.workspace.resolveExisting(cwdInput);
+      let resolvedCwd = resolvedCwds.get(cwdInput);
+      if (!resolvedCwd) {
+        resolvedCwd = options.workspace.resolveExisting(cwdInput);
+        resolvedCwds.set(cwdInput, resolvedCwd);
+      }
+      cwd = await resolvedCwd;
     } catch {
       fail('EXECUTION_CWD_OUTSIDE_ROOT', `Node ${id} cwd is missing or escapes allowed roots`);
     }

@@ -1,8 +1,9 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
+import { DatabaseSync } from 'node:sqlite';
 import { loadConfig } from '../dist/config.js';
 import { MemoryLifecycle } from '../dist/memory/lifecycle.js';
 import { MemoryPreflightEngine } from '../dist/memory/preflight.js';
@@ -98,62 +99,53 @@ function eventId(index) {
   return `evt-${String(index).padStart(9, '0')}`;
 }
 
-function valueHash(value) {
-  return createHash('sha256').update(value, 'utf8').digest('hex');
-}
-
-function syntheticValue(index) {
-  if (index === 0) return 'Synthetic root node for exact benchmark hot query.';
-  const marker = index % 40 === 0 ? ` ${FTS_TERM}` : '';
-  return `Synthetic memory item ${index} category ${index % 1000}${marker}.`;
-}
-
-async function seedMemories(client, count) {
+async function seedMemories(dbPath, count) {
   const started = performance.now();
   const baseTime = 2_000_000_000_000;
-  const batchSize = 200;
-  for (let offset = 0; offset < count; offset += batchSize) {
-    const operations = [];
-    const end = Math.min(count, offset + batchSize);
-    for (let index = offset; index < end; index += 1) {
-      const id = memoryId(index);
-      const revision = revisionId(index);
-      const event = eventId(index);
-      const canonicalKey = index === 0 ? 'benchmark.hot' : `synthetic.item.${index}`;
-      const value = syntheticValue(index);
-      const createdAt = baseTime + index;
-      operations.push({
-        kind: 'run',
-        sql: `INSERT INTO memory_events(
-          id, principal_id, project_id, thread_id, resource_id, event_type, source_type, source_ref,
-          raw_text, redacted_text, metadata_json, created_at
-        ) VALUES (?, ?, ?, NULL, NULL, 'benchmark.seed', 'benchmark', NULL, NULL, ?, '{}', ?)`,
-        params: [event, PRINCIPAL_ID, PROJECT_ID, value, createdAt],
-      });
-      operations.push({
-        kind: 'run',
-        sql: `INSERT INTO memory_items(
+  const maxIndex = count - 1;
+  const db = new DatabaseSync(dbPath);
+  const numbers = `WITH RECURSIVE seq(n) AS (
+    SELECT 0 UNION ALL SELECT n + 1 FROM seq WHERE n < ${maxIndex}
+  )`;
+  const valueExpression = `CASE WHEN n = 0
+    THEN 'Synthetic root node for exact benchmark hot query.'
+    ELSE 'Synthetic memory item ' || n || ' category ' || (n % 1000) ||
+      CASE WHEN (n % 40) = 0 THEN ' ${FTS_TERM}' ELSE '' END || '.' END`;
+  const canonicalExpression = `CASE WHEN n = 0 THEN 'benchmark.hot' ELSE 'synthetic.item.' || n END`;
+  try {
+    // This is a benchmark-only fixture seeder. The recall gate needs the same active-item,
+    // current-revision and FTS shape, not 100k synthetic provenance events. Keep the real
+    // production commit below as the write-path-at-scale probe.
+    db.exec('PRAGMA foreign_keys = OFF');
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      db.exec(`${numbers}
+        INSERT INTO memory_items(
           id, principal_id, project_id, canonical_key, kind, state, importance, pinned, enforcement,
           current_revision_id, created_at, updated_at, last_accessed_at, access_count
-        ) VALUES (?, ?, ?, ?, 'observation', 'active', 0.5, 0, 'none', ?, ?, ?, ?, 0)`,
-        params: [id, PRINCIPAL_ID, PROJECT_ID, canonicalKey, revision, createdAt, createdAt, createdAt],
-      });
-      operations.push({
-        kind: 'run',
-        sql: `INSERT INTO memory_revisions(
+        ) SELECT
+          'mem-' || printf('%09d', n), '${PRINCIPAL_ID}', '${PROJECT_ID}', ${canonicalExpression},
+          'observation', 'active', 0.5, 0, 'none', 'rev-' || printf('%09d', n),
+          ${baseTime} + n, ${baseTime} + n, ${baseTime} + n, 0
+        FROM seq;`);
+      db.exec(`${numbers}
+        INSERT INTO memory_revisions(
           id, memory_id, revision_no, value_text, value_json, value_hash, source_event_id,
           valid_from, valid_to, supersedes_revision_id, created_at
-        ) VALUES (?, ?, 1, ?, NULL, ?, ?, ?, NULL, NULL, ?)`,
-        params: [revision, id, value, valueHash(value), event, createdAt, createdAt],
-      });
-      operations.push({
-        kind: 'run',
-        sql: `INSERT INTO memory_anchors(memory_id, anchor, anchor_type, created_at)
-              VALUES (?, ?, 'canonical_key', ?)`,
-        params: [id, canonicalKey, createdAt],
-      });
+        ) SELECT
+          'rev-' || printf('%09d', n), 'mem-' || printf('%09d', n), 1, ${valueExpression}, NULL,
+          printf('%064x', n), NULL, ${baseTime} + n, NULL, NULL, ${baseTime} + n
+        FROM seq;`);
+      db.exec('COMMIT');
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
     }
-    await client.transaction(operations);
+    db.exec('PRAGMA foreign_keys = ON');
+    const foreignKeyIssues = db.prepare('PRAGMA foreign_key_check').all();
+    if (foreignKeyIssues.length > 0) throw new Error(`benchmark fixture foreign-key check failed: ${foreignKeyIssues.length}`);
+  } finally {
+    db.close();
   }
   return performance.now() - started;
 }
@@ -204,7 +196,7 @@ async function benchmarkCount(count, options) {
 
   try {
     await store.open({ dbPath, busyTimeoutMs: config.busyTimeoutMs });
-    const bulkSeedMs = await seedMemories(client, count);
+    const bulkSeedMs = await seedMemories(dbPath, count);
     const graphSeed = await seedGraph(client, count);
     await client.checkpoint();
     const dbBytesBeforeFts = await bytes(dbPath);
@@ -355,6 +347,20 @@ async function main() {
   } : undefined;
   const report = {
     benchmark: 'agent-core-deterministic-memory',
+    gateSummary: hundredK ? {
+      memoryRecall100k: {
+        observedP95Ms: hundredK.preflight.p95Ms,
+        targetP95Ms: options.targetP95Ms,
+        passed: hundredK.targetPassed,
+      },
+    } : {
+      memoryRecall100k: {
+        observedP95Ms: null,
+        targetP95Ms: options.targetP95Ms,
+        passed: null,
+        note: 'Gate not evaluated because this invocation did not include 100000 items.',
+      },
+    },
     startedAt,
     finishedAt: new Date().toISOString(),
     node: process.version,

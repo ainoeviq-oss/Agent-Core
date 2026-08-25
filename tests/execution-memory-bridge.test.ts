@@ -173,6 +173,13 @@ describe('Execution-to-DMF continuity bridge', () => {
     expect(JSON.stringify(search)).not.toContain(secret);
     const exported = await memory.export(scope, 100);
     expect(JSON.stringify(exported)).not.toContain(secret);
+    for (const candidate of [memory.config.dbPath, `${memory.config.dbPath}-wal`, `${memory.config.dbPath}-shm`]) {
+      const bytes = await readFile(candidate).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return Buffer.alloc(0);
+        throw error;
+      });
+      expect(bytes.includes(Buffer.from(secret, 'utf8'))).toBe(false);
+    }
     expect((await memory.getContinuityTask(scope, turn.taskId))?.status).toBe('running');
 
     const processCheckpoint = search.hits.find((hit) => hit.canonicalKey.includes('process_checkpoint'));
