@@ -66,6 +66,31 @@ describe('persistent principal/project-scoped execution store', () => {
     expect((await reopened.getRun(scope, created.runId))?.runId).toBe(created.runId);
   });
 
+  it('checkpoints WAL explicitly at graph and terminal run boundaries', async () => {
+    const f = await fixture('checkpoint-boundaries');
+    const scope = { principalId: 'principal-a', projectId: 'project-a' };
+    const run = await f.store.createRun(scope, { objective: 'Checkpoint bounded WAL', maxConcurrency: 2 });
+    await f.store.persistGraph(scope, run.runId, [{
+      id: 'A',
+      purpose: 'checkpoint graph boundary',
+      command: "Write-Output 'A'",
+      cwd: f.root,
+      dependsOn: [],
+      timeoutMs: 30_000,
+      continueOnFailure: false,
+    }]);
+
+    const afterGraph = await f.store.client.query<{ busy: number; log: number; checkpointed: number }>('PRAGMA wal_checkpoint(PASSIVE)');
+    expect(Number(afterGraph[0]?.busy)).toBe(0);
+    expect(Number(afterGraph[0]?.log)).toBe(0);
+
+    await f.store.setRunState(scope, run.runId, 'running');
+    await f.store.setRunState(scope, run.runId, 'cancelled');
+    const afterTerminal = await f.store.client.query<{ busy: number; log: number; checkpointed: number }>('PRAGMA wal_checkpoint(PASSIVE)');
+    expect(Number(afterTerminal[0]?.busy)).toBe(0);
+    expect(Number(afterTerminal[0]?.log)).toBe(0);
+  });
+
   it('hides run existence across principals and projects and lists only the authenticated scope', async () => {
     const f = await fixture('scope');
     const scopeA = { principalId: 'principal-a', projectId: 'project-a' };

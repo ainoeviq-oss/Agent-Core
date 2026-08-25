@@ -57,7 +57,7 @@ describe('execution fabric SQLite schema and worker lifecycle', () => {
     expect(status).toMatchObject({ healthy: true, schemaVersion: 1, integrity: 'ok', dbPath: f.dbPath });
     expect(Number((await store.client.query<{ foreign_keys: number }>('PRAGMA foreign_keys'))[0]?.foreign_keys)).toBe(1);
     expect(String((await store.client.query<{ journal_mode: string }>('PRAGMA journal_mode'))[0]?.journal_mode).toLowerCase()).toBe('wal');
-    expect(Number((await store.client.query<{ wal_autocheckpoint: number }>('PRAGMA wal_autocheckpoint'))[0]?.wal_autocheckpoint)).toBe(4096);
+    expect(Number((await store.client.query<{ wal_autocheckpoint: number }>('PRAGMA wal_autocheckpoint'))[0]?.wal_autocheckpoint)).toBe(0);
     await store.close();
     stores.splice(stores.indexOf(store), 1);
 

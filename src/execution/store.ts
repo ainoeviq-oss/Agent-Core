@@ -431,6 +431,7 @@ export class ExecutionStore {
       }
     }
     await this.client.transaction(operations);
+    await this.client.checkpoint();
   }
 
   async appendGraphNodes(scope: ExecutionScope, runId: string, nodes: ValidatedExecutionNode[]): Promise<void> {
@@ -463,6 +464,7 @@ export class ExecutionStore {
       }
     }
     await this.client.transaction(operations);
+    await this.client.checkpoint();
   }
 
   async getRun(scope: ExecutionScope, runId: string): Promise<ExecutionRunRecord | null> {
@@ -542,6 +544,7 @@ export class ExecutionStore {
              WHERE id = ? AND principal_id = ? AND IFNULL(project_id, '') = ?`,
       params: [state, state, now, terminal ? now : null, now, runId, scope.principalId, scopeProject(scope)],
     }]);
+    if (terminal) await this.client.checkpoint();
   }
 
   async setNodeState(

@@ -161,7 +161,7 @@ export function createExecutionDatabaseWorkerSource(): string {
             db = new DatabaseSync(payload.dbPath);
             db.exec('PRAGMA foreign_keys = ON');
             db.exec('PRAGMA journal_mode = WAL');
-            db.exec('PRAGMA wal_autocheckpoint = 4096');
+            db.exec('PRAGMA wal_autocheckpoint = 0');
             db.exec('PRAGMA synchronous = NORMAL');
             const timeout = Number.isSafeInteger(payload.busyTimeoutMs) && payload.busyTimeoutMs > 0
               ? payload.busyTimeoutMs
