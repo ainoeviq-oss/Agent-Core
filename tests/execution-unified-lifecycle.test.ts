@@ -80,6 +80,24 @@ describe('unified Agent Core continuity + execution lifecycle', () => {
     expect(status.result.structuredContent.workspaceRoots).toEqual([root]);
   });
 
+  it('marks the execution lifecycle degraded when an integrity probe fails after a healthy open', async () => {
+    const { root, config } = await fixture('integrity-probe');
+    const service = await start(config);
+    const scope = { principalId: 'integrity-probe-principal', projectId: root };
+    expect(service.execution.currentState).toBe('healthy');
+
+    const client = (service.execution.store as unknown as { client: { integrity: () => Promise<{ ok: boolean; result: string }> } }).client;
+    client.integrity = async () => ({ ok: false, result: 'disk I/O error' });
+
+    const health = await service.execution.health(scope);
+    expect(health).toMatchObject({ enabled: true, healthy: false, state: 'degraded', integrity: 'disk I/O error' });
+    expect(service.execution.currentState).toBe('degraded');
+    await expect(service.execution.create(scope, {
+      objective: 'must fail closed after integrity degradation',
+      nodes: [{ id: 'A', purpose: 'A', command: printCommand('A\\n'), cwd: root }],
+    })).rejects.toThrow(/not open|degraded/i);
+  });
+
   it('keeps OAuth/MCP available when execution DB is corrupt and exposes execution as degraded separately', async () => {
     const { config } = await fixture('execution-corrupt');
     await mkdir(path.dirname(config.execution.dbPath), { recursive: true });

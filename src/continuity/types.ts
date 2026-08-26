@@ -26,6 +26,8 @@ export interface ContinuityCheckpointInput {
   evidence?: Array<{ type: ContinuityEvidenceType; ref: string; result?: string }>;
   decisions?: Array<{ key: string; value: string; reason: string }>;
   artifacts?: Array<{ path: string; role: string; hash?: string }>;
+  outcomes?: Array<{ key: string; value: string; evidenceRefs: string[] }>;
+  constraints?: Array<{ key: string; value: string; reason: string; enforcement: 'soft' | 'hard' }>;
   blockers?: Array<{ code: string; detail: string }>;
   deferred?: Array<{ title: string; reason: string }>;
   nextCandidates?: Array<{ title: string; rationale: string; dependsOnTaskIds?: string[]; priority?: number }>;
@@ -40,6 +42,8 @@ export const CONTINUITY_LIMITS = {
   evidence: 100,
   decisions: 100,
   artifacts: 100,
+  outcomes: 100,
+  checkpointConstraints: 100,
   blockers: 100,
   deferred: 100,
   nextCandidates: 5,
@@ -199,6 +203,53 @@ export function normalizeContinuityCheckpointInput(input: ContinuityCheckpointIn
         path: normalizeShortRequired(item.path, `artifacts[${index}].path`),
         role: normalizeShortRequired(item.role, `artifacts[${index}].role`),
         ...(hash === undefined ? {} : { hash }),
+      };
+    });
+  }
+
+  if (input.outcomes !== undefined) {
+    if (input.status !== 'completed') {
+      contractError('CONTINUITY_OUTCOME_REQUIRES_COMPLETED', 'outcomes require a completed checkpoint');
+    }
+    const availableEvidence = new Set((output.evidence ?? []).map((item) => item.ref));
+    output.outcomes = assertList(input.outcomes, 'outcomes', CONTINUITY_LIMITS.outcomes).map((raw, index) => {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        contractError('CONTINUITY_ITEM_INVALID', `outcomes[${index}] must be an object`);
+      }
+      const item = raw as Record<string, unknown>;
+      const evidenceRefs = normalizeStringList(
+        item.evidenceRefs, `outcomes[${index}].evidenceRefs`, CONTINUITY_LIMITS.evidence,
+      );
+      if (evidenceRefs.length === 0) {
+        contractError('CONTINUITY_OUTCOME_EVIDENCE_REQUIRED', `outcomes[${index}] requires at least one evidence reference`);
+      }
+      for (const ref of evidenceRefs) {
+        if (!availableEvidence.has(ref)) {
+          contractError('CONTINUITY_OUTCOME_EVIDENCE_UNKNOWN', `outcomes[${index}] references unknown evidence: ${ref}`);
+        }
+      }
+      return {
+        key: normalizeShortRequired(item.key, `outcomes[${index}].key`),
+        value: normalizeLongRequired(item.value, `outcomes[${index}].value`),
+        evidenceRefs,
+      };
+    });
+  }
+
+  if (input.constraints !== undefined) {
+    output.constraints = assertList(input.constraints, 'constraints', CONTINUITY_LIMITS.checkpointConstraints).map((raw, index) => {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        contractError('CONTINUITY_ITEM_INVALID', `constraints[${index}] must be an object`);
+      }
+      const item = raw as Record<string, unknown>;
+      if (item.enforcement !== 'soft' && item.enforcement !== 'hard') {
+        contractError('CONTINUITY_CONSTRAINT_ENFORCEMENT_INVALID', `constraints[${index}].enforcement must be soft or hard`);
+      }
+      return {
+        key: normalizeShortRequired(item.key, `constraints[${index}].key`),
+        value: normalizeLongRequired(item.value, `constraints[${index}].value`),
+        reason: normalizeLongRequired(item.reason, `constraints[${index}].reason`),
+        enforcement: item.enforcement,
       };
     });
   }

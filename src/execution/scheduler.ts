@@ -36,6 +36,7 @@ function asValidated(node: ExecutionNodeRecord): ValidatedExecutionNode {
     dependsOn: [...node.dependsOn],
     timeoutMs: node.timeoutMs,
     continueOnFailure: node.continueOnFailure,
+    expectedArtifacts: node.expectedArtifacts.map((artifact) => ({ ...artifact })),
   };
 }
 

@@ -1,8 +1,15 @@
 import { randomUUID } from 'node:crypto';
+import { access } from 'node:fs/promises';
+import path from 'node:path';
 import type { ExecutionWorkerSqlOperation } from './db-worker.js';
-import type { ValidatedExecutionNode } from './dag.js';
+import type { ValidatedExecutionArtifact, ValidatedExecutionNode } from './dag.js';
 import type { ExecutionAttemptPaths, ExecutionResultMarker } from './log-store.js';
-import { EXECUTION_SCHEMA_SQL, EXECUTION_SCHEMA_VERSION, INITIAL_EXECUTION_MIGRATION } from './schema.js';
+import {
+  EVIDENCE_EXECUTION_MIGRATION,
+  EXECUTION_SCHEMA_SQL,
+  EXECUTION_SCHEMA_VERSION,
+  INITIAL_EXECUTION_MIGRATION,
+} from './schema.js';
 import type { ExecutionAttemptState, ExecutionNodeState, ExecutionRunState, ExecutionScope } from './types.js';
 import type { ExecutionEventFilter, ExecutionEventRecord, ExecutionEventType } from './wake.js';
 import { ExecutionWorkerClient } from './worker-client.js';
@@ -15,10 +22,12 @@ export class ExecutionStoreError extends Error {
 }
 
 export interface ExecutionStoreOpenResult {
+  priorUserVersion?: number;
   schemaVersion: number;
   quickCheck: string;
   integrity: string;
   integrityCheckedAt: number;
+  migrationBackupPath?: string;
 }
 
 export interface ExecutionRunRecord {
@@ -47,6 +56,7 @@ export interface ExecutionNodeRecord {
   state: ExecutionNodeState;
   timeoutMs: number;
   continueOnFailure: boolean;
+  expectedArtifacts: ValidatedExecutionArtifact[];
   attemptCount: number;
   lastError?: Record<string, unknown>;
   dependsOn: string[];
@@ -126,6 +136,7 @@ type NodeRow = {
   state: ExecutionNodeState;
   timeout_ms: number;
   continue_on_failure: number;
+  expected_artifacts_json: string;
   attempt_count: number;
   last_error_json: string | null;
   created_at: number;
@@ -205,6 +216,24 @@ function parseMetadata(value: string): Record<string, unknown> {
   return parseObject(value) ?? {};
 }
 
+function parseArtifacts(value: string): ValidatedExecutionArtifact[] {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is ValidatedExecutionArtifact => Boolean(
+      item
+      && typeof item === 'object'
+      && !Array.isArray(item)
+      && typeof (item as Record<string, unknown>).path === 'string'
+      && ['file', 'directory'].includes(String((item as Record<string, unknown>).kind))
+      && typeof (item as Record<string, unknown>).required === 'boolean'
+      && ((item as Record<string, unknown>).hash === undefined || (item as Record<string, unknown>).hash === 'sha256'),
+    ));
+  } catch {
+    return [];
+  }
+}
+
 function mapRun(row: RunRow): ExecutionRunRecord {
   return {
     runId: row.id,
@@ -234,6 +263,7 @@ function mapNode(row: NodeRow, dependsOn: string[]): ExecutionNodeRecord {
     state: row.state,
     timeoutMs: Number(row.timeout_ms),
     continueOnFailure: Number(row.continue_on_failure) === 1,
+    expectedArtifacts: parseArtifacts(row.expected_artifacts_json),
     attemptCount: Number(row.attempt_count),
     lastError: parseObject(row.last_error_json),
     dependsOn,
@@ -269,6 +299,23 @@ function mapAttempt(row: AttemptRow): ExecutionAttemptRecord {
 
 const RUN_TERMINAL = new Set<ExecutionRunState>(['completed', 'failed', 'blocked', 'interrupted', 'cancelled']);
 
+async function databaseFileExists(dbPath: string): Promise<boolean> {
+  if (dbPath === ':memory:') return false;
+  try { await access(dbPath); return true; } catch { return false; }
+}
+
+function migrationBackupPath(dbPath: string, fromVersion: number, toVersion: number): string {
+  const resolved = path.resolve(dbPath);
+  const ext = path.extname(resolved) || '.sqlite';
+  const base = path.basename(resolved, path.extname(resolved));
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  return path.join(
+    path.dirname(resolved),
+    'backups',
+    `${base}.${stamp}.pre-migration-v${fromVersion}-to-v${toVersion}${ext}`,
+  );
+}
+
 export class ExecutionStore {
   private opened = false;
   private closed = false;
@@ -292,6 +339,7 @@ export class ExecutionStore {
       };
     }
     if (!options?.dbPath?.trim()) fail('EXECUTION_DB_PATH_REQUIRED', 'Execution database path is required');
+    const existedBeforeOpen = await databaseFileExists(options.dbPath);
     const opened = await this.client.open(options);
     const versionRows = await this.client.query<{ user_version: number }>('PRAGMA user_version');
     const priorVersion = Number(versionRows[0]?.user_version ?? 0);
@@ -299,15 +347,36 @@ export class ExecutionStore {
     if (priorVersion > EXECUTION_SCHEMA_VERSION) {
       fail('EXECUTION_SCHEMA_NEWER_THAN_RUNTIME', `Execution schema ${priorVersion} is newer than runtime ${EXECUTION_SCHEMA_VERSION}`);
     }
-    await this.client.transaction([
-      { kind: 'exec', sql: EXECUTION_SCHEMA_SQL },
+
+    let backupPath: string | undefined;
+    if (existedBeforeOpen && priorVersion < EXECUTION_SCHEMA_VERSION) {
+      backupPath = migrationBackupPath(options.dbPath, priorVersion, EXECUTION_SCHEMA_VERSION);
+      await this.client.backup(backupPath);
+    }
+
+    await this.client.exec(EXECUTION_SCHEMA_SQL);
+    const nodeColumns = await this.client.query<{ name: string }>('PRAGMA table_info(execution_nodes)');
+    const migrationOperations: ExecutionWorkerSqlOperation[] = [];
+    if (!nodeColumns.some((column) => column.name === 'expected_artifacts_json')) {
+      migrationOperations.push({
+        kind: 'exec',
+        sql: "ALTER TABLE execution_nodes ADD COLUMN expected_artifacts_json TEXT NOT NULL DEFAULT '[]'",
+      });
+    }
+    migrationOperations.push(
       {
         kind: 'run',
         sql: 'INSERT OR IGNORE INTO execution_schema_migrations(version, name, applied_at) VALUES (?, ?, ?)',
-        params: [EXECUTION_SCHEMA_VERSION, INITIAL_EXECUTION_MIGRATION, Date.now()],
+        params: [1, INITIAL_EXECUTION_MIGRATION, Date.now()],
+      },
+      {
+        kind: 'run',
+        sql: 'INSERT OR IGNORE INTO execution_schema_migrations(version, name, applied_at) VALUES (?, ?, ?)',
+        params: [2, EVIDENCE_EXECUTION_MIGRATION, Date.now()],
       },
       { kind: 'exec', sql: `PRAGMA user_version = ${EXECUTION_SCHEMA_VERSION}` },
-    ]);
+    );
+    await this.client.transaction(migrationOperations);
     const integrity = await this.client.integrity();
     this.dbPath = options.dbPath;
     this.lastIntegrity = integrity.result;
@@ -315,10 +384,12 @@ export class ExecutionStore {
     if (!integrity.ok) fail('EXECUTION_INTEGRITY_FAILED', `Execution SQLite integrity failed: ${integrity.result}`);
     this.opened = true;
     return {
+      priorUserVersion: priorVersion,
       schemaVersion: EXECUTION_SCHEMA_VERSION,
       quickCheck: opened.quickCheck,
       integrity: integrity.result,
       integrityCheckedAt: this.lastIntegrityCheckAt,
+      ...(backupPath ? { migrationBackupPath: backupPath } : {}),
     };
   }
 
@@ -414,10 +485,13 @@ export class ExecutionStore {
       operations.push({
         kind: 'run',
         sql: `INSERT INTO execution_nodes(
-          run_id,node_id,purpose,command_text,cwd,state,timeout_ms,continue_on_failure,
+          run_id,node_id,purpose,command_text,cwd,state,timeout_ms,continue_on_failure,expected_artifacts_json,
           attempt_count,last_error_json,created_at,updated_at,started_at,finished_at
-        ) VALUES (?,?,?,?,?,'queued',?,?,0,NULL,?,?,NULL,NULL)`,
-        params: [runId, node.id, node.purpose, node.command, node.cwd, node.timeoutMs, node.continueOnFailure ? 1 : 0, now, now],
+        ) VALUES (?,?,?,?,?,'queued',?,?,?,0,NULL,?,?,NULL,NULL)`,
+        params: [
+          runId, node.id, node.purpose, node.command, node.cwd, node.timeoutMs,
+          node.continueOnFailure ? 1 : 0, stableExecutionJson(node.expectedArtifacts ?? []), now, now,
+        ],
       });
     }
     for (const node of nodes) {
@@ -447,10 +521,13 @@ export class ExecutionStore {
       operations.push({
         kind: 'run',
         sql: `INSERT INTO execution_nodes(
-          run_id,node_id,purpose,command_text,cwd,state,timeout_ms,continue_on_failure,
+          run_id,node_id,purpose,command_text,cwd,state,timeout_ms,continue_on_failure,expected_artifacts_json,
           attempt_count,last_error_json,created_at,updated_at,started_at,finished_at
-        ) VALUES (?,?,?,?,?,'queued',?,?,0,NULL,?,?,NULL,NULL)`,
-        params: [runId, node.id, node.purpose, node.command, node.cwd, node.timeoutMs, node.continueOnFailure ? 1 : 0, now, now],
+        ) VALUES (?,?,?,?,?,'queued',?,?,?,0,NULL,?,?,NULL,NULL)`,
+        params: [
+          runId, node.id, node.purpose, node.command, node.cwd, node.timeoutMs,
+          node.continueOnFailure ? 1 : 0, stableExecutionJson(node.expectedArtifacts ?? []), now, now,
+        ],
       });
     }
     for (const node of nodes) {
@@ -506,7 +583,7 @@ export class ExecutionStore {
     this.assertReady();
     await this.requireRun(scope, runId);
     const rows = await this.client.query<NodeRow>(
-      `SELECT run_id,node_id,purpose,command_text,cwd,state,timeout_ms,continue_on_failure,
+      `SELECT run_id,node_id,purpose,command_text,cwd,state,timeout_ms,continue_on_failure,expected_artifacts_json,
               attempt_count,last_error_json,created_at,updated_at,started_at,finished_at
          FROM execution_nodes WHERE run_id = ? ORDER BY node_id COLLATE BINARY`,
       [runId],

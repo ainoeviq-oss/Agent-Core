@@ -235,6 +235,52 @@ describe('cross-session local continuity acceptance', () => {
     expect(await f.runtime.memory.getContinuityTask(scopeB, a.taskId)).toBeNull();
   });
 
+  it('recognizes bounded natural continuation variants and reuses one unique task without duplicates', async () => {
+    const f = await fixture('continuation-variants');
+    const original = await route(f.baseUrl, f.principalA.key, 'Long running natural continuation task');
+    const phrases = [
+      'silahkan lanjutkan lagi',
+      'lanjutkan lagi hingga selesai',
+      'teruskan task sebelumnya',
+      'continue from the previous task',
+      'resume the previous work',
+    ];
+
+    for (const phrase of phrases) {
+      const resumed = await call(f.baseUrl, f.principalA.key, 'capability_route', { task: phrase });
+      expect(resumed.raw.result.isError).not.toBe(true);
+      expect(resumed.result.continuityTaskId).toBe(original.continuityTaskId);
+    }
+
+    const snapshot = await f.runtime.memory.getContinuitySnapshot(f.scopeA);
+    expect(snapshot.activeTasks.map((task) => task.taskId)).toEqual([original.continuityTaskId]);
+    const db = new DatabaseSync(f.runtime.memory.config.dbPath, { readOnly: true });
+    try {
+      const count = db.prepare('SELECT count(*) AS count FROM continuity_tasks WHERE principal_id = ? AND IFNULL(project_id, \'\') = ?')
+        .get(f.principalA.metadata.id, f.root) as { count: number };
+      expect(Number(count.count)).toBe(1);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('reconciles an orphaned open turn to interrupted before building a fresh route snapshot', async () => {
+    const f = await fixture('stale-reconcile');
+    const stale = await f.runtime.memory.beginContinuityTurn(
+      f.scopeA,
+      'route-that-is-not-active-anymore',
+      'Stale abandoned task',
+      undefined,
+      { objective: 'Stale abandoned objective' },
+    );
+
+    const fresh = await route(f.baseUrl, f.principalA.key, 'Inspect continuity after restart-like route loss');
+    expect(fresh.continuitySnapshot.activeTasks.map((task: any) => task.taskId)).not.toContain(stale.taskId);
+    expect(fresh.continuitySnapshot.unfinishedPlans.map((task: any) => task.taskId)).toContain(stale.taskId);
+    expect(fresh.continuitySnapshot.interruptedTurns.map((turn: any) => turn.turnId)).toContain(stale.turnId);
+    expect((await f.runtime.memory.getContinuityTask(f.scopeA, stale.taskId))?.status).toBe('interrupted');
+  });
+
   it('Scenario G: old semantic chatter cannot displace or alter current continuity state/hash', async () => {
     const f = await fixture('g');
     const current = await f.runtime.memory.beginContinuityTurn(

@@ -11,7 +11,8 @@ export type AgentCoreRouteErrorCode =
   | 'ROUTE_PRINCIPAL_MISMATCH'
   | 'ROUTE_TOOL_NOT_ALLOWED'
   | 'ROUTE_SKILL_REQUIRED'
-  | 'ROUTE_MEMORY_GUARDRAIL_BLOCKED';
+  | 'ROUTE_MEMORY_GUARDRAIL_BLOCKED'
+  | 'ROUTE_PROJECT_MISMATCH';
 
 export class AgentCoreRouteError extends Error {
   constructor(
@@ -47,6 +48,7 @@ export interface RouteMemorySnapshot {
 
 export interface RouteCreateOptions {
   reservation?: RouteReservation;
+  projectId?: string;
   memorySnapshot?: RouteMemorySnapshot;
   continuityTurnId?: string;
   continuityTaskId?: string;
@@ -56,6 +58,7 @@ export interface RouteCreateOptions {
 export interface RouteContext extends RoutePlan {
   routeContextId: string;
   principalId: string;
+  projectId?: string;
   loadedSkillIds: string[];
   createdAt: string;
   expiresAt: string;
@@ -111,6 +114,7 @@ export class RouteContextStore {
       ...structuredClone(plan),
       routeContextId: reservation.routeContextId,
       principalId,
+      ...(options.projectId ? { projectId: options.projectId } : {}),
       loadedSkillIds: [],
       createdAt: reservation.createdAt,
       expiresAt: reservation.expiresAt,
@@ -143,6 +147,18 @@ export class RouteContextStore {
     }
     this.pruneExpired(routeContextId);
     return structuredClone(context);
+  }
+
+  getOwned(routeContextId: string, principalId: string): RouteContext {
+    return structuredClone(this.requireOwned(routeContextId, principalId));
+  }
+
+  activeRouteContextIds(principalId: string, projectId?: string): string[] {
+    this.pruneExpired();
+    return [...this.contexts.values()]
+      .filter((context) => context.principalId === principalId && (context.projectId ?? '') === (projectId ?? ''))
+      .map((context) => context.routeContextId)
+      .sort((left, right) => left.localeCompare(right));
   }
 
   markSkillLoaded(

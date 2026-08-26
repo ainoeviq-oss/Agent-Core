@@ -1,6 +1,24 @@
+import path from 'node:path';
 import { assertCommandAllowed } from '../runtime/process-manager.js';
 import type { WorkspacePolicy } from '../runtime/workspace.js';
 import type { ExecutionNodeState } from './types.js';
+
+export type ExecutionArtifactKind = 'file' | 'directory';
+export type ExecutionArtifactHash = 'sha256';
+
+export interface ExecutionExpectedArtifactSpec {
+  path: string;
+  kind?: ExecutionArtifactKind;
+  hash?: ExecutionArtifactHash;
+  required?: boolean;
+}
+
+export interface ValidatedExecutionArtifact {
+  path: string;
+  kind: ExecutionArtifactKind;
+  hash?: ExecutionArtifactHash;
+  required: boolean;
+}
 
 export interface ExecutionNodeSpec {
   id: string;
@@ -10,12 +28,14 @@ export interface ExecutionNodeSpec {
   dependsOn?: string[];
   timeoutMs?: number;
   continueOnFailure?: boolean;
+  expectedArtifacts?: ExecutionExpectedArtifactSpec[];
 }
 
-export interface ValidatedExecutionNode extends ExecutionNodeSpec {
+export interface ValidatedExecutionNode extends Omit<ExecutionNodeSpec, 'expectedArtifacts'> {
   dependsOn: string[];
   timeoutMs: number;
   continueOnFailure: boolean;
+  expectedArtifacts: ValidatedExecutionArtifact[];
 }
 
 export interface ExecutionDag {
@@ -34,6 +54,7 @@ export class ExecutionDagError extends Error {
 const DEFAULT_MAX_NODES = 128;
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_TIMEOUT_MS = 10 * 60_000;
+const MAX_EXPECTED_ARTIFACTS = 32;
 const NODE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const SECRET_ASSIGNMENT_RE = /\b(api[_-]?key|client[_-]?secret|access[_-]?key|password|passwd|pwd|token|refresh[_-]?token|access[_-]?token)\s*[:=]\s*([^\s;,]+)/gi;
 const BEARER_RE = /\b(?:authorization\s*:\s*)?bearer\s+([^\s,;]+)/gi;
@@ -82,6 +103,60 @@ function normalizeDependencyIds(value: unknown, nodeId: string): string[] {
     seen.add(raw.trim());
   }
   return [...seen].sort((left, right) => left.localeCompare(right));
+}
+
+async function normalizeExpectedArtifacts(
+  value: unknown,
+  nodeId: string,
+  cwd: string,
+  workspace: WorkspacePolicy,
+): Promise<ValidatedExecutionArtifact[]> {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) fail('EXECUTION_ARTIFACTS_INVALID', `expectedArtifacts for ${nodeId} must be an array`);
+  if (value.length > MAX_EXPECTED_ARTIFACTS) {
+    fail('EXECUTION_ARTIFACT_LIMIT', `Node ${nodeId} exceeds ${MAX_EXPECTED_ARTIFACTS} expected artifacts`);
+  }
+  const result: ValidatedExecutionArtifact[] = [];
+  const seen = new Set<string>();
+  for (let index = 0; index < value.length; index += 1) {
+    const raw = value[index];
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      fail('EXECUTION_ARTIFACT_INVALID', `expectedArtifacts[${index}] for ${nodeId} must be an object`);
+    }
+    const item = raw as Record<string, unknown>;
+    const rawPath = normalizeRequired(item.path, `expectedArtifacts[${index}].path`, 'EXECUTION_ARTIFACT_PATH_REQUIRED', 5_000);
+    const kind = item.kind === undefined ? 'file' : item.kind;
+    if (kind !== 'file' && kind !== 'directory') {
+      fail('EXECUTION_ARTIFACT_KIND_INVALID', `expectedArtifacts[${index}].kind for ${nodeId} is invalid`);
+    }
+    const hash = item.hash;
+    if (hash !== undefined && hash !== 'sha256') {
+      fail('EXECUTION_ARTIFACT_HASH_INVALID', `expectedArtifacts[${index}].hash for ${nodeId} is invalid`);
+    }
+    if (kind === 'directory' && hash !== undefined) {
+      fail('EXECUTION_ARTIFACT_HASH_INVALID', `Directory artifact ${rawPath} cannot request a file hash`);
+    }
+    if (item.required !== undefined && typeof item.required !== 'boolean') {
+      fail('EXECUTION_ARTIFACT_REQUIRED_INVALID', `expectedArtifacts[${index}].required for ${nodeId} must be boolean`);
+    }
+    const candidate = path.isAbsolute(rawPath) ? path.resolve(rawPath) : path.resolve(cwd, rawPath);
+    let resolved: string;
+    try {
+      resolved = await workspace.resolveTarget(candidate);
+    } catch {
+      fail('EXECUTION_ARTIFACT_OUTSIDE_ROOT', `Artifact ${rawPath} for node ${nodeId} is outside allowed workspace roots`);
+    }
+    const identity = process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+    if (seen.has(identity)) fail('EXECUTION_ARTIFACT_DUPLICATE', `Duplicate expected artifact for node ${nodeId}: ${resolved}`);
+    seen.add(identity);
+    result.push({
+      path: resolved,
+      kind,
+      ...(hash === 'sha256' ? { hash } : {}),
+      required: item.required ?? true,
+    });
+  }
+  return result.sort((left, right) => left.path.localeCompare(right.path));
 }
 
 export async function validateExecutionDag(
@@ -141,6 +216,7 @@ export async function validateExecutionDag(
     if (rawNode.continueOnFailure !== undefined && typeof rawNode.continueOnFailure !== 'boolean') {
       fail('EXECUTION_CONTINUE_ON_FAILURE_INVALID', `Node ${id} continueOnFailure must be boolean`);
     }
+    const expectedArtifacts = await normalizeExpectedArtifacts(rawNode.expectedArtifacts, id, cwd, options.workspace);
     normalized.push({
       id,
       purpose,
@@ -149,6 +225,7 @@ export async function validateExecutionDag(
       dependsOn,
       timeoutMs,
       continueOnFailure: rawNode.continueOnFailure ?? false,
+      expectedArtifacts,
     });
   }
 

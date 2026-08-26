@@ -10,7 +10,7 @@ import { createHttpHandler } from '../src/http/app.js';
 import { FileAuditLogger } from '../src/logging/audit-log.js';
 import { createMcpHttpHandler } from '../src/mcp/handler.js';
 import { createRuntimeServices, type RuntimeServices } from '../src/runtime/services.js';
-import { printCommand, retryMarkerCommand, sleepCommand } from './helpers/platform-command.js';
+import { nodeShellCommand, printCommand, retryMarkerCommand, sleepCommand } from './helpers/platform-command.js';
 
 const roots: string[] = [];
 const servers: Server[] = [];
@@ -221,6 +221,62 @@ describe('first-class execution MCP surface', () => {
       runId: created.runId, nodeId: 'A', attemptNo: 1, stream: 'stderr', offset: 0, maxBytes: 1024,
     }));
     expect(stderr.data).toContain('ERR-A');
+  }, 10_000);
+
+  it('returns bounded merged process + artifact evidence in execution_status without exposing raw log content', async () => {
+    const f = await fixture('evidence-status');
+    const routed = await route(f);
+    const artifactPath = path.join(f.work, 'dist', 'proof.json');
+    const created = expectOk(await call(f.baseUrl, f.principalA.key, 'execution_create', {
+      routeContextId: routed.routeContextId,
+      objective: 'evidence status fixture',
+      nodes: [{
+        id: 'A',
+        purpose: 'write verified proof',
+        command: nodeShellCommand(`
+          const fs = require('node:fs');
+          fs.mkdirSync(${JSON.stringify(path.dirname(artifactPath))}, { recursive: true });
+          fs.writeFileSync(${JSON.stringify(artifactPath)}, '{"proof":"secret-free"}\\n');
+          process.stdout.write('RAW-LOG-MUST-NOT-APPEAR-IN-STATUS');
+        `),
+        cwd: f.work,
+        expectedArtifacts: [{ path: artifactPath, kind: 'file', hash: 'sha256', required: true }],
+      }],
+    }));
+    expectOk(await call(f.baseUrl, f.principalA.key, 'execution_start', {
+      routeContextId: routed.routeContextId, runId: created.runId,
+    }));
+    const done = expectOk(await call(f.baseUrl, f.principalA.key, 'execution_wait', {
+      runId: created.runId,
+      routeContextId: routed.routeContextId,
+      afterSequence: created.lastEventSequence,
+      eventTypes: ['run.completed'],
+      timeoutMs: 5_000,
+    }));
+    expect(done.event?.eventType).toBe('run.completed');
+
+    const status = expectOk(await call(f.baseUrl, f.principalA.key, 'execution_status', {
+      routeContextId: routed.routeContextId,
+      runId: created.runId,
+    }));
+    expect(status.evidence).toMatchObject({
+      verification: 'verified',
+      nodes: [{
+        nodeId: 'A',
+        attemptNo: 1,
+        resultVersion: 2,
+        processState: 'succeeded',
+        evidenceState: 'verified',
+        stdoutSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        stderrSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        artifacts: [expect.objectContaining({
+          path: artifactPath,
+          verification: 'verified',
+          sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        })],
+      }],
+    });
+    expect(JSON.stringify(status)).not.toContain('RAW-LOG-MUST-NOT-APPEAR-IN-STATUS');
   }, 10_000);
 
   it('a fresh same-principal route can mutate an older owned run while another principal/project cannot observe it', async () => {

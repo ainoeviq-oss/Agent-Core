@@ -90,6 +90,10 @@ export class ExecutionWorkerClient {
     return this.request('transaction', { operations }) as Promise<unknown[]>;
   }
 
+  async backup(backupPath: string): Promise<{ backupPath: string; createdAt: number }> {
+    return this.request('backup', { backupPath }) as Promise<{ backupPath: string; createdAt: number }>;
+  }
+
   async checkpoint(): Promise<ExecutionCheckpointResult> {
     return this.request('checkpoint') as Promise<ExecutionCheckpointResult>;
   }

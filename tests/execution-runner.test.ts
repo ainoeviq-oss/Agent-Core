@@ -7,7 +7,7 @@ import { validateExecutionDag, type ValidatedExecutionNode } from '../src/execut
 import { ExecutionLogStore } from '../src/execution/log-store.js';
 import { ExecutionCommandRunner } from '../src/execution/runner.js';
 import { WorkspacePolicy } from '../src/runtime/workspace.js';
-import { printCommand, sleepCommand } from './helpers/platform-command.js';
+import { nodeShellCommand, printCommand, sleepCommand } from './helpers/platform-command.js';
 
 const roots: string[] = [];
 
@@ -19,17 +19,24 @@ async function fixture(label: string) {
   const logRoot = path.join(root, 'runtime', 'execution', 'runs');
   await mkdir(work, { recursive: true });
   const logs = new ExecutionLogStore(logRoot);
-  const runner = new ExecutionCommandRunner(logs);
-  return { root, work, logRoot, logs, runner, workspace: new WorkspacePolicy([root]) };
+  const workspace = new WorkspacePolicy([root]);
+  const runner = new ExecutionCommandRunner(logs, workspace);
+  return { root, work, logRoot, logs, runner, workspace };
 }
 
-async function validatedNode(workspace: WorkspacePolicy, cwd: string, command: string): Promise<ValidatedExecutionNode> {
+async function validatedNode(
+  workspace: WorkspacePolicy,
+  cwd: string,
+  command: string,
+  expectedArtifacts?: Array<{ path: string; kind?: 'file' | 'directory'; hash?: 'sha256'; required?: boolean }>,
+): Promise<ValidatedExecutionNode> {
   const graph = await validateExecutionDag([{
     id: 'A',
     purpose: 'Runner fixture',
     command,
     cwd,
     timeoutMs: 10_000,
+    expectedArtifacts,
   }], { workspace });
   return graph.nodeById.get('A')!;
 }
@@ -103,6 +110,57 @@ describe('durable execution log store and command runner', () => {
     expect(result.stderrSha256).toBe(createHash('sha256').update(stderrBytes).digest('hex'));
     expect(JSON.parse(await readFile(paths.resultPath, 'utf8'))).toEqual(result);
     expect((await readdir(path.dirname(paths.resultPath))).some((name) => name.includes('.result.json.tmp-'))).toBe(false);
+  });
+
+  it('writes v2 verified evidence when process success produces every required declared artifact', async () => {
+    const f = await fixture('artifact-success');
+    const target = path.join(f.work, 'dist', 'result.json');
+    const node = await validatedNode(
+      f.workspace,
+      f.work,
+      nodeShellCommand(`
+        const fs = require('node:fs');
+        fs.mkdirSync(${JSON.stringify(path.dirname(target))}, { recursive: true });
+        fs.writeFileSync(${JSON.stringify(target)}, '{"verified":true}\\n');
+      `),
+      [{ path: target, kind: 'file', hash: 'sha256', required: true }],
+    );
+    const result = await f.runner.run('run-artifact-success', node, 'attempt-artifact-success', 1) as any;
+    expect(result).toMatchObject({
+      version: 2,
+      state: 'succeeded',
+      processState: 'succeeded',
+      evidenceState: 'verified',
+      evidence: {
+        verification: 'verified',
+        artifacts: [expect.objectContaining({ path: target, exists: true, verification: 'verified', sha256: expect.stringMatching(/^[a-f0-9]{64}$/) })],
+      },
+    });
+    expect(await f.logs.readResult('run-artifact-success', 'A', 1)).toEqual(result);
+  });
+
+  it('fails closed when process exits zero but a required declared artifact is missing', async () => {
+    const f = await fixture('artifact-missing');
+    const target = path.join(f.work, 'missing-result.txt');
+    const node = await validatedNode(
+      f.workspace,
+      f.work,
+      printCommand('process-ok'),
+      [{ path: target, kind: 'file', required: true }],
+    );
+    const result = await f.runner.run('run-artifact-missing', node, 'attempt-artifact-missing', 1) as any;
+    expect(result).toMatchObject({
+      version: 2,
+      state: 'failed',
+      processState: 'succeeded',
+      evidenceState: 'failed',
+      exitCode: 0,
+      evidence: {
+        verification: 'failed',
+        artifacts: [expect.objectContaining({ path: target, exists: false, verification: 'missing', required: true })],
+      },
+    });
+    expect(result.error).toMatch(/evidence|artifact/i);
   });
 
   it('never interprets a missing terminal result marker as success and writes interrupted only after termination is factual', async () => {

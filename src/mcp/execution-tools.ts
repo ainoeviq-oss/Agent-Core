@@ -1,9 +1,11 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import path from 'node:path';
 import * as z from 'zod/v4';
 import type { VerifiedKey } from '../auth/key-types.js';
 import type { ExecutionRunView } from '../execution/service.js';
 import { ExecutionStoreError } from '../execution/store.js';
 import type { RuntimeServices } from '../runtime/services.js';
+import { resolvedProjectScope, resolveRouteExistingPath, resolveRouteTargetPath } from './project-scope.js';
 
 export const EXECUTION_TOOL_NAMES = [
   'execution_create',
@@ -63,8 +65,27 @@ async function mutationGuarded<T>(
   }
 }
 
-function scope(runtime: RuntimeServices, key: VerifiedKey) {
-  return { principalId: key.id, projectId: runtime.workspace.roots[0] };
+function scope(runtime: RuntimeServices, key: VerifiedKey, routeContextId?: string) {
+  return resolvedProjectScope(runtime, key, routeContextId);
+}
+
+async function routeBoundNode(
+  runtime: RuntimeServices,
+  route: NonNullable<ReturnType<typeof runtime.routes.get>>,
+  node: z.infer<typeof nodeSchema>,
+) {
+  const cwd = await resolveRouteExistingPath(runtime, route, node.cwd);
+  const expectedArtifacts = node.expectedArtifacts
+    ? await Promise.all(node.expectedArtifacts.map(async (artifact) => ({
+      ...artifact,
+      path: await resolveRouteTargetPath(
+        runtime,
+        route,
+        path.isAbsolute(artifact.path) ? artifact.path : path.resolve(cwd, artifact.path),
+      ),
+    })))
+    : undefined;
+  return { ...node, cwd, ...(expectedArtifacts ? { expectedArtifacts } : {}) };
 }
 
 function requireOwnedView(view: ExecutionRunView | null): ExecutionRunView {
@@ -102,6 +123,7 @@ function compact(view: ExecutionRunView) {
     startedAt: view.startedAt ?? null,
     finishedAt: view.finishedAt ?? null,
     updatedAt: view.updatedAt,
+    evidence: view.evidence,
     nodes: view.nodes.map((node) => ({
       nodeId: node.nodeId,
       purpose: node.purpose,
@@ -139,6 +161,12 @@ const nodeSchema = z.object({
   dependsOn: z.array(z.string().min(1).max(128)).max(128).optional(),
   timeoutMs: z.number().int().min(1).max(10 * 60_000).optional(),
   continueOnFailure: z.boolean().optional(),
+  expectedArtifacts: z.array(z.object({
+    path: z.string().min(1).max(5_000),
+    kind: z.enum(['file', 'directory']).optional(),
+    hash: z.literal('sha256').optional(),
+    required: z.boolean().optional(),
+  })).max(32).optional(),
 });
 
 const eventType = z.enum([
@@ -166,14 +194,17 @@ export function registerExecutionTools(
     annotations: mutationAnnotations,
   }, async ({ routeContextId, objective, nodes, maxConcurrency, metadata }) => mutationGuarded(
     runtime, key, routeContextId, 'execution_create',
-    async (route) => compact(await runtime.execution.create(scope(runtime, key), {
-      objective,
-      nodes,
-      maxConcurrency,
-      metadata,
-      originRouteContextId: routeContextId,
-      ...(route.continuityTaskId ? { continuityTaskId: route.continuityTaskId } : {}),
-    })),
+    async (route) => {
+      const scopedNodes = await Promise.all(nodes.map((node) => routeBoundNode(runtime, route, node)));
+      return compact(await runtime.execution.create(scope(runtime, key, routeContextId), {
+        objective,
+        nodes: scopedNodes,
+        maxConcurrency,
+        metadata,
+        originRouteContextId: routeContextId,
+        ...(route.continuityTaskId ? { continuityTaskId: route.continuityTaskId } : {}),
+      }));
+    },
   ));
 
   server.registerTool('execution_start', {
@@ -186,16 +217,16 @@ export function registerExecutionTools(
     annotations: mutationAnnotations,
   }, async ({ routeContextId, runId }) => mutationGuarded(
     runtime, key, routeContextId, 'execution_start',
-    async () => compact(await runtime.execution.start(scope(runtime, key), runId)),
+    async () => compact(await runtime.execution.start(scope(runtime, key, routeContextId), runId)),
   ));
 
   server.registerTool('execution_status', {
     title: 'Execution Status',
     description: 'Return compact persisted graph/run state for a run owned by the authenticated principal in the current project.',
-    inputSchema: { runId: z.string().uuid() },
+    inputSchema: { runId: z.string().uuid(), routeContextId: z.string().uuid().optional() },
     annotations: readOnlyAnnotations,
-  }, async ({ runId }) => guarded(async () => compact(requireOwnedView(
-    await runtime.execution.status(scope(runtime, key), runId),
+  }, async ({ runId, routeContextId }) => guarded(async () => compact(requireOwnedView(
+    await runtime.execution.status(scope(runtime, key, routeContextId), runId),
   ))));
 
   server.registerTool('execution_wait', {
@@ -203,15 +234,16 @@ export function registerExecutionTools(
     description: 'Wait for a matching persisted execution event using bounded event-driven long poll; returns current graph state on timeout.',
     inputSchema: {
       runId: z.string().uuid(),
+      routeContextId: z.string().uuid().optional(),
       afterSequence: z.number().int().min(0).default(0),
       eventTypes: z.array(eventType).max(18).optional(),
       nodeIds: z.array(z.string().min(1).max(128)).max(128).optional(),
       timeoutMs: z.number().int().min(1).max(60_000).default(60_000),
     },
     annotations: readOnlyAnnotations,
-  }, async ({ runId, afterSequence, eventTypes, nodeIds, timeoutMs }) => guarded(async () => {
+  }, async ({ runId, routeContextId, afterSequence, eventTypes, nodeIds, timeoutMs }) => guarded(async () => {
     const waited = await runtime.execution.wait(
-      scope(runtime, key), runId, afterSequence,
+      scope(runtime, key, routeContextId), runId, afterSequence,
       (eventTypes?.length || nodeIds?.length) ? { eventTypes, nodeIds } : undefined,
       timeoutMs,
     );
@@ -228,6 +260,7 @@ export function registerExecutionTools(
     description: 'Read bounded stdout or stderr bytes for one owned execution attempt using a stable byte offset.',
     inputSchema: {
       runId: z.string().uuid(),
+      routeContextId: z.string().uuid().optional(),
       nodeId: z.string().min(1).max(128),
       attemptNo: z.number().int().min(1).max(999_999),
       stream: z.enum(['stdout', 'stderr']),
@@ -235,8 +268,8 @@ export function registerExecutionTools(
       maxBytes: z.number().int().min(1).max(1024 * 1024).default(64 * 1024),
     },
     annotations: readOnlyAnnotations,
-  }, async ({ runId, nodeId, attemptNo, stream, offset, maxBytes }) => guarded(() => runtime.execution.readLog(
-    scope(runtime, key), runId, nodeId, attemptNo, stream, offset, maxBytes,
+  }, async ({ runId, routeContextId, nodeId, attemptNo, stream, offset, maxBytes }) => guarded(() => runtime.execution.readLog(
+    scope(runtime, key, routeContextId), runId, nodeId, attemptNo, stream, offset, maxBytes,
   )));
 
   server.registerTool('execution_add_nodes', {
@@ -250,7 +283,12 @@ export function registerExecutionTools(
     annotations: mutationAnnotations,
   }, async ({ routeContextId, runId, nodes }) => mutationGuarded(
     runtime, key, routeContextId, 'execution_add_nodes',
-    async () => compact(await runtime.execution.addNodes(scope(runtime, key), runId, nodes)),
+    async (route) => {
+      const scopedNodes = await Promise.all(nodes.map((node) => routeBoundNode(runtime, route, node)));
+      return compact(await runtime.execution.addNodes(
+        scope(runtime, key, routeContextId), runId, scopedNodes,
+      ));
+    },
   ));
 
   server.registerTool('execution_retry', {
@@ -264,7 +302,7 @@ export function registerExecutionTools(
     annotations: mutationAnnotations,
   }, async ({ routeContextId, runId, nodeId }) => mutationGuarded(
     runtime, key, routeContextId, 'execution_retry',
-    async () => compact(await runtime.execution.retry(scope(runtime, key), runId, nodeId)),
+    async () => compact(await runtime.execution.retry(scope(runtime, key, routeContextId), runId, nodeId)),
   ));
 
   server.registerTool('execution_cancel', {
@@ -278,6 +316,6 @@ export function registerExecutionTools(
     annotations: mutationAnnotations,
   }, async ({ routeContextId, runId, nodeId }) => mutationGuarded(
     runtime, key, routeContextId, 'execution_cancel',
-    async () => compact(await runtime.execution.cancel(scope(runtime, key), runId, nodeId)),
+    async () => compact(await runtime.execution.cancel(scope(runtime, key, routeContextId), runId, nodeId)),
   ));
 }

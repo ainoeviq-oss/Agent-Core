@@ -1,5 +1,6 @@
-export const EXECUTION_SCHEMA_VERSION = 1;
+export const EXECUTION_SCHEMA_VERSION = 2;
 export const INITIAL_EXECUTION_MIGRATION = '001_initial_execution_fabric';
+export const EVIDENCE_EXECUTION_MIGRATION = '002_declared_artifact_evidence';
 
 export const EXECUTION_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS execution_schema_migrations (
@@ -34,6 +35,7 @@ CREATE TABLE IF NOT EXISTS execution_nodes (
   state TEXT NOT NULL CHECK (state IN ('queued','ready','running','succeeded','failed','blocked','interrupted','cancelled')),
   timeout_ms INTEGER NOT NULL CHECK (timeout_ms >= 1),
   continue_on_failure INTEGER NOT NULL DEFAULT 0 CHECK (continue_on_failure IN (0,1)),
+  expected_artifacts_json TEXT NOT NULL DEFAULT '[]',
   attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
   last_error_json TEXT,
   created_at INTEGER NOT NULL,

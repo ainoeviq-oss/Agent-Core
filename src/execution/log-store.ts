@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { access, mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import type { ExecutionEvidenceManifest } from './evidence.js';
 
 export interface ExecutionAttemptPaths {
   directory: string;
@@ -17,13 +18,14 @@ export interface ExecutionLogReadResult {
   eof: boolean;
 }
 
-export interface ExecutionResultMarker {
-  version: 1;
+export type ExecutionResultState = 'succeeded' | 'failed' | 'interrupted' | 'cancelled';
+
+export interface ExecutionResultMarkerBase {
   runId: string;
   nodeId: string;
   attemptId: string;
   attemptNo: number;
-  state: 'succeeded' | 'failed' | 'interrupted' | 'cancelled';
+  state: ExecutionResultState;
   startedAt: number;
   finishedAt: number;
   exitCode: number | null;
@@ -34,6 +36,19 @@ export interface ExecutionResultMarker {
   stderrSha256: string;
   error?: string;
 }
+
+export interface ExecutionResultMarkerV1 extends ExecutionResultMarkerBase {
+  version: 1;
+}
+
+export interface ExecutionResultMarkerV2 extends ExecutionResultMarkerBase {
+  version: 2;
+  processState: ExecutionResultState;
+  evidenceState: 'verified' | 'failed';
+  evidence: ExecutionEvidenceManifest;
+}
+
+export type ExecutionResultMarker = ExecutionResultMarkerV1 | ExecutionResultMarkerV2;
 
 export class ExecutionLogStoreError extends Error {
   constructor(public readonly code: string, message: string) {
@@ -159,14 +174,20 @@ export class ExecutionLogStore {
       throw error;
     }
     const parsed = JSON.parse(body) as ExecutionResultMarker;
-    if (
-      parsed?.version !== 1
-      || parsed.runId !== runId
-      || parsed.nodeId !== nodeId
-      || parsed.attemptNo !== attemptNo
-      || typeof parsed.attemptId !== 'string'
-      || !['succeeded', 'failed', 'interrupted', 'cancelled'].includes(parsed.state)
-    ) {
+    const commonValid = (
+      (parsed?.version === 1 || parsed?.version === 2)
+      && parsed.runId === runId
+      && parsed.nodeId === nodeId
+      && parsed.attemptNo === attemptNo
+      && typeof parsed.attemptId === 'string'
+      && ['succeeded', 'failed', 'interrupted', 'cancelled'].includes(parsed.state)
+    );
+    const v2Valid = parsed?.version !== 2 || (
+      ['succeeded', 'failed', 'interrupted', 'cancelled'].includes(parsed.processState)
+      && (parsed.evidenceState === 'verified' || parsed.evidenceState === 'failed')
+      && Boolean(parsed.evidence && typeof parsed.evidence === 'object' && Array.isArray(parsed.evidence.artifacts))
+    );
+    if (!commonValid || !v2Valid) {
       fail('EXECUTION_RESULT_INVALID', 'Execution result marker does not match the requested attempt');
     }
     return parsed;
@@ -175,7 +196,7 @@ export class ExecutionLogStore {
   async writeResultAtomic(marker: ExecutionResultMarker): Promise<string> {
     const paths = this.paths(marker.runId, marker.nodeId, marker.attemptNo);
     segment(marker.attemptId, 'attemptId');
-    if (marker.version !== 1) fail('EXECUTION_RESULT_INVALID', 'Unsupported execution result version');
+    if (marker.version !== 1 && marker.version !== 2) fail('EXECUTION_RESULT_INVALID', 'Unsupported execution result version');
     if (await exists(paths.resultPath)) fail('EXECUTION_RESULT_EXISTS', 'Terminal execution result already exists');
     await mkdir(paths.directory, { recursive: true });
     const tempPath = `${paths.resultPath}.tmp-${process.pid}-${randomUUID()}`;

@@ -132,6 +132,38 @@ describe('deterministic execution DAG validation', () => {
     }).map((item) => item.id)).toEqual(['B']);
   });
 
+  it('normalizes declared artifacts and rejects unsafe or internally inconsistent evidence declarations', async () => {
+    const f = await fixture('artifacts');
+    const graph = await validateExecutionDag([
+      node('A', f.work, {
+        expectedArtifacts: [{
+          path: path.join('dist', 'result.json'),
+          kind: 'file',
+          hash: 'sha256',
+          required: true,
+        }],
+      }),
+    ], { workspace: f.workspace });
+    expect(graph.nodeById.get('A')?.expectedArtifacts).toEqual([{
+      path: path.join(f.work, 'dist', 'result.json'),
+      kind: 'file',
+      hash: 'sha256',
+      required: true,
+    }]);
+
+    await expectDagCode(validateExecutionDag([
+      node('A', f.work, {
+        expectedArtifacts: [{ path: path.join(path.dirname(f.root), 'escape.txt'), kind: 'file' }],
+      }),
+    ], { workspace: f.workspace }), 'EXECUTION_ARTIFACT_OUTSIDE_ROOT');
+
+    await expectDagCode(validateExecutionDag([
+      node('A', f.work, {
+        expectedArtifacts: [{ path: 'dist', kind: 'directory', hash: 'sha256' }],
+      }),
+    ], { workspace: f.workspace }), 'EXECUTION_ARTIFACT_HASH_INVALID');
+  });
+
   it('rejects malformed node IDs/text/timeouts and invalid configured maxNodes deterministically', async () => {
     const f = await fixture('validation');
     await expectDagCode(validateExecutionDag([

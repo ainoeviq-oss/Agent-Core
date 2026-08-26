@@ -1,4 +1,4 @@
-export type ExecutionWorkerCommand = 'open' | 'exec' | 'query' | 'transaction' | 'checkpoint' | 'integrity' | 'close';
+export type ExecutionWorkerCommand = 'open' | 'exec' | 'query' | 'transaction' | 'backup' | 'checkpoint' | 'integrity' | 'close';
 
 export type ExecutionSqlPrimitive = string | number | bigint | null | Uint8Array;
 
@@ -47,11 +47,12 @@ export interface ExecutionCheckpointResult {
 export function createExecutionDatabaseWorkerSource(): string {
   return String.raw`
     const { parentPort, workerData } = require('node:worker_threads');
-    const { mkdirSync } = require('node:fs');
+    const { existsSync, mkdirSync, unlinkSync } = require('node:fs');
     const path = require('node:path');
     const { DatabaseSync } = require('node:sqlite');
 
     let db = null;
+    let currentDbPath = null;
     const maxResponseBytes = Number(workerData?.maxResponseBytes || 1048576);
 
     function errorCode(error, fallback) {
@@ -159,6 +160,7 @@ export function createExecutionDatabaseWorkerSource(): string {
               mkdirSync(path.dirname(path.resolve(payload.dbPath)), { recursive: true });
             }
             db = new DatabaseSync(payload.dbPath);
+            currentDbPath = payload.dbPath;
             db.exec('PRAGMA foreign_keys = ON');
             db.exec('PRAGMA journal_mode = WAL');
             db.exec('PRAGMA wal_autocheckpoint = 0');
@@ -176,6 +178,7 @@ export function createExecutionDatabaseWorkerSource(): string {
             if (db) {
               try { db.close(); } catch {}
               db = null;
+              currentDbPath = null;
             }
             parentPort.postMessage({
               id,
@@ -235,6 +238,28 @@ export function createExecutionDatabaseWorkerSource(): string {
           return;
         }
 
+        if (command === 'backup') {
+          const database = requireDb();
+          const backupPath = request.payload?.backupPath;
+          if (typeof backupPath !== 'string' || backupPath.trim() === '' || backupPath === ':memory:') {
+            const error = new Error('backupPath is required');
+            error.code = 'EXECUTION_BACKUP_PATH_INVALID';
+            throw error;
+          }
+          const resolvedBackup = path.resolve(backupPath);
+          if (currentDbPath && currentDbPath !== ':memory:' && path.resolve(currentDbPath) === resolvedBackup) {
+            const error = new Error('backupPath must differ from the live database path');
+            error.code = 'EXECUTION_BACKUP_PATH_INVALID';
+            throw error;
+          }
+          mkdirSync(path.dirname(resolvedBackup), { recursive: true });
+          if (existsSync(resolvedBackup)) unlinkSync(resolvedBackup);
+          const escaped = resolvedBackup.replace(/'/g, "''");
+          database.exec("VACUUM INTO '" + escaped + "'");
+          sendResult(id, { backupPath: resolvedBackup, createdAt: Date.now() });
+          return;
+        }
+
         if (command === 'checkpoint') {
           sendResult(id, checkpoint(requireDb()));
           return;
@@ -254,6 +279,7 @@ export function createExecutionDatabaseWorkerSource(): string {
             checkpointResult = checkpoint(db);
             db.close();
             db = null;
+            currentDbPath = null;
           }
           sendResult(id, { closed: true, checkpoint: checkpointResult });
           return;

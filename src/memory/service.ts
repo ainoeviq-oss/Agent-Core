@@ -5,6 +5,7 @@ import {
   type ContinuityBeginTurnResult,
   type ContinuityCheckpointResult,
   type ContinuityFrontierRecord,
+  type ContinuityReconcileResult,
   type ContinuityTaskRecord,
 } from '../continuity/store.js';
 import type { ContinuityCapture, ContinuityCheckpointInput, ContinuityTurnState } from '../continuity/types.js';
@@ -192,6 +193,14 @@ export class MemoryService {
   async getContinuitySnapshot(scope: MemoryScope): Promise<ContinuitySnapshot> {
     const components = await this.requireComponents();
     return components.continuitySnapshot.build(scope);
+  }
+
+  async reconcileContinuity(
+    scope: MemoryScope,
+    activeRouteContextIds: readonly string[],
+  ): Promise<ContinuityReconcileResult> {
+    const components = await this.requireComponents();
+    return components.continuity.reconcileOpenTurns(scope, activeRouteContextIds);
   }
 
   async recordEvent(request: RecordMemoryEventRequest) {
@@ -505,7 +514,12 @@ export class MemoryService {
       const integrity = await components.client.integrity();
       const checkedAt = Date.now();
       this.lastIntegrityCheckAt = checkedAt;
-      if (integrity.ok) this.lastSuccessfulIntegrityCheckAt = checkedAt;
+      if (integrity.ok) {
+        this.lastSuccessfulIntegrityCheckAt = checkedAt;
+      } else {
+        this.state = 'degraded';
+        this.degradedReason = integrity.result;
+      }
       this.lastBackup ??= await readLatestMemoryBackup(this.config.dbPath) ?? undefined;
       const dbBytes = await stat(this.config.dbPath).then((info) => info.size).catch(() => 0);
       return {
@@ -527,6 +541,8 @@ export class MemoryService {
       };
     } catch (error) {
       this.lastIntegrityCheckAt = Date.now();
+      this.state = 'degraded';
+      this.degradedReason = error instanceof Error ? error.message : String(error);
       this.lastBackup ??= await readLatestMemoryBackup(this.config.dbPath) ?? undefined;
       return {
         enabled: true,

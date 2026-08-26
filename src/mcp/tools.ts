@@ -3,6 +3,7 @@ import * as z from 'zod/v4';
 import type { VerifiedKey } from '../auth/key-types.js';
 import { OperationalMemoryAudit } from '../memory/operational-audit.js';
 import type { RuntimeServices } from '../runtime/services.js';
+import { resolvedProjectScope, resolveRouteExistingPath, resolveRouteTargetPath } from './project-scope.js';
 import { routeErrorResult, validateOperationalRoute } from './route-guard.js';
 
 function textResult(value: unknown) {
@@ -24,7 +25,7 @@ async function routeGuarded<T>(
   key: VerifiedKey,
   routeContextId: string,
   toolName: string,
-  operation: () => Promise<T>,
+  operation: (route: NonNullable<ReturnType<typeof runtime.routes.get>>) => Promise<T>,
   auditInput: Record<string, unknown> = {},
 ) {
   const audit = new OperationalMemoryAudit(runtime, key);
@@ -38,7 +39,7 @@ async function routeGuarded<T>(
 
   await audit.intended(route, toolName, auditInput);
   try {
-    const result = await operation();
+    const result = await operation(route);
     await audit.succeeded(route, toolName, auditInput, result);
     return textResult(result);
   } catch (error) {
@@ -50,10 +51,10 @@ async function routeGuarded<T>(
 const ROUTE_REQUIRED_DESCRIPTION = 'Obtain routeContextId from capability_route before using this tool.';
 const routedDescription = (description: string) => `${description} ${ROUTE_REQUIRED_DESCRIPTION}`;
 
-function processOwner(runtime: RuntimeServices, key: VerifiedKey, originRouteContextId?: string) {
+function processOwner(key: VerifiedKey, projectId: string, originRouteContextId?: string) {
   return {
     principalId: key.id,
-    projectId: runtime.workspace.roots[0],
+    projectId,
     ...(originRouteContextId ? { originRouteContextId } : {}),
   };
 }
@@ -88,7 +89,9 @@ export function registerOperationalTools(
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   }, async ({ path, depth, maxEntries, routeContextId }) => routeGuarded(
     runtime, key, routeContextId, 'list_directory',
-    () => runtime.filesystem.listDirectory(path, depth, maxEntries),
+    async (route) => runtime.filesystem.listDirectory(
+      await resolveRouteExistingPath(runtime, route, path), depth, maxEntries,
+    ),
     { path, depth, maxEntries },
   ));
 
@@ -105,7 +108,9 @@ export function registerOperationalTools(
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   }, async ({ path, startLine, lineCount, maxBytes, routeContextId }) => routeGuarded(
     runtime, key, routeContextId, 'read_file',
-    () => runtime.filesystem.readFile(path, { startLine, lineCount, maxBytes }),
+    async (route) => runtime.filesystem.readFile(
+      await resolveRouteExistingPath(runtime, route, path), { startLine, lineCount, maxBytes },
+    ),
     { path, startLine, lineCount, maxBytes },
   ));
 
@@ -122,7 +127,10 @@ export function registerOperationalTools(
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   }, async ({ paths, startLine, lineCount, maxBytes, routeContextId }) => routeGuarded(
     runtime, key, routeContextId, 'read_multiple_files',
-    () => runtime.filesystem.readMultipleFiles(paths, { startLine, lineCount, maxBytes }),
+    async (route) => runtime.filesystem.readMultipleFiles(
+      await Promise.all(paths.map((entry) => resolveRouteExistingPath(runtime, route, entry))),
+      { startLine, lineCount, maxBytes },
+    ),
     { paths, startLine, lineCount, maxBytes },
   ));
 
@@ -138,7 +146,9 @@ export function registerOperationalTools(
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   }, async ({ path, content, mode, routeContextId }) => routeGuarded(
     runtime, key, routeContextId, 'write_file',
-    () => runtime.filesystem.writeFile(path, content, mode),
+    async (route) => runtime.filesystem.writeFile(
+      await resolveRouteTargetPath(runtime, route, path), content, mode,
+    ),
     { path, mode, contentBytes: Buffer.byteLength(content, 'utf8') },
   ));
 
@@ -155,7 +165,9 @@ export function registerOperationalTools(
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   }, async ({ path, oldString, newString, expectedReplacements, routeContextId }) => routeGuarded(
     runtime, key, routeContextId, 'edit_file',
-    () => runtime.filesystem.editFile(path, oldString, newString, expectedReplacements),
+    async (route) => runtime.filesystem.editFile(
+      await resolveRouteExistingPath(runtime, route, path), oldString, newString, expectedReplacements,
+    ),
     {
       path,
       expectedReplacements,
@@ -171,7 +183,9 @@ export function registerOperationalTools(
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, async ({ path, routeContextId }) => routeGuarded(
     runtime, key, routeContextId, 'create_directory',
-    () => runtime.filesystem.createDirectory(path),
+    async (route) => runtime.filesystem.createDirectory(
+      await resolveRouteTargetPath(runtime, route, path),
+    ),
     { path },
   ));
 
@@ -186,7 +200,10 @@ export function registerOperationalTools(
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
   }, async ({ source, destination, routeContextId }) => routeGuarded(
     runtime, key, routeContextId, 'move_file',
-    () => runtime.filesystem.moveFile(source, destination),
+    async (route) => runtime.filesystem.moveFile(
+      await resolveRouteExistingPath(runtime, route, source),
+      await resolveRouteTargetPath(runtime, route, destination),
+    ),
     { source, destination },
   ));
 
@@ -197,7 +214,9 @@ export function registerOperationalTools(
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   }, async ({ path, routeContextId }) => routeGuarded(
     runtime, key, routeContextId, 'get_file_info',
-    () => runtime.filesystem.getFileInfo(path),
+    async (route) => runtime.filesystem.getFileInfo(
+      await resolveRouteExistingPath(runtime, route, path),
+    ),
     { path },
   ));
 
@@ -214,7 +233,9 @@ export function registerOperationalTools(
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
   }, async ({ path, query, mode, maxResults, routeContextId }) => routeGuarded(
     runtime, key, routeContextId, 'search_files',
-    () => runtime.search.search({ path, query, mode, maxResults }),
+    async (route) => runtime.search.search({
+      path: await resolveRouteExistingPath(runtime, route, path), query, mode, maxResults,
+    }),
     { path, query, mode, maxResults },
   ));
 
@@ -228,14 +249,15 @@ export function registerOperationalTools(
       routeContextId: z.string().uuid(),
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
-  }, async ({ command, cwd, timeoutMs, routeContextId }) => {
-    const resolvedCwd = cwd ?? runtime.workspace.roots[0]!;
-    return routeGuarded(
-      runtime, key, routeContextId, 'execute_command',
-      () => runtime.processes.execute(command, { cwd: resolvedCwd, timeoutMs }),
-      { command, cwd: resolvedCwd, timeoutMs },
-    );
-  });
+  }, async ({ command, cwd, timeoutMs, routeContextId }) => routeGuarded(
+    runtime, key, routeContextId, 'execute_command',
+    async (route) => {
+      const projectId = route.projectId ?? runtime.workspace.resolveProjectRoot();
+      const resolvedCwd = await resolveRouteExistingPath(runtime, route, cwd ?? projectId);
+      return runtime.processes.execute(command, { cwd: resolvedCwd, timeoutMs });
+    },
+    { command, ...(cwd ? { cwd } : {}), timeoutMs },
+  ));
 
   server.registerTool('start_process', {
     title: 'Start Process',
@@ -247,32 +269,36 @@ export function registerOperationalTools(
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
   }, async ({ command, cwd, routeContextId }) => {
-    const resolvedCwd = cwd ?? runtime.workspace.roots[0]!;
     const audit = new OperationalMemoryAudit(runtime, key);
     return routeGuarded(
       runtime, key, routeContextId, 'start_process',
-      () => runtime.processes.start(command, {
-        cwd: resolvedCwd,
-        owner: processOwner(runtime, key, routeContextId),
-        onTerminal: (snapshot) => audit.lifecycle(
-          routeContextId,
-          'start_process',
-          'terminal',
-          { sessionId: snapshot.sessionId },
-          snapshot,
-        ),
-      }),
-      { command, cwd: resolvedCwd },
+      async (route) => {
+        const projectId = route.projectId ?? runtime.workspace.resolveProjectRoot();
+        const resolvedCwd = await resolveRouteExistingPath(runtime, route, cwd ?? projectId);
+        return runtime.processes.start(command, {
+          cwd: resolvedCwd,
+          owner: processOwner(key, projectId, routeContextId),
+          onTerminal: (snapshot) => audit.lifecycle(
+            routeContextId,
+            'start_process',
+            'terminal',
+            { sessionId: snapshot.sessionId },
+            snapshot,
+          ),
+        });
+      },
+      { command, ...(cwd ? { cwd } : {}) },
     );
   });
 
   server.registerTool('read_process_output', {
     title: 'Read Process Output',
     description: 'Read the bounded stdout/stderr snapshot and state of an owned Agent Core process session.',
-    inputSchema: { sessionId: z.string().min(1) },
+    inputSchema: { sessionId: z.string().min(1), routeContextId: z.string().uuid().optional() },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-  }, async ({ sessionId }) => {
-    const owner = processOwner(runtime, key);
+  }, async ({ sessionId, routeContextId }) => {
+    const project = resolvedProjectScope(runtime, key, routeContextId);
+    const owner = processOwner(key, project.projectId);
     const audit = new OperationalMemoryAudit(runtime, key);
     try {
       const context = runtime.processes.sessionContext(sessionId, owner);
@@ -293,10 +319,11 @@ export function registerOperationalTools(
   server.registerTool('stop_process', {
     title: 'Stop Process',
     description: 'Stop an owned Agent Core-managed process session without requiring its original route to still be active.',
-    inputSchema: { sessionId: z.string().min(1) },
+    inputSchema: { sessionId: z.string().min(1), routeContextId: z.string().uuid().optional() },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-  }, async ({ sessionId }) => {
-    const owner = processOwner(runtime, key);
+  }, async ({ sessionId, routeContextId }) => {
+    const project = resolvedProjectScope(runtime, key, routeContextId);
+    const owner = processOwner(key, project.projectId);
     const audit = new OperationalMemoryAudit(runtime, key);
     try {
       const context = runtime.processes.sessionContext(sessionId, owner);
@@ -313,7 +340,11 @@ export function registerOperationalTools(
 
   server.registerTool('list_processes', {
     title: 'List Processes',
-    description: 'List only process sessions owned by the authenticated principal in the current project.',
+    description: 'List only process sessions owned by the authenticated principal in the resolved project.',
+    inputSchema: { routeContextId: z.string().uuid().optional() },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-  }, async () => textResult({ processes: runtime.processes.list(processOwner(runtime, key)) }));
+  }, async ({ routeContextId }) => guarded(async () => {
+    const project = resolvedProjectScope(runtime, key, routeContextId);
+    return { processes: runtime.processes.list(processOwner(key, project.projectId)) };
+  }));
 }

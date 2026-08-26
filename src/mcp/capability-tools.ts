@@ -13,8 +13,11 @@ function textResult(value: unknown) {
 
 function errorResult(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
+  const code = error instanceof Error && 'code' in error && typeof (error as { code?: unknown }).code === 'string'
+    ? (error as { code: string }).code
+    : undefined;
   return {
-    content: [{ type: 'text' as const, text: JSON.stringify({ error: message }, null, 2) }],
+    content: [{ type: 'text' as const, text: JSON.stringify({ error: { ...(code ? { code } : {}), message } }, null, 2) }],
     isError: true,
   };
 }
@@ -68,29 +71,23 @@ const continuityCaptureSchema = z.object({
   resumeTaskId: z.string().max(5_000).optional(),
 });
 
-const CONTINUATION_PHRASES = new Set([
-  'lanjut',
-  'lanjutkan',
-  'lanjutkan task',
-  'lanjutkan tugas',
-  'lanjutkan pekerjaan',
-  'continue',
-  'continue task',
-  'continue work',
-  'resume',
-  'resume task',
-  'resume work',
+const CONTINUATION_EXACT_PHRASES = new Set([
   'pick up where we left off',
 ]);
+const CONTINUATION_PATTERNS = [
+  /^(?:(?:silakan|silahkan|tolong)\s+)?(?:lanjut|lanjutkan|teruskan)(?:\s+lagi)?(?:\s+(?:task|tugas|pekerjaan)(?:\s+sebelumnya)?)?(?:\s+(?:hingga|sampai)\s+selesai)?$/,
+  /^(?:please\s+)?(?:continue(?:\s+from)?|resume)(?:\s+the)?(?:\s+(?:previous|prior))?(?:\s+(?:task|work))?$/,
+] as const;
 
 function isKnownContinuationPhrase(task: string): boolean {
   const normalized = task
     .normalize('NFKC')
     .trim()
     .toLowerCase()
-    .replace(/[.!?]+$/g, '')
+    .replace(/[.!?,;:]+$/g, '')
     .replace(/\s+/g, ' ');
-  return CONTINUATION_PHRASES.has(normalized);
+  return CONTINUATION_EXACT_PHRASES.has(normalized)
+    || CONTINUATION_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
 function compareTaskCandidates(left: ContinuityTaskRecord, right: ContinuityTaskRecord): number {
@@ -148,14 +145,24 @@ export function registerCapabilityTools(
     inputSchema: {
       task: z.string().min(1).max(20_000),
       context: z.string().max(20_000).optional(),
+      projectRoot: z.string().min(1).max(5_000).optional(),
       continuity: continuityCaptureSchema.optional(),
     },
     annotations: routeAnnotations,
-  }, async ({ task, context, continuity }) => {
+  }, async ({ task, context, projectRoot, continuity }) => {
+    let projectId: string;
+    try {
+      projectId = runtime.workspace.resolveProjectRoot({
+        explicitRoot: projectRoot,
+        texts: [task, context],
+      });
+    } catch (error) {
+      return errorResult(error);
+    }
     const reservation = runtime.routes.reserve();
     const scope = {
       principalId: key.id,
-      projectId: runtime.workspace.roots[0],
+      projectId,
     };
     let memoryStatus: 'disabled' | 'healthy' | 'degraded' = runtime.memory.config.enabled ? 'healthy' : 'disabled';
     let continuityStatus: ContinuityRouteStatus = runtime.memory.config.enabled ? 'healthy' : 'disabled';
@@ -166,6 +173,14 @@ export function registerCapabilityTools(
     let continuityResumeCandidates: ReturnType<typeof candidateView>[] = [];
 
     if (runtime.memory.config.enabled) {
+      try {
+        await runtime.memory.reconcileContinuity(
+          scope,
+          runtime.routes.activeRouteContextIds(key.id, projectId),
+        );
+      } catch {
+        continuityStatus = 'degraded';
+      }
       const preflightPromise = runtime.memory.preflight({
         scope,
         routeContextId: reservation.routeContextId,
@@ -232,6 +247,7 @@ export function registerCapabilityTools(
     const plan = runtime.router.route(task, context ?? '');
     const route = runtime.routes.create(key.id, plan, {
       reservation,
+      projectId,
       ...(preflight ? {
         memorySnapshot: {
           memoryContextId: preflight.contextId,
@@ -252,8 +268,23 @@ export function registerCapabilityTools(
     });
 
     const memorySummary = preflight?.recalled ?? [];
+    const memoryDirective = {
+      inspectionRequired: memorySummary.length > 0
+        || (preflight?.blockingGuardrails.length ?? 0) > 0
+        || (preflight?.priorFailures.length ?? 0) > 0
+        || (preflight?.relatedDecisions.length ?? 0) > 0,
+      hasBlockingGuardrails: (preflight?.blockingGuardrails.length ?? 0) > 0,
+      hasPriorFailures: (preflight?.priorFailures.length ?? 0) > 0,
+      hasRelatedDecisions: (preflight?.relatedDecisions.length ?? 0) > 0,
+    };
+    const continuityDirective = {
+      inspectionRequired: continuitySnapshot !== null,
+      ambiguousResume: continuityStatus === 'ambiguous',
+      resumableCandidateCount: continuityResumeCandidates.length,
+    };
     return textResult({
       routeContextId: route.routeContextId,
+      projectId,
       tier: route.tier,
       mode: route.mode,
       domain: route.domain,
@@ -273,12 +304,14 @@ export function registerCapabilityTools(
       relatedDecisions: preflight?.relatedDecisions ?? [],
       memoryConfidence: memoryConfidence(memorySummary),
       memorySnapshotHash: preflight?.snapshotHash ?? null,
+      memoryDirective,
       continuityStatus,
       continuityTurnId,
       continuityTaskId,
       continuitySnapshot,
       continuitySnapshotHash: continuitySnapshot?.snapshotHash ?? null,
       continuityResumeCandidates,
+      continuityDirective,
       expiresAt: route.expiresAt,
     });
   });

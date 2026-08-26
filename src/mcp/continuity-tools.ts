@@ -9,6 +9,7 @@ import {
 } from '../continuity/types.js';
 import { AgentCoreRouteError } from '../runtime/route-context-store.js';
 import type { RuntimeServices } from '../runtime/services.js';
+import { resolvedProjectScope } from './project-scope.js';
 
 export const CONTINUITY_TOOL_NAMES = [
   'task_checkpoint',
@@ -63,11 +64,8 @@ const checkpointAnnotations = {
 const checkpointStatus = z.enum(['running', 'blocked', 'deferred', 'completed', 'failed', 'cancelled', 'interrupted']);
 const evidenceType = z.enum(['tool', 'file', 'test', 'log', 'hash', 'health']);
 
-function scope(runtime: RuntimeServices, key: VerifiedKey) {
-  return {
-    principalId: key.id,
-    projectId: runtime.workspace.roots[0],
-  };
+function scope(runtime: RuntimeServices, key: VerifiedKey, routeContextId?: string) {
+  return resolvedProjectScope(runtime, key, routeContextId);
 }
 
 function requireContinuityRoute(runtime: RuntimeServices, key: VerifiedKey, routeContextId: string) {
@@ -107,6 +105,17 @@ export function registerContinuityTools(server: McpServer, runtime: RuntimeServi
         role: z.string().min(1).max(5_000),
         hash: z.string().max(5_000).optional(),
       })).max(100).optional(),
+      outcomes: z.array(z.object({
+        key: z.string().min(1).max(5_000),
+        value: z.string().min(1).max(20_000),
+        evidenceRefs: z.array(z.string().min(1).max(5_000)).min(1).max(100),
+      })).max(100).optional(),
+      constraints: z.array(z.object({
+        key: z.string().min(1).max(5_000),
+        value: z.string().min(1).max(20_000),
+        reason: z.string().min(1).max(20_000),
+        enforcement: z.enum(['soft', 'hard']),
+      })).max(100).optional(),
       blockers: z.array(z.object({
         code: z.string().min(1).max(5_000),
         detail: z.string().min(1).max(20_000),
@@ -124,7 +133,7 @@ export function registerContinuityTools(server: McpServer, runtime: RuntimeServi
       projectTerminal: z.boolean().optional(),
     },
     annotations: checkpointAnnotations,
-  }, async ({ routeContextId, status, summary, evidence, decisions, artifacts, blockers, deferred, nextCandidates, projectTerminal }) => guarded(async () => {
+  }, async ({ routeContextId, status, summary, evidence, decisions, artifacts, outcomes, constraints, blockers, deferred, nextCandidates, projectTerminal }) => guarded(async () => {
     const route = requireContinuityRoute(runtime, key, routeContextId);
     const input = normalizeContinuityCheckpointInput({
       routeContextId,
@@ -133,12 +142,14 @@ export function registerContinuityTools(server: McpServer, runtime: RuntimeServi
       evidence,
       decisions,
       artifacts,
+      outcomes,
+      constraints,
       blockers,
       deferred,
       nextCandidates,
       projectTerminal,
     } as ContinuityCheckpointInput);
-    const currentScope = scope(runtime, key);
+    const currentScope = scope(runtime, key, routeContextId);
     const checkpoint = await runtime.memory.checkpointContinuity(
       currentScope,
       route.continuityTaskId!,
@@ -168,6 +179,8 @@ export function registerContinuityTools(server: McpServer, runtime: RuntimeServi
       promoted: {
         decisions: promoted.decisions,
         artifacts: promoted.artifacts,
+        outcomes: promoted.outcomes,
+        constraints: promoted.constraints,
         failures: promoted.failures,
       },
       promotedMemoryIds: promoted.memoryIds,
@@ -179,9 +192,10 @@ export function registerContinuityTools(server: McpServer, runtime: RuntimeServi
   server.registerTool('continuity_status', {
     title: 'Continuity Status',
     description: 'Return current principal/project continuity health and bounded deterministic snapshot.',
+    inputSchema: { routeContextId: z.string().uuid().optional() },
     annotations: readOnlyAnnotations,
-  }, async () => guarded(async () => {
-    const currentScope = scope(runtime, key);
+  }, async ({ routeContextId }) => guarded(async () => {
+    const currentScope = scope(runtime, key, routeContextId);
     const memory = await runtime.memory.status(currentScope);
     if (!memory.enabled) return { enabled: false, healthy: false, memory, snapshot: null };
     let snapshot = await runtime.memory.getContinuitySnapshot(currentScope);
@@ -199,10 +213,10 @@ export function registerContinuityTools(server: McpServer, runtime: RuntimeServi
   server.registerTool('continuity_get_task', {
     title: 'Continuity Get Task',
     description: 'Return one continuity task owned by the authenticated principal in the current project.',
-    inputSchema: { taskId: z.string().uuid() },
+    inputSchema: { taskId: z.string().uuid(), routeContextId: z.string().uuid().optional() },
     annotations: readOnlyAnnotations,
-  }, async ({ taskId }) => guarded(async () => {
-    const task = await runtime.memory.getContinuityTask(scope(runtime, key), taskId);
+  }, async ({ taskId, routeContextId }) => guarded(async () => {
+    const task = await runtime.memory.getContinuityTask(scope(runtime, key, routeContextId), taskId);
     if (!task) throw new ContinuityToolError('CONTINUITY_TASK_NOT_FOUND', 'Continuity task was not found in authenticated scope');
     return task;
   }));
@@ -210,7 +224,12 @@ export function registerContinuityTools(server: McpServer, runtime: RuntimeServi
   server.registerTool('continuity_frontier', {
     title: 'Continuity Frontier',
     description: 'Return the bounded deterministic next-work frontier for the authenticated principal and current project.',
-    inputSchema: { limit: z.number().int().min(1).max(100).default(5) },
+    inputSchema: {
+      limit: z.number().int().min(1).max(100).default(5),
+      routeContextId: z.string().uuid().optional(),
+    },
     annotations: readOnlyAnnotations,
-  }, async ({ limit }) => guarded(() => runtime.memory.listContinuityFrontier(scope(runtime, key), limit)));
+  }, async ({ limit, routeContextId }) => guarded(() => runtime.memory.listContinuityFrontier(
+    scope(runtime, key, routeContextId), limit,
+  )));
 }

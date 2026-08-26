@@ -103,6 +103,7 @@ export async function readLatestMemoryBackup(dbPath: string): Promise<MemoryBack
       || typeof parsed.createdAt !== 'number'
       || typeof parsed.reason !== 'string'
     ) return null;
+    if (!await fileExists(parsed.backupPath)) return null;
     return {
       backupPath: parsed.backupPath,
       createdAt: parsed.createdAt,

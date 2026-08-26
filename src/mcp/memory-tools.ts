@@ -9,6 +9,7 @@ import {
   type MemoryScope,
 } from '../memory/types.js';
 import type { RuntimeServices } from '../runtime/services.js';
+import { resolvedProjectScope } from './project-scope.js';
 
 export const MEMORY_TOOL_NAMES = [
   'memory_status',
@@ -75,14 +76,19 @@ const jsonValue = z.union([
   z.record(z.string(), z.unknown()),
 ]);
 const optionalScope = {
+  routeContextId: z.string().uuid().optional(),
   threadId: z.string().min(1).max(1000).optional(),
   resourceId: z.string().min(1).max(1000).optional(),
 };
 
-function scope(runtime: RuntimeServices, key: VerifiedKey, value: { threadId?: string; resourceId?: string }): MemoryScope {
+function scope(
+  runtime: RuntimeServices,
+  key: VerifiedKey,
+  value: { routeContextId?: string; threadId?: string; resourceId?: string },
+): MemoryScope {
+  const project = resolvedProjectScope(runtime, key, value.routeContextId);
   return {
-    principalId: key.id,
-    projectId: runtime.workspace.roots[0],
+    ...project,
     ...(value.threadId ? { threadId: value.threadId } : {}),
     ...(value.resourceId ? { resourceId: value.resourceId } : {}),
   };
@@ -92,8 +98,9 @@ export function registerMemoryTools(server: McpServer, runtime: RuntimeServices,
   server.registerTool('memory_status', {
     title: 'Memory Status',
     description: 'Report deterministic memory DB/schema health and principal/project-scoped counts.',
+    inputSchema: { routeContextId: z.string().uuid().optional() },
     annotations: readOnlyAnnotations,
-  }, async () => guarded(() => runtime.memory.status(scope(runtime, key, {}))));
+  }, async ({ routeContextId }) => guarded(() => runtime.memory.status(scope(runtime, key, { routeContextId }))));
 
   server.registerTool('memory_search', {
     title: 'Memory Search',
@@ -106,8 +113,8 @@ export function registerMemoryTools(server: McpServer, runtime: RuntimeServices,
       ...optionalScope,
     },
     annotations: readOnlyAnnotations,
-  }, async ({ query, includeHistory, limit, characterBudget, threadId, resourceId }) => guarded(() => runtime.memory.search({
-    scope: scope(runtime, key, { threadId, resourceId }),
+  }, async ({ query, includeHistory, limit, characterBudget, routeContextId, threadId, resourceId }) => guarded(() => runtime.memory.search({
+    scope: scope(runtime, key, { routeContextId, threadId, resourceId }),
     query,
     includeHistory,
     limit,
@@ -122,8 +129,8 @@ export function registerMemoryTools(server: McpServer, runtime: RuntimeServices,
       ...optionalScope,
     },
     annotations: readOnlyAnnotations,
-  }, async ({ memoryId, threadId, resourceId }) => guarded(async () => {
-    const result = await runtime.memory.getWithProvenance(scope(runtime, key, { threadId, resourceId }), memoryId);
+  }, async ({ memoryId, routeContextId, threadId, resourceId }) => guarded(async () => {
+    const result = await runtime.memory.getWithProvenance(scope(runtime, key, { routeContextId, threadId, resourceId }), memoryId);
     if (!result) throw new Error('MEMORY_NOT_FOUND');
     return result;
   }));
@@ -149,8 +156,8 @@ export function registerMemoryTools(server: McpServer, runtime: RuntimeServices,
       ...optionalScope,
     },
     annotations: writeAnnotations,
-  }, async ({ canonicalKey, kind, value, importance, pinned, enforcement, sourceType, sourceRef, metadata, explicitRelations, threadId, resourceId }) => guarded(() => runtime.memory.commit({
-    scope: scope(runtime, key, { threadId, resourceId }),
+  }, async ({ canonicalKey, kind, value, importance, pinned, enforcement, sourceType, sourceRef, metadata, explicitRelations, routeContextId, threadId, resourceId }) => guarded(() => runtime.memory.commit({
+    scope: scope(runtime, key, { routeContextId, threadId, resourceId }),
     canonicalKey,
     kind,
     value: value as MemoryCommitRequest['value'],
@@ -175,8 +182,8 @@ export function registerMemoryTools(server: McpServer, runtime: RuntimeServices,
       ...optionalScope,
     },
     annotations: writeAnnotations,
-  }, async ({ memoryId, value, sourceType, sourceRef, metadata, threadId, resourceId }) => guarded(() => runtime.memory.revise({
-    scope: scope(runtime, key, { threadId, resourceId }),
+  }, async ({ memoryId, value, sourceType, sourceRef, metadata, routeContextId, threadId, resourceId }) => guarded(() => runtime.memory.revise({
+    scope: scope(runtime, key, { routeContextId, threadId, resourceId }),
     memoryId,
     value: value as MemoryCommitRequest['value'],
     sourceType: sourceType ?? 'primary_ai',
@@ -193,8 +200,8 @@ export function registerMemoryTools(server: McpServer, runtime: RuntimeServices,
       ...optionalScope,
     },
     annotations: forgetAnnotations,
-  }, async ({ memoryId, reason, threadId, resourceId }) => guarded(async () => {
-    const memoryScope = scope(runtime, key, { threadId, resourceId });
+  }, async ({ memoryId, reason, routeContextId, threadId, resourceId }) => guarded(async () => {
+    const memoryScope = scope(runtime, key, { routeContextId, threadId, resourceId });
     await runtime.memory.forget(memoryScope, memoryId, reason);
     const memory = await runtime.memory.getMemory(memoryScope, memoryId);
     if (!memory) throw new Error('MEMORY_NOT_FOUND');
@@ -210,8 +217,8 @@ export function registerMemoryTools(server: McpServer, runtime: RuntimeServices,
       ...optionalScope,
     },
     annotations: readOnlyAnnotations,
-  }, async ({ memoryId, query, threadId, resourceId }) => guarded(async () => {
-    const result = await runtime.memory.explain(scope(runtime, key, { threadId, resourceId }), memoryId, query);
+  }, async ({ memoryId, query, routeContextId, threadId, resourceId }) => guarded(async () => {
+    const result = await runtime.memory.explain(scope(runtime, key, { routeContextId, threadId, resourceId }), memoryId, query);
     if (!result) throw new Error('MEMORY_NOT_FOUND');
     return result;
   }));
@@ -224,8 +231,8 @@ export function registerMemoryTools(server: McpServer, runtime: RuntimeServices,
       ...optionalScope,
     },
     annotations: readOnlyAnnotations,
-  }, async ({ limit, threadId, resourceId }) => guarded(() => runtime.memory.export(
-    scope(runtime, key, { threadId, resourceId }),
+  }, async ({ limit, routeContextId, threadId, resourceId }) => guarded(() => runtime.memory.export(
+    scope(runtime, key, { routeContextId, threadId, resourceId }),
     limit,
   )));
 }

@@ -150,6 +150,17 @@ describe('continuity checkpoint MCP tools', () => {
       ],
       decisions: [{ key: 'execution.mode', value: 'deterministic', reason: 'Evidence must be reproducible.' }],
       artifacts: [{ path: 'F:\\Projects\\Agent-Core\\docs\\result.md', role: 'result', hash: 'abc123' }],
+      outcomes: [{
+        key: 'build.result',
+        value: 'Build verified locally with factual evidence.',
+        evidenceRefs: ['tests/example.test.ts', 'artifact.sha256'],
+      }],
+      constraints: [{
+        key: 'release.ci',
+        value: 'Never use GitHub Actions or CI for this project.',
+        reason: 'Local verification is authoritative.',
+        enforcement: 'hard',
+      }],
       deferred: [{ title: 'Later enhancement', reason: 'Outside current task.' }],
       nextCandidates: [
         { title: 'Candidate A', rationale: 'Next independent step.', priority: 2 },
@@ -159,7 +170,9 @@ describe('continuity checkpoint MCP tools', () => {
     expect(completed.raw.result.isError).not.toBe(true);
     expect(completed.result.taskStatus).toBe('completed');
     expect(completed.result.turnState).toBe('closed');
-    expect(completed.result.promoted).toMatchObject({ decisions: 1, artifacts: 1, failures: 0 });
+    expect(completed.result.promoted).toMatchObject({
+      decisions: 1, artifacts: 1, outcomes: 1, constraints: 1, failures: 0,
+    });
 
     const task = await f.runtime.memory.getContinuityTask(f.scopeA, routed.continuityTaskId);
     expect(task?.status).toBe('completed');
@@ -178,10 +191,37 @@ describe('continuity checkpoint MCP tools', () => {
         ORDER BY kind`).all(f.scopeA.principalId, f.root) as Array<{ kind: string }>).map((row) => row.kind);
       expect(kinds).toContain('decision');
       expect(kinds).toContain('artifact');
+      expect(kinds).toContain('project_state');
+      expect(kinds).toContain('guardrail');
       const checkpoint = db.prepare('SELECT summary_json, evidence_json FROM continuity_checkpoints WHERE id = ?')
         .get(completed.result.checkpointId) as any;
       expect(checkpoint.summary_json).toContain('Later enhancement');
       expect(checkpoint.evidence_json).toContain('tests/example.test.ts');
+    } finally {
+      db.close();
+    }
+  });
+
+  it('does not promote generic successful summary prose without explicit structured outcome facts', async () => {
+    const f = await fixture('no-summary-spam');
+    const routed = await route(f, 'Generic summary should stay in continuity only');
+    const completed = await call(f.baseUrl, f.principalA.key, 'task_checkpoint', {
+      routeContextId: routed.routeContextId,
+      status: 'completed',
+      summary: 'This prose is useful for continuity but is not an explicit durable memory fact.',
+      projectTerminal: true,
+    });
+    expect(completed.raw.result.isError).not.toBe(true);
+    expect(completed.result.promoted).toMatchObject({
+      decisions: 0, artifacts: 0, outcomes: 0, constraints: 0, failures: 0,
+    });
+
+    const db = new DatabaseSync(f.runtime.memory.config.dbPath, { readOnly: true });
+    try {
+      const items = db.prepare(`SELECT count(*) AS count FROM memory_items
+        WHERE principal_id = ? AND IFNULL(project_id, '') = ?`)
+        .get(f.scopeA.principalId, f.root) as any;
+      expect(Number(items.count)).toBe(0);
     } finally {
       db.close();
     }

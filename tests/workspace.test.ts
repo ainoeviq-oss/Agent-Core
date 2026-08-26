@@ -45,4 +45,51 @@ describe('WorkspacePolicy', () => {
     await expect(policy.resolveTarget(path.join(root, 'nested', 'new', 'file.txt')))
       .resolves.toBe(path.join(root, 'nested', 'new', 'file.txt'));
   });
+
+  it('resolves a single configured project without guessing from array position', async () => {
+    const root = await tempRoot('agent-core-project-single-');
+    const policy = new WorkspacePolicy([root]);
+    expect(policy.resolveProjectRoot()).toBe(root);
+  });
+
+  it('resolves the exact project from an explicit project root or bounded task/context path evidence', async () => {
+    const container = await tempRoot('agent-core-project-multi-');
+    const projectA = path.join(container, 'project-a');
+    const projectB = path.join(container, 'project-b');
+    await Promise.all([mkdir(projectA), mkdir(projectB)]);
+    const policy = new WorkspacePolicy([projectA, projectB]);
+
+    expect(policy.resolveProjectRoot({ explicitRoot: projectB })).toBe(projectB);
+    expect(policy.resolveProjectRoot({ texts: [`Please work only in ${projectB} for this task.`] })).toBe(projectB);
+    expect(policy.resolveProjectRoot({ candidatePaths: [path.join(projectA, 'src', 'index.ts')] })).toBe(projectA);
+  });
+
+  it('fails closed when multiple project roots are configured but no unique project evidence exists', async () => {
+    const container = await tempRoot('agent-core-project-ambiguous-');
+    const projectA = path.join(container, 'project-a');
+    const projectB = path.join(container, 'project-b');
+    await Promise.all([mkdir(projectA), mkdir(projectB)]);
+    const policy = new WorkspacePolicy([projectA, projectB]);
+
+    expect(() => policy.resolveProjectRoot()).toThrow(/WORKSPACE_PROJECT_AMBIGUOUS/);
+    expect(() => policy.resolveProjectRoot({ texts: ['work on the project'] })).toThrow(/WORKSPACE_PROJECT_AMBIGUOUS/);
+    expect(() => policy.resolveProjectRoot({ candidatePaths: [projectA, projectB] })).toThrow(/WORKSPACE_PROJECT_AMBIGUOUS/);
+  });
+
+  it('enforces the routed project boundary even when another allowed root is globally accessible', async () => {
+    const container = await tempRoot('agent-core-project-boundary-');
+    const projectA = path.join(container, 'project-a');
+    const projectB = path.join(container, 'project-b');
+    await Promise.all([mkdir(projectA), mkdir(projectB)]);
+    await writeFile(path.join(projectA, 'a.txt'), 'A');
+    await writeFile(path.join(projectB, 'b.txt'), 'B');
+    const policy = new WorkspacePolicy([projectA, projectB]);
+
+    await expect(policy.resolveExistingInProject(projectA, path.join(projectA, 'a.txt')))
+      .resolves.toBe(path.join(projectA, 'a.txt'));
+    await expect(policy.resolveExistingInProject(projectA, path.join(projectB, 'b.txt')))
+      .rejects.toThrow(/outside routed project/i);
+    await expect(policy.resolveTargetInProject(projectB, path.join(projectA, 'new.txt')))
+      .rejects.toThrow(/outside routed project/i);
+  });
 });

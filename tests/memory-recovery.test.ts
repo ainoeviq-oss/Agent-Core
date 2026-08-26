@@ -254,6 +254,37 @@ describe('memory persistence, backup, restore, and crash recovery', () => {
     expect(exported.events.some((event) => event.eventId === 'crash-uncommitted-event')).toBe(false);
   });
 
+  it('marks the memory lifecycle degraded when an integrity probe fails after a healthy open', async () => {
+    const f = await fixture();
+    const healthy = await f.service.status(f.scope);
+    expect(healthy.healthy).toBe(true);
+    expect(f.service.currentState).toBe('healthy');
+
+    const components = (f.service as unknown as { components: { client: { integrity: () => Promise<{ ok: boolean; result: string }> } } }).components;
+    components.client.integrity = async () => ({ ok: false, result: 'disk I/O error' });
+
+    const degraded = await f.service.status(f.scope);
+    expect(degraded).toMatchObject({ healthy: false, integrity: 'disk I/O error' });
+    expect(f.service.currentState).toBe('degraded');
+    await expect(f.service.search({ scope: f.scope, query: 'must fail closed' })).rejects.toThrow(/MEMORY_DEGRADED/);
+  });
+
+  it('ignores stale backup metadata when the recorded backup file is missing', async () => {
+    const f = await fixture();
+    const backupDir = path.join(path.dirname(f.dbPath), 'backups');
+    await (await import('node:fs/promises')).mkdir(backupDir, { recursive: true });
+    await (await import('node:fs/promises')).writeFile(
+      path.join(backupDir, 'last-backup.json'),
+      `${JSON.stringify({ backupPath: path.join(backupDir, 'missing.sqlite'), createdAt: Date.now(), reason: 'stale-test' })}\n`,
+      'utf8',
+    );
+
+    const status = await f.service.status(f.scope);
+    expect(status.healthy).toBe(true);
+    expect(status.lastBackupPath).toBeUndefined();
+    expect(status.lastBackupAt).toBeUndefined();
+  });
+
   it('fails memory closed with degraded integrity status for a corrupt database file', async () => {
     const f = await fixture();
     await f.service.close();

@@ -4,8 +4,10 @@ import { createWriteStream } from 'node:fs';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { resolveShellInvocation } from '../runtime/platform-shell.js';
+import type { WorkspacePolicy } from '../runtime/workspace.js';
 import type { ValidatedExecutionNode } from './dag.js';
-import type { ExecutionLogStore, ExecutionResultMarker } from './log-store.js';
+import { verifyExecutionArtifacts, type ExecutionEvidenceManifest } from './evidence.js';
+import type { ExecutionLogStore, ExecutionResultMarker, ExecutionResultState } from './log-store.js';
 
 export interface ExecutionRunHandle {
   pid: number | null;
@@ -29,6 +31,21 @@ function createEvidenceTransform(evidence: StreamEvidence): Transform {
   });
 }
 
+async function verifyDeclaredEvidence(
+  workspace: WorkspacePolicy,
+  node: ValidatedExecutionNode,
+): Promise<ExecutionEvidenceManifest> {
+  try {
+    return await verifyExecutionArtifacts(workspace, node.expectedArtifacts);
+  } catch {
+    return {
+      verification: 'failed',
+      artifacts: [],
+      error: 'Declared execution artifact verification failed safely',
+    };
+  }
+}
+
 function spawnCommand(command: string, cwd: string): ChildProcessWithoutNullStreams {
   const invocation = resolveShellInvocation(command);
   return spawn(invocation.executable, invocation.args, {
@@ -43,14 +60,17 @@ function terminalState(
   timedOut: boolean,
   exitCode: number | null,
   error: Error | undefined,
-): ExecutionResultMarker['state'] {
+): ExecutionResultState {
   if (requested) return requested;
   if (timedOut || error || exitCode !== 0) return 'failed';
   return 'succeeded';
 }
 
 export class ExecutionCommandRunner {
-  constructor(readonly logs: ExecutionLogStore) {}
+  constructor(
+    readonly logs: ExecutionLogStore,
+    readonly workspace: WorkspacePolicy,
+  ) {}
 
   async start(
     runId: string,
@@ -104,14 +124,12 @@ export class ExecutionCommandRunner {
           : new Error(String(pipelineFailure.reason));
       }
       const finishedAt = Date.now();
-      const state = terminalState(requestedState, timedOut, terminal.exitCode, processError);
-      const marker: ExecutionResultMarker = {
-        version: 1,
+      const processState = terminalState(requestedState, timedOut, terminal.exitCode, processError);
+      const common = {
         runId,
         nodeId: node.id,
         attemptId,
         attemptNo,
-        state,
         startedAt,
         finishedAt,
         exitCode: terminal.exitCode,
@@ -120,12 +138,37 @@ export class ExecutionCommandRunner {
         stderrBytes: stderrEvidence.bytes,
         stdoutSha256: stdoutEvidence.hash.digest('hex'),
         stderrSha256: stderrEvidence.hash.digest('hex'),
-        ...((timedOut || processError) ? {
-          error: timedOut
-            ? `Execution timed out after ${node.timeoutMs} ms`
-            : processError!.message,
-        } : {}),
       };
+      const processErrorText = timedOut
+        ? `Execution timed out after ${node.timeoutMs} ms`
+        : processError?.message;
+      let marker: ExecutionResultMarker;
+      if (node.expectedArtifacts.length > 0) {
+        const evidence = await verifyDeclaredEvidence(this.workspace, node);
+        const evidenceState = evidence.verification === 'verified' ? 'verified' : 'failed';
+        const state: ExecutionResultState = processState === 'succeeded' && evidenceState === 'failed'
+          ? 'failed'
+          : processState;
+        marker = {
+          version: 2,
+          ...common,
+          state,
+          processState,
+          evidenceState,
+          evidence,
+          ...(processErrorText ? { error: processErrorText } : {}),
+          ...(!processErrorText && processState === 'succeeded' && evidenceState === 'failed'
+            ? { error: 'Required execution artifact evidence verification failed' }
+            : {}),
+        };
+      } else {
+        marker = {
+          version: 1,
+          ...common,
+          state: processState,
+          ...(processErrorText ? { error: processErrorText } : {}),
+        };
+      }
       await this.logs.writeResultAtomic(marker);
       return marker;
     })();

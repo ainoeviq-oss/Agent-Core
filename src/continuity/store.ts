@@ -63,6 +63,11 @@ export interface ContinuityCheckpointResult {
   snapshotHash: string;
 }
 
+export interface ContinuityReconcileResult {
+  interruptedTurnIds: string[];
+  interruptedTaskIds: string[];
+}
+
 type TaskRow = {
   id: string;
   principal_id: string;
@@ -220,6 +225,71 @@ function eventOperation(
 export class ContinuityStore {
   constructor(readonly client: MemoryWorkerClient) {}
 
+  async reconcileOpenTurns(
+    scope: MemoryScope,
+    activeRouteContextIds: readonly string[],
+  ): Promise<ContinuityReconcileResult> {
+    assertScope(scope);
+    const active = new Set(activeRouteContextIds.filter((value) => typeof value === 'string' && value.trim()));
+    const openTurns = await this.client.query<{ id: string; task_id: string; route_context_id: string }>(
+      `SELECT id, task_id, route_context_id
+         FROM continuity_turns
+        WHERE principal_id = ? AND IFNULL(project_id, '') = ? AND state = 'open'
+        ORDER BY created_at ASC, id COLLATE BINARY
+        LIMIT 1000`,
+      [scope.principalId, scopeProject(scope)],
+    );
+    const stale = openTurns.filter((turn) => !active.has(turn.route_context_id));
+    if (stale.length === 0) return { interruptedTurnIds: [], interruptedTaskIds: [] };
+
+    const now = Date.now();
+    const operations: MemoryWorkerSqlOperation[] = [];
+    const staleTaskIds = new Set(stale.map((turn) => turn.task_id));
+    const activeTaskIds = new Set(openTurns.filter((turn) => active.has(turn.route_context_id)).map((turn) => turn.task_id));
+    const interruptedTaskIds: string[] = [];
+
+    for (const turn of stale) {
+      operations.push({
+        kind: 'run',
+        sql: `UPDATE continuity_turns SET state = 'interrupted', closed_at = ?
+              WHERE id = ? AND principal_id = ? AND IFNULL(project_id, '') = ? AND state = 'open'`,
+        params: [now, turn.id, scope.principalId, scopeProject(scope)],
+      });
+      operations.push(eventOperation(scope, 'continuity.turn_interrupted', turn.id, 'continuity turn interrupted during route reconciliation', {
+        turnId: turn.id,
+        taskId: turn.task_id,
+        routeContextId: turn.route_context_id,
+        reason: 'route_context_not_active',
+      }, now));
+    }
+
+    for (const taskId of [...staleTaskIds].sort((left, right) => left.localeCompare(right))) {
+      if (activeTaskIds.has(taskId)) continue;
+      const task = await this.findTask(scope, taskId);
+      if (!task || isTerminalContinuityTaskStatus(task.status) || task.status === 'interrupted') continue;
+      assertTransition(task.status, 'interrupted');
+      operations.push({
+        kind: 'run',
+        sql: `UPDATE continuity_tasks SET status = 'interrupted', updated_at = ?, completed_at = NULL
+              WHERE id = ? AND principal_id = ? AND IFNULL(project_id, '') = ?`,
+        params: [now, taskId, scope.principalId, scopeProject(scope)],
+      });
+      operations.push(eventOperation(scope, 'continuity.task_state_changed', taskId, 'continuity task interrupted during route reconciliation', {
+        taskId,
+        from: task.status,
+        to: 'interrupted',
+        reason: 'no_active_route_context',
+      }, now + 1));
+      interruptedTaskIds.push(taskId);
+    }
+
+    await this.client.transaction(operations);
+    return {
+      interruptedTurnIds: stale.map((turn) => turn.id),
+      interruptedTaskIds,
+    };
+  }
+
   async beginTurn(
     scope: MemoryScope,
     routeContextId: string,
@@ -365,6 +435,8 @@ export class ContinuityStore {
       evidence: normalized.evidence ?? [],
       decisions: normalized.decisions ?? [],
       artifacts: normalized.artifacts ?? [],
+      outcomes: normalized.outcomes ?? [],
+      constraints: normalized.constraints ?? [],
       blockers: normalized.blockers ?? [],
       deferred: normalized.deferred ?? [],
       nextCandidates: normalized.nextCandidates ?? [],
@@ -375,6 +447,8 @@ export class ContinuityStore {
       summary: normalized.summary,
       decisions: normalized.decisions ?? [],
       artifacts: normalized.artifacts ?? [],
+      outcomes: normalized.outcomes ?? [],
+      constraints: normalized.constraints ?? [],
       blockers: normalized.blockers ?? [],
       deferred: normalized.deferred ?? [],
       nextCandidates: normalized.nextCandidates ?? [],

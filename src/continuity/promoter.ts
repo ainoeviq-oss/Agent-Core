@@ -9,6 +9,8 @@ export interface ContinuityMemoryWriter {
 export interface ContinuityPromotionResult {
   decisions: number;
   artifacts: number;
+  outcomes: number;
+  constraints: number;
   failures: number;
   memoryIds: string[];
 }
@@ -43,7 +45,14 @@ export class ContinuityPromoter {
     checkpointId: string,
     input: ContinuityCheckpointInput,
   ): Promise<ContinuityPromotionResult> {
-    const result: ContinuityPromotionResult = { decisions: 0, artifacts: 0, failures: 0, memoryIds: [] };
+    const result: ContinuityPromotionResult = {
+      decisions: 0,
+      artifacts: 0,
+      outcomes: 0,
+      constraints: 0,
+      failures: 0,
+      memoryIds: [],
+    };
 
     for (const decision of input.decisions ?? []) {
       const committed = await this.writer.commit({
@@ -86,6 +95,52 @@ export class ContinuityPromoter {
         revisionAuthority: 'structured_state',
       });
       result.artifacts += 1;
+      result.memoryIds.push(committed.memoryId);
+    }
+
+    for (const outcome of input.outcomes ?? []) {
+      const committed = await this.writer.commit({
+        scope,
+        canonicalKey: `continuity.outcome.${taskId}.${digest(outcome.key)}`,
+        kind: 'project_state',
+        value: {
+          taskId,
+          checkpointId,
+          key: outcome.key,
+          value: outcome.value,
+          evidenceRefs: outcome.evidenceRefs,
+          verified: true,
+        },
+        importance: 0.82,
+        sourceType: 'continuity_checkpoint',
+        sourceRef: checkpointId,
+        metadata: sourceMetadata(taskId, checkpointId, input.routeContextId),
+        revisionAuthority: 'structured_state',
+      });
+      result.outcomes += 1;
+      result.memoryIds.push(committed.memoryId);
+    }
+
+    for (const constraint of input.constraints ?? []) {
+      const committed = await this.writer.commit({
+        scope,
+        canonicalKey: `continuity.constraint.${taskId}.${digest(constraint.key)}`,
+        kind: 'guardrail',
+        value: {
+          taskId,
+          checkpointId,
+          key: constraint.key,
+          value: constraint.value,
+          reason: constraint.reason,
+        },
+        importance: constraint.enforcement === 'hard' ? 1 : 0.88,
+        enforcement: constraint.enforcement,
+        sourceType: 'continuity_checkpoint',
+        sourceRef: checkpointId,
+        metadata: sourceMetadata(taskId, checkpointId, input.routeContextId),
+        revisionAuthority: 'structured_state',
+      });
+      result.constraints += 1;
       result.memoryIds.push(committed.memoryId);
     }
 

@@ -3,6 +3,7 @@ import type { ExecutionConfig } from '../config.js';
 import type { ExecutionContinuitySummary } from '../continuity/snapshot.js';
 import type { WorkspacePolicy } from '../runtime/workspace.js';
 import { validateExecutionDag, type ExecutionNodeSpec } from './dag.js';
+import type { ExecutionArtifactEvidence } from './evidence.js';
 import { ExecutionLogStore } from './log-store.js';
 import type { ExecutionMemoryBridge } from './memory-bridge.js';
 import { ExecutionRecovery } from './recovery.js';
@@ -31,8 +32,30 @@ export interface CreateExecutionGraphInput {
   metadata?: Record<string, unknown>;
 }
 
+export type ExecutionEvidenceSummaryState = 'pending' | 'verified' | 'failed';
+export type ExecutionNodeEvidenceState = 'pending' | 'not_declared' | 'verified' | 'failed';
+
+export interface ExecutionNodeEvidenceSummary {
+  nodeId: string;
+  attemptNo: number | null;
+  resultVersion: 1 | 2 | null;
+  processState: string;
+  evidenceState: ExecutionNodeEvidenceState;
+  stdoutBytes: number;
+  stderrBytes: number;
+  stdoutSha256: string | null;
+  stderrSha256: string | null;
+  artifacts: ExecutionArtifactEvidence[];
+}
+
+export interface ExecutionRunEvidenceSummary {
+  verification: ExecutionEvidenceSummaryState;
+  nodes: ExecutionNodeEvidenceSummary[];
+}
+
 export interface ExecutionRunView extends ExecutionRunRecord {
   nodes: ExecutionNodeRecord[];
+  evidence: ExecutionRunEvidenceSummary;
 }
 
 export interface ExecutionWaitResult {
@@ -93,7 +116,7 @@ export class ExecutionService {
         this.memoryBridge!.dispatch(scope, event);
       });
     }
-    const runner = dependencies.runner ?? new ExecutionCommandRunner(this.logs);
+    const runner = dependencies.runner ?? new ExecutionCommandRunner(this.logs, workspace);
     this.scheduler = new ExecutionScheduler(this.store, runner, { logRoot: config.logRoot, journal: this.journal });
   }
 
@@ -146,6 +169,10 @@ export class ExecutionService {
         const counts = await this.store.systemCounts();
         activeRuns = counts.activeRuns;
         queuedSync = counts.queuedSync;
+      }
+      if (!status.healthy) {
+        this.state = 'degraded';
+        this.degradedReason = status.integrity;
       }
       return {
         enabled: true,
@@ -213,7 +240,82 @@ export class ExecutionService {
     const run = await this.store.getRun(scope, runId);
     if (!run) return null;
     const nodes = await this.store.getNodes(scope, runId);
-    return { ...run, nodes };
+    const attempts = await this.store.listAttempts(scope, runId);
+    const latestAttempt = new Map<string, (typeof attempts)[number]>();
+    for (const attempt of attempts) latestAttempt.set(attempt.nodeId, attempt);
+
+    const evidenceNodes: ExecutionNodeEvidenceSummary[] = [];
+    for (const node of nodes) {
+      const attempt = latestAttempt.get(node.nodeId);
+      if (!attempt) {
+        evidenceNodes.push({
+          nodeId: node.nodeId,
+          attemptNo: null,
+          resultVersion: null,
+          processState: node.state,
+          evidenceState: 'pending',
+          stdoutBytes: 0,
+          stderrBytes: 0,
+          stdoutSha256: null,
+          stderrSha256: null,
+          artifacts: [],
+        });
+        continue;
+      }
+
+      const marker = await this.logs.readResult(runId, node.nodeId, attempt.attemptNo);
+      if (!marker) {
+        const terminal = ['succeeded', 'failed', 'interrupted', 'cancelled'].includes(attempt.state);
+        evidenceNodes.push({
+          nodeId: node.nodeId,
+          attemptNo: attempt.attemptNo,
+          resultVersion: null,
+          processState: attempt.state,
+          evidenceState: terminal ? 'failed' : 'pending',
+          stdoutBytes: attempt.stdoutBytes,
+          stderrBytes: attempt.stderrBytes,
+          stdoutSha256: attempt.stdoutSha256 ?? null,
+          stderrSha256: attempt.stderrSha256 ?? null,
+          artifacts: [],
+        });
+        continue;
+      }
+
+      if (marker.version === 2) {
+        evidenceNodes.push({
+          nodeId: node.nodeId,
+          attemptNo: marker.attemptNo,
+          resultVersion: 2,
+          processState: marker.processState,
+          evidenceState: marker.evidenceState,
+          stdoutBytes: marker.stdoutBytes,
+          stderrBytes: marker.stderrBytes,
+          stdoutSha256: marker.stdoutSha256,
+          stderrSha256: marker.stderrSha256,
+          artifacts: marker.evidence.artifacts.map((artifact) => ({ ...artifact })),
+        });
+      } else {
+        evidenceNodes.push({
+          nodeId: node.nodeId,
+          attemptNo: marker.attemptNo,
+          resultVersion: 1,
+          processState: marker.state,
+          evidenceState: 'not_declared',
+          stdoutBytes: marker.stdoutBytes,
+          stderrBytes: marker.stderrBytes,
+          stdoutSha256: marker.stdoutSha256,
+          stderrSha256: marker.stderrSha256,
+          artifacts: [],
+        });
+      }
+    }
+
+    const verification: ExecutionEvidenceSummaryState = evidenceNodes.some((item) => item.evidenceState === 'failed')
+      ? 'failed'
+      : evidenceNodes.some((item) => item.evidenceState === 'pending')
+        ? 'pending'
+        : 'verified';
+    return { ...run, nodes, evidence: { verification, nodes: evidenceNodes } };
   }
 
   async addNodes(scope: ExecutionScope, runId: string, nodes: ExecutionNodeSpec[]): Promise<ExecutionRunView> {
@@ -232,6 +334,7 @@ export class ExecutionService {
       dependsOn: [...node.dependsOn],
       timeoutMs: node.timeoutMs,
       continueOnFailure: node.continueOnFailure,
+      expectedArtifacts: node.expectedArtifacts.map((artifact) => ({ ...artifact })),
     }));
     const graph = await validateExecutionDag([...existingSpecs, ...nodes], {
       workspace: this.workspace,

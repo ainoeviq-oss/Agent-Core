@@ -46,6 +46,21 @@ describe('RouteContextStore', () => {
     expect(context.expiresAt).toBe('2026-08-23T15:30:00.000Z');
   });
 
+  it('persists the resolved project identity on the route context', () => {
+    const store = new RouteContextStore();
+    const context = store.create('key-a', routePlan(), { projectId: '/workspace/project-b' });
+    expect(context.projectId).toBe('/workspace/project-b');
+    expect(store.get(context.routeContextId)?.projectId).toBe('/workspace/project-b');
+  });
+
+  it('lists active route IDs only for the requested principal/project scope', () => {
+    const store = new RouteContextStore();
+    const a = store.create('key-a', routePlan(), { projectId: '/workspace/a' });
+    store.create('key-a', routePlan(), { projectId: '/workspace/b' });
+    store.create('key-b', routePlan(), { projectId: '/workspace/a' });
+    expect(store.activeRouteContextIds('key-a', '/workspace/a')).toEqual([a.routeContextId]);
+  });
+
   it('rejects route use by another authenticated principal', () => {
     const store = new RouteContextStore();
     const context = store.create('key-a', routePlan());
