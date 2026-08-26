@@ -22,6 +22,7 @@ export interface BuildAgentCorePluginOptions {
   capabilityDir: string;
   outputDir: string;
   routerSkillPath: string;
+  githubSkillPath: string;
 }
 
 export interface AgentCorePluginBuildResult {
@@ -29,6 +30,9 @@ export interface AgentCorePluginBuildResult {
   skills: string[];
   outputDir: string;
 }
+
+const TRACKED_CORE_SKILLS = ['agent-core-capability-router', 'agent-core-github'] as const;
+
 function safeName(value: string): string {
   const normalized = value.trim().toLowerCase()
     .replace(/[^a-z0-9._-]+/g, '-')
@@ -56,6 +60,7 @@ async function loadProvenance(capabilityDir: string, id: string): Promise<Proven
   const provenancePath = path.join(capabilityDir, 'provenance', `${id}.json`);
   return JSON.parse(await readFile(provenancePath, 'utf8')) as ProvenanceRecord;
 }
+
 function validateNativeRecord(record: CapabilityRecord, provenance: ProvenanceRecord): void {
   if (record.type !== 'skill' || record.state !== 'native_ready' || !record.nativeEligible || !record.normalizedPath) {
     throw new Error(`Capability ${record.id} is not eligible for native plugin packaging`);
@@ -98,15 +103,24 @@ async function packageSkill(
   return packageName;
 }
 
+async function packageTrackedCoreSkill(outputDir: string, name: string, sourceSkillPath: string): Promise<void> {
+  const resolved = path.resolve(sourceSkillPath);
+  const destination = path.join(outputDir, 'skills', name, 'SKILL.md');
+  await mkdir(path.dirname(destination), { recursive: true });
+  await cp(resolved, destination);
+}
+
 export async function buildAgentCorePluginPackage(
   options: BuildAgentCorePluginOptions,
 ): Promise<AgentCorePluginBuildResult> {
   const capabilityDir = path.resolve(options.capabilityDir);
   const outputDir = path.resolve(options.outputDir);
-  const routerSkillPath = path.resolve(options.routerSkillPath);
   await rm(outputDir, { recursive: true, force: true });
-  await mkdir(path.join(outputDir, 'skills', 'agent-core-capability-router'), { recursive: true });
-  await cp(routerSkillPath, path.join(outputDir, 'skills', 'agent-core-capability-router', 'SKILL.md'));
+
+  await Promise.all([
+    packageTrackedCoreSkill(outputDir, 'agent-core-capability-router', options.routerSkillPath),
+    packageTrackedCoreSkill(outputDir, 'agent-core-github', options.githubSkillPath),
+  ]);
 
   const catalog = await loadCatalog(capabilityDir);
   const nativeRecords = catalog.records.filter((record) =>
@@ -120,7 +134,7 @@ export async function buildAgentCorePluginPackage(
   const packageMetadata = {
     format: 'agent-core-plugin-source-v1',
     name: 'Agent Core',
-    description: 'Capability router skills plus the existing Agent Core MCP app.',
+    description: 'Tracked Agent Core routing and Native GitHub Fabric skills plus the existing Agent Core MCP app.',
     app: {
       name: 'Agent Core',
       protocol: 'mcp',
@@ -128,7 +142,7 @@ export async function buildAgentCorePluginPackage(
       binding: 'existing-connected-chatgpt-app',
       discovery: 'tools/list',
     },
-    skills: ['agent-core-capability-router', ...packagedSkills],
+    skills: [...TRACKED_CORE_SKILLS, ...packagedSkills],
     generatedFrom: {
       nativeReadyCount: nativeRecords.length,
       capabilityRegistry: 'local-audited-registry',

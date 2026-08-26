@@ -70,9 +70,10 @@ $runtimeFiles = @(
 foreach ($item in $runtimeFiles) { Copy-Path $item }
 
 # Reproducible tracked-core plugin package. Local generated capabilities are intentionally excluded.
-New-Item -ItemType Directory -Force (Join-Path $pluginStage 'skills\agent-core-capability-router') | Out-Null
+New-Item -ItemType Directory -Force (Join-Path $pluginStage 'skills\agent-core-capability-router'),(Join-Path $pluginStage 'skills\agent-core-github') | Out-Null
 Copy-Item (Join-Path $root 'plugin\agent-core\README.md') (Join-Path $pluginStage 'README.md') -Force
 Copy-Item (Join-Path $root 'plugin\agent-core\skills\agent-core-capability-router\SKILL.md') (Join-Path $pluginStage 'skills\agent-core-capability-router\SKILL.md') -Force
+Copy-Item (Join-Path $root 'plugin\agent-core\skills\agent-core-github\SKILL.md') (Join-Path $pluginStage 'skills\agent-core-github\SKILL.md') -Force
 Copy-Item (Join-Path $root 'CHANGELOG.md') (Join-Path $pluginStage 'CHANGELOG.md') -Force
 
 $pluginMetadata = [ordered]@{
@@ -80,7 +81,7 @@ $pluginMetadata = [ordered]@{
   name = 'Agent Core'
   version = $version
   channel = 'stable'
-  description = 'Tracked Agent Core Capability Router plus the existing Agent Core MCP app binding.'
+  description = 'Tracked Agent Core Capability Router and Native GitHub Fabric skills plus the existing Agent Core MCP app binding.'
   app = [ordered]@{
     name = 'Agent Core'
     protocol = 'mcp'
@@ -88,7 +89,7 @@ $pluginMetadata = [ordered]@{
     binding = 'existing-connected-chatgpt-app'
     discovery = 'tools/list'
   }
-  skills = @('agent-core-capability-router')
+  skills = @('agent-core-capability-router','agent-core-github')
   generatedFrom = [ordered]@{
     source = 'tracked-release-core'
     localAuditedRegistryVendored = $false
@@ -99,7 +100,7 @@ $pluginMetadata | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $pluginStage 
 $npmPackage = [ordered]@{
   name = '@rendevouz999/agent-core-plugin'
   version = $version
-  description = 'Stable Agent Core capability-router plugin source for the Agent Core MCP app.'
+  description = 'Stable Agent Core routing and Native GitHub Fabric plugin source for the Agent Core MCP app.'
   private = $false
   license = 'UNLICENSED'
   files = @('README.md','CHANGELOG.md','agent-core-package.json','skills/**')

@@ -20,10 +20,14 @@ const outputDir = path.resolve(
 const routerSkillPath = path.join(
   checkoutRoot, 'plugin', 'agent-core', 'skills', 'agent-core-capability-router', 'SKILL.md',
 );
+const githubSkillPath = path.join(
+  checkoutRoot, 'plugin', 'agent-core', 'skills', 'agent-core-github', 'SKILL.md',
+);
 const result = await buildAgentCorePluginPackage({
   capabilityDir,
   outputDir,
   routerSkillPath,
+  githubSkillPath,
 });
 
 process.stdout.write(`${JSON.stringify({
