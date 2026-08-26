@@ -65,7 +65,7 @@ assert(unauthorized.response.status === 401, `unauthorized expected 401, got ${u
 const initialized = await postMcp(initializeBody);
 assert(initialized.response.status === 200, `initialize expected 200, got ${initialized.response.status}`);
 assert(initialized.json?.result?.serverInfo?.name === 'agent-core', 'unexpected MCP server identity');
-assert(initialized.json?.result?.serverInfo?.version === '0.5.2', 'unexpected MCP server version');
+assert(initialized.json?.result?.serverInfo?.version === '0.5.3', 'unexpected MCP server version');
 
 const tools = await postMcp({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
 const listedTools = tools.json?.result?.tools ?? [];

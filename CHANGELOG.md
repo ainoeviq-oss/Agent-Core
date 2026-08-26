@@ -4,6 +4,29 @@ All notable stable Agent Core changes are recorded here. The project follows sem
 
 ## Unreleased
 
+## [0.5.3] - 2026-08-27 — Stable
+
+### Fixed
+
+- Codespace startup/recovery now synchronizes a tracked-clean `main` checkout to canonical `origin/main` with bounded non-interactive fetch and `--ff-only` semantics before dependency, build, service, and READY gates.
+- Lifecycle recovery now fails closed instead of mutating source when the checkout has tracked local changes, is not on `main`, is ahead of `origin/main`, or has diverged history.
+- Bootstrap re-executes itself from the synchronized checkout when source changes so stale shell code cannot continue after a fast-forward.
+- A fresh or rebuilt distribution now forces the tmux supervisor to reload after a build, preventing a healthy old Node process from surviving behind new source/dist files.
+- Local and public health gates now require the running Agent Core version to equal the synchronized package version before READY can be emitted.
+
+### Added
+
+- `/health` exposes the Agent Core server version for source/process freshness verification.
+- Verified Codespace `connection.json` now records `sourceCommit`, `sourceVersion`, `sourceRemote`, and `sourceBranch`, allowing READY metadata to be audited directly against Git.
+- Real temporary-Git integration coverage for clean fast-forward, dirty/ahead/diverged/non-main fail-closed behavior, untracked editor-state preservation, version mismatch rejection, and connection metadata provenance.
+
+### Stability evidence
+
+- The original stale-process scenario was reproduced by an integrated live attach repair: the version-aware health gate rejected the previously running process, performed one bounded controlled restart, then accepted READY only after source and process version agreed.
+- Integrated live proof established `local HEAD == origin/main == connection.json.sourceCommit` and `package version == local/public /health.version == agent_core_status.version == connection.json.sourceVersion`.
+- `.vscode` remained present and tracked working state remained clean throughout automatic recovery.
+- `npm run verify:release`: 82 test files passed, 360 tests passed, 32 platform/performance tests skipped by the normal suite, with zero failures; release consistency and documentation link checks also passed.
+
 ## [0.5.2] - 2026-08-27 — Stable
 
 ### Added
