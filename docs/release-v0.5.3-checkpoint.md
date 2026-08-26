@@ -130,3 +130,57 @@ At release-gate time:
 6. Publish direct GitHub Release v0.5.3 and upload all assets.
 7. Record release asset IDs/sizes/digests and publication checkpoint.
 8. Activate live runtime v0.5.3 using the fixed lifecycle and verify source/process/metadata agreement again.
+
+## Direct GitHub publication result
+
+GitHub Release:
+
+- release ID: `377315253`;
+- tag: `v0.5.3`;
+- name: `Agent Core v0.5.3 — Stable`;
+- target source commit: `d85270b776bb305a4944e7cbdd6f3955aad2c471`;
+- draft: `false`;
+- prerelease: `false`;
+- URL: `https://github.com/ainoeviq-oss/Agent-Core/releases/tag/v0.5.3`.
+
+Remote read-back verified five canonical assets:
+
+| Asset | GitHub asset ID | Bytes | Remote SHA-256 |
+|---|---:|---:|---|
+| `agent-core-windows-v0.5.3-stable.zip` | `531128786` | 583688 | `2f992ba2b1632f7c088a5659849dc3230278aa1e62a29ab4c9a675b41eeed156` |
+| `agent-core-plugin-v0.5.3-stable.zip` | `531128958` | 13036 | `411a5b4abda2561983bd2d682cf0218f877a1969d002fe1f5c660be1c6542ff7` |
+| `rendevouz999-agent-core-plugin-0.5.3.tgz` | `531129161` | 10687 | `0025f97f1ea5b244103d2de9a551c96d618bfbe3269924f91436f39731c3efe7` |
+| `release-manifest.json` | `531129310` | 1103 | `a781556038561d99a684326cc12d470243a9a71d075c8455124dca7786070306` |
+| `SHA256SUMS.txt` | `531129433` | 400 | `b68218d39fc8aef1696525da8506c4543e546cd48bc1dac4cae8a1cd21a4db51` |
+
+All remote sizes/digests match the locally built and independently rehashed assets. Package top-level exclusion audit passed with zero forbidden state/secret paths.
+
+### v0.5.2 immutability proof
+
+v0.5.2 remained unchanged during v0.5.3 publication:
+
+- release ID: `377294057`;
+- source/tag commit: `29caa5eb73b8bea848d285531e240e113b953d7b`;
+- its five prior assets and digests were read back unchanged.
+
+### GitHub Packages registry limitation
+
+The npm-compatible package is present in the GitHub Release as:
+
+`rendevouz999-agent-core-plugin-0.5.3.tgz`
+
+Publishing the same package to the GitHub Packages npm registry was intentionally not attempted with a substitute credential because the dedicated Packages credential file is not configured:
+
+`secrets/github/packages-token.txt`
+
+No token value was read or exposed. Release packaging/publication to the repository is complete through the verified GitHub Release assets. If a dedicated Packages credential is configured later, the existing `github_packages` flow can publish the same package under the `stable` dist-tag without rebuilding the release source.
+
+### Publication policy confirmation
+
+- GitHub Actions/CI invoked: **no**;
+- force push: **no**;
+- v0.5.2 rewritten: **no**;
+- package source commit: `d85270b776bb305a4944e7cbdd6f3955aad2c471`;
+- v0.5.3 release asset read-back: **PASS**.
+
+This publication checkpoint is intentionally committed and pushed **before** final runtime v0.5.3 activation. No additional source commit is planned after activation, allowing `connection.json.sourceCommit` to remain equal to the final `origin/main` SHA.
