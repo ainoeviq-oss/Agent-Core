@@ -40,6 +40,16 @@ export interface ExecutionConfig {
   busyTimeoutMs: number;
 }
 
+export interface GitHubConfig {
+  enabled: boolean;
+  apiBaseUrl: string;
+  apiVersion: string;
+  tokenFile: string;
+  packagesTokenFile: string;
+  requestTimeoutMs: number;
+  gitTimeoutMs: number;
+}
+
 export interface AppConfig {
   host: string;
   port: number;
@@ -49,6 +59,7 @@ export interface AppConfig {
   allowedRoots: string[];
   memory: MemoryConfig;
   execution: ExecutionConfig;
+  github: GitHubConfig;
 }
 
 type Env = Record<string, string | undefined>;
@@ -82,6 +93,20 @@ function parseUnitInterval(value: string | undefined, fallback: number, name: st
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0 || parsed >= 1) throw new Error(`${name} must be between 0 and 1`);
   return parsed;
+}
+
+function parseGitHubApiBaseUrl(value: string | undefined): string {
+  const raw = value?.trim() || 'https://api.github.com';
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new Error('AGENT_CORE_GITHUB_API_BASE_URL must be a valid URL');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('AGENT_CORE_GITHUB_API_BASE_URL must use http or https');
+  }
+  return raw.replace(/\/+$/g, '');
 }
 
 export function loadConfig(env: Env = process.env, baseDir = process.cwd()): AppConfig {
@@ -133,6 +158,16 @@ export function loadConfig(env: Env = process.env, baseDir = process.cwd()): App
     busyTimeoutMs: parsePositiveInteger(env.AGENT_CORE_EXECUTION_BUSY_TIMEOUT_MS, 5_000, 'AGENT_CORE_EXECUTION_BUSY_TIMEOUT_MS'),
   };
 
+  const github: GitHubConfig = {
+    enabled: parseBoolean(env.AGENT_CORE_GITHUB_ENABLED, true),
+    apiBaseUrl: parseGitHubApiBaseUrl(env.AGENT_CORE_GITHUB_API_BASE_URL),
+    apiVersion: env.AGENT_CORE_GITHUB_API_VERSION?.trim() || '2026-03-10',
+    tokenFile: path.resolve(env.AGENT_CORE_GITHUB_TOKEN_FILE?.trim() || path.join(baseDir, 'secrets', 'github', 'gh-token.txt')),
+    packagesTokenFile: path.resolve(env.AGENT_CORE_GITHUB_PACKAGES_TOKEN_FILE?.trim() || path.join(baseDir, 'secrets', 'github', 'packages-token.txt')),
+    requestTimeoutMs: parsePositiveInteger(env.AGENT_CORE_GITHUB_REQUEST_TIMEOUT_MS, 30_000, 'AGENT_CORE_GITHUB_REQUEST_TIMEOUT_MS'),
+    gitTimeoutMs: parsePositiveInteger(env.AGENT_CORE_GITHUB_GIT_TIMEOUT_MS, 120_000, 'AGENT_CORE_GITHUB_GIT_TIMEOUT_MS'),
+  };
+
   return {
     host: env.AGENT_CORE_HOST?.trim() || '127.0.0.1',
     port,
@@ -142,5 +177,6 @@ export function loadConfig(env: Env = process.env, baseDir = process.cwd()): App
     allowedRoots: parseRoots(env.AGENT_CORE_ALLOWED_ROOTS, baseDir),
     memory,
     execution,
+    github,
   };
 }

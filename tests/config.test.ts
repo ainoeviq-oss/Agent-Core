@@ -22,9 +22,18 @@ describe('loadConfig', () => {
       waitMaxMs: 60_000,
       busyTimeoutMs: 5_000,
     });
+    expect(config.github).toEqual({
+      enabled: true,
+      apiBaseUrl: 'https://api.github.com',
+      apiVersion: '2026-03-10',
+      tokenFile: path.join(baseDir, 'secrets', 'github', 'gh-token.txt'),
+      packagesTokenFile: path.join(baseDir, 'secrets', 'github', 'packages-token.txt'),
+      requestTimeoutMs: 30_000,
+      gitTimeoutMs: 120_000,
+    });
   });
 
-  it('accepts explicit environment overrides including execution storage and concurrency bounds', () => {
+  it('accepts explicit environment overrides including execution and github settings', () => {
     const config = loadConfig({
       AGENT_CORE_HOST: '0.0.0.0',
       AGENT_CORE_PORT: '9999',
@@ -39,6 +48,13 @@ describe('loadConfig', () => {
       AGENT_CORE_EXECUTION_MAX_NODES: '64',
       AGENT_CORE_EXECUTION_WAIT_MAX_MS: '45000',
       AGENT_CORE_EXECUTION_BUSY_TIMEOUT_MS: '7000',
+      AGENT_CORE_GITHUB_ENABLED: 'false',
+      AGENT_CORE_GITHUB_API_BASE_URL: 'https://github.example.test/api/v3/',
+      AGENT_CORE_GITHUB_API_VERSION: '2026-03-10',
+      AGENT_CORE_GITHUB_TOKEN_FILE: 'F:\\Secrets\\github.txt',
+      AGENT_CORE_GITHUB_PACKAGES_TOKEN_FILE: 'F:\\Secrets\\packages.txt',
+      AGENT_CORE_GITHUB_REQUEST_TIMEOUT_MS: '11111',
+      AGENT_CORE_GITHUB_GIT_TIMEOUT_MS: '22222',
     }, 'F:\\Ignored');
 
     expect(config.host).toBe('0.0.0.0');
@@ -59,5 +75,19 @@ describe('loadConfig', () => {
       waitMaxMs: 45_000,
       busyTimeoutMs: 7_000,
     });
+    expect(config.github).toEqual({
+      enabled: false,
+      apiBaseUrl: 'https://github.example.test/api/v3',
+      apiVersion: '2026-03-10',
+      tokenFile: path.resolve('F:\\Secrets\\github.txt'),
+      packagesTokenFile: path.resolve('F:\\Secrets\\packages.txt'),
+      requestTimeoutMs: 11_111,
+      gitTimeoutMs: 22_222,
+    });
+  });
+
+  it('rejects non-http github api base urls', () => {
+    expect(() => loadConfig({ AGENT_CORE_GITHUB_API_BASE_URL: 'file:///tmp/api' }, 'F:\\Ignored'))
+      .toThrow('AGENT_CORE_GITHUB_API_BASE_URL must use http or https');
   });
 });
