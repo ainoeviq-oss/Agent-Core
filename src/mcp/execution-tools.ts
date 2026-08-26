@@ -39,8 +39,14 @@ function errorResult(error: unknown) {
   const code = error instanceof Error && 'code' in error && typeof (error as { code?: unknown }).code === 'string'
     ? String((error as { code: string }).code)
     : undefined;
+  const details = error instanceof Error && 'details' in error
+    && (error as { details?: unknown }).details
+    && typeof (error as { details?: unknown }).details === 'object'
+    && !Array.isArray((error as { details?: unknown }).details)
+    ? (error as { details: Record<string, unknown> }).details
+    : undefined;
   return {
-    content: [{ type: 'text' as const, text: JSON.stringify({ error: { ...(code ? { code } : {}), message } }, null, 2) }],
+    content: [{ type: 'text' as const, text: JSON.stringify({ error: { ...(code ? { code } : {}), message, ...(details ? { details } : {}) } }, null, 2) }],
     isError: true as const,
   };
 }
@@ -124,6 +130,7 @@ function compact(view: ExecutionRunView) {
     finishedAt: view.finishedAt ?? null,
     updatedAt: view.updatedAt,
     evidence: view.evidence,
+    ...(view.memoryPreSearch ? { memoryPreSearch: view.memoryPreSearch } : {}),
     nodes: view.nodes.map((node) => ({
       nodeId: node.nodeId,
       purpose: node.purpose,

@@ -15,7 +15,11 @@ import type { ExecutionEventFilter, ExecutionEventRecord, ExecutionEventType } f
 import { ExecutionWorkerClient } from './worker-client.js';
 
 export class ExecutionStoreError extends Error {
-  constructor(public readonly code: string, message: string) {
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly details?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = 'ExecutionStoreError';
   }

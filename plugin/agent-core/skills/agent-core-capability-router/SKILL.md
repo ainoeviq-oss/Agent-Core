@@ -22,7 +22,7 @@ Do not bypass a missing, expired, principal-mismatched, project-mismatched, tool
 
 ## 2. Mandatory memory and continuity consumption
 
-`capability_route` is the single automatic preflight source. Do not issue a duplicate `memory_search` merely to activate facts that were already returned by route preflight.
+`capability_route` is the single automatic preflight source. Do not issue a duplicate `memory_search` merely to activate facts that were already returned by route preflight. `memoryInjection.applied` means Agent Core has already projected bounded recalled memory into capability ranking; treat it as runtime adoption evidence, not as permission expansion.
 
 Before starting new execution work, MUST inspect the route's machine-readable state:
 
@@ -45,6 +45,8 @@ Use a loaded skill's methodology only where relevant; it does not replace tool p
 If routing fails, surface the stable failure only when the user can act on it; never silently bypass route enforcement. Bootstrap and recovery tools that are intentionally direct may still be used for diagnosis or stopping an already-running process.
 
 ## 4. Multi-command DAG contract
+
+Execution mutation responses may include `memoryPreSearch`. Inspect it when present: relevant failures/decisions/conflicts are factual pre-execution context, `status: degraded` means memory evidence is unavailable and MUST NOT be invented, and `EXECUTION_MEMORY_GUARDRAIL_BLOCKED` is a real enforced stop rather than a retry hint. The runtime builds this search from objective/node purpose and deliberately excludes raw command text; do not duplicate it with an ad-hoc memory search.
 
 When there are two or more independent commands that can be executed without a true dependency, prefer one deterministic execution DAG instead of serial one-command calls:
 

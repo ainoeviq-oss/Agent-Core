@@ -134,6 +134,13 @@ The raw Agent Core API key itself is not required by the memory database. Authen
 
 For identical database state, scope, query, and configuration, recall ordering and snapshot hash are deterministic. Retrieval combines SQLite FTS5/BM25, exact structured anchors, bounded graph expansion, weighted Personalized PageRank, state/importance/recency scoring, and explicit provenance. No hidden AI performs extraction, embeddings, reranking, contradiction resolution, or cleanup.
 
+## Autonomous memory adoption in routing
+
+`capability_route` no longer treats relevant memory as sideband metadata only. After the normal deterministic preflight, Agent Core builds a bounded routing projection from recalled decisions, prior failures, and other non-guardrail memory and passes that projection into `CapabilityRouter` together with the user's original context.
+
+The projection is deterministic, bounded to a small item/character budget, and reported through `memoryInjection` (`applied`, memory IDs, character count, omitted count). It does not expand permissions, project scope, tool availability, or user intent. Active hard guardrails are deliberately excluded from capability-ranking text because their authority is enforced separately by the route context; they are not keyword hints.
+
+This closes the infrastructure/adoption gap: relevant DMF state can now change capability ranking automatically without requiring the model to issue a duplicate `memory_search`. The original `memorySummary`, `memoryDirective`, `blockingGuardrails`, `priorFailures`, and `relatedDecisions` remain available for factual inspection and explanation.
 
 ## Continuity Ledger inside DMF
 

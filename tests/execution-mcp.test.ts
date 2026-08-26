@@ -164,7 +164,13 @@ describe('first-class execution MCP surface', () => {
       ],
     });
     const created = expectOk(createdCall);
-    expect(created).toMatchObject({ state: 'planned', readyNodeIds: ['A', 'B'], runningNodeIds: [], terminalNodeIds: [] });
+    expect(created).toMatchObject({
+      state: 'planned',
+      readyNodeIds: ['A', 'B'],
+      runningNodeIds: [],
+      terminalNodeIds: [],
+      memoryPreSearch: { status: 'disabled', blocked: false, inspectionRequired: false },
+    });
     expect(created.nodes.map((node: any) => node.nodeId)).toEqual(['A', 'B']);
     expect(await f.runtime.execution.store.listAttempts(f.scopeA, created.runId)).toEqual([]);
 

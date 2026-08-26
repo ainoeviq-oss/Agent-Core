@@ -6,6 +6,11 @@ import { validateExecutionDag, type ExecutionNodeSpec } from './dag.js';
 import type { ExecutionArtifactEvidence } from './evidence.js';
 import { ExecutionLogStore } from './log-store.js';
 import type { ExecutionMemoryBridge } from './memory-bridge.js';
+import {
+  type ExecutionMemoryPreSearchResult,
+  type ExecutionMemorySearchNode,
+  ExecutionMemoryPreSearch,
+} from './memory-search.js';
 import { ExecutionRecovery } from './recovery.js';
 import { ExecutionCommandRunner } from './runner.js';
 import { ExecutionScheduler, type ExecutionRunnerLike } from './scheduler.js';
@@ -56,6 +61,7 @@ export interface ExecutionRunEvidenceSummary {
 export interface ExecutionRunView extends ExecutionRunRecord {
   nodes: ExecutionNodeRecord[];
   evidence: ExecutionRunEvidenceSummary;
+  memoryPreSearch?: ExecutionMemoryPreSearchResult;
 }
 
 export interface ExecutionWaitResult {
@@ -71,6 +77,7 @@ export interface ExecutionServiceDependencies {
   wake?: ExecutionWakeCoordinator;
   journal?: ExecutionEventJournal;
   memoryBridge?: ExecutionMemoryBridge;
+  memorySearch?: ExecutionMemoryPreSearch;
 }
 
 export type ExecutionServiceState = 'disabled' | 'idle' | 'healthy' | 'degraded' | 'closing' | 'closed';
@@ -94,6 +101,7 @@ export class ExecutionService {
   readonly logs: ExecutionLogStore;
   readonly scheduler: ExecutionScheduler;
   readonly memoryBridge?: ExecutionMemoryBridge;
+  readonly memorySearch?: ExecutionMemoryPreSearch;
   private unsubscribeBridge?: () => void;
   private opened = false;
   private closed = false;
@@ -111,6 +119,7 @@ export class ExecutionService {
     this.journal = dependencies.journal ?? new ExecutionEventJournal(this.store, this.wake);
     this.logs = new ExecutionLogStore(config.logRoot);
     this.memoryBridge = dependencies.memoryBridge;
+    this.memorySearch = dependencies.memorySearch;
     if (this.memoryBridge) {
       this.unsubscribeBridge = this.journal.subscribe((scope, event) => {
         this.memoryBridge!.dispatch(scope, event);
@@ -202,6 +211,8 @@ export class ExecutionService {
       );
     }
     const graph = await validateExecutionDag(input.nodes, { workspace: this.workspace, maxNodes: this.config.maxNodes });
+    const memoryPreSearch = await this.preSearch(scope, input.objective, graph.nodes);
+    this.assertMemoryPreSearchAllowed(memoryPreSearch);
     const run = await this.store.createRun(scope, {
       objective: input.objective,
       continuityTaskId: input.continuityTaskId ?? randomUUID(),
@@ -224,15 +235,25 @@ export class ExecutionService {
       await this.store.setRunState(scope, run.runId, 'failed').catch(() => undefined);
       throw error;
     }
-    return (await this.status(scope, run.runId))!;
+    const view = (await this.status(scope, run.runId))!;
+    return memoryPreSearch ? { ...view, memoryPreSearch } : view;
   }
 
   async start(scope: ExecutionScope, runId: string): Promise<ExecutionRunView> {
     this.assertReady();
+    const run = await this.store.getRun(scope, runId);
+    if (!run) throw new ExecutionStoreError('EXECUTION_RUN_NOT_FOUND', 'Execution run was not found in authenticated scope');
+    const nodes = await this.store.getNodes(scope, runId);
+    const memoryPreSearch = await this.preSearch(
+      scope,
+      run.objective,
+      nodes.map((node) => ({ id: node.nodeId, purpose: node.purpose })),
+    );
+    this.assertMemoryPreSearchAllowed(memoryPreSearch);
     await this.scheduler.startRun(scope, runId);
     const view = await this.status(scope, runId);
     if (!view) throw new ExecutionStoreError('EXECUTION_RUN_NOT_FOUND', 'Execution run was not found in authenticated scope');
-    return view;
+    return memoryPreSearch ? { ...view, memoryPreSearch } : view;
   }
 
   async status(scope: ExecutionScope, runId: string): Promise<ExecutionRunView | null> {
@@ -345,6 +366,8 @@ export class ExecutionService {
     if (validatedNew.length !== nodes.length) {
       throw new ExecutionStoreError('EXECUTION_DYNAMIC_GRAPH_INVALID', 'Dynamic execution nodes did not validate one-to-one');
     }
+    const memoryPreSearch = await this.preSearch(scope, current.objective, validatedNew);
+    this.assertMemoryPreSearchAllowed(memoryPreSearch);
 
     await this.store.appendGraphNodes(scope, runId, validatedNew);
     for (const node of validatedNew) {
@@ -356,15 +379,21 @@ export class ExecutionService {
     if (current.state === 'running') await this.scheduler.startRun(scope, runId);
     const view = await this.status(scope, runId);
     if (!view) throw new ExecutionStoreError('EXECUTION_RUN_NOT_FOUND', 'Execution run was not found in authenticated scope');
-    return view;
+    return memoryPreSearch ? { ...view, memoryPreSearch } : view;
   }
 
   async retry(scope: ExecutionScope, runId: string, nodeId: string): Promise<ExecutionRunView> {
     this.assertReady();
+    const run = await this.store.getRun(scope, runId);
+    const node = await this.store.getNode(scope, runId, nodeId);
+    if (!run) throw new ExecutionStoreError('EXECUTION_RUN_NOT_FOUND', 'Execution run was not found in authenticated scope');
+    if (!node) throw new ExecutionStoreError('EXECUTION_NODE_NOT_FOUND', 'Execution node was not found');
+    const memoryPreSearch = await this.preSearch(scope, run.objective, [{ id: node.nodeId, purpose: node.purpose }]);
+    this.assertMemoryPreSearchAllowed(memoryPreSearch);
     await this.scheduler.retryNode(scope, runId, nodeId);
     const view = await this.status(scope, runId);
     if (!view) throw new ExecutionStoreError('EXECUTION_RUN_NOT_FOUND', 'Execution run was not found in authenticated scope');
-    return view;
+    return memoryPreSearch ? { ...view, memoryPreSearch } : view;
   }
 
   async cancel(scope: ExecutionScope, runId: string, nodeId?: string): Promise<ExecutionRunView> {
@@ -493,6 +522,32 @@ export class ExecutionService {
     try { await this.store.close(); } catch {}
     this.opened = false;
     this.state = 'closed';
+  }
+
+  private async preSearch(
+    scope: ExecutionScope,
+    objective: string,
+    nodes: readonly ExecutionMemorySearchNode[],
+  ): Promise<ExecutionMemoryPreSearchResult | undefined> {
+    if (!this.memorySearch) return undefined;
+    return this.memorySearch.run(scope, objective, nodes);
+  }
+
+  private assertMemoryPreSearchAllowed(result: ExecutionMemoryPreSearchResult | undefined): void {
+    if (!result?.blocked) return;
+    throw new ExecutionStoreError(
+      'EXECUTION_MEMORY_GUARDRAIL_BLOCKED',
+      `Execution is blocked by ${result.blockingGuardrails.length} active hard memory guardrail(s)`,
+      {
+        memorySnapshotHash: result.snapshotHash,
+        guardrails: result.blockingGuardrails.map((hit) => ({
+          memoryId: hit.memoryId,
+          revisionId: hit.revisionId,
+          canonicalKey: hit.canonicalKey,
+          ...(hit.sourceEventId ? { sourceEventId: hit.sourceEventId } : {}),
+        })),
+      },
+    );
   }
 
   private assertReady(): void {

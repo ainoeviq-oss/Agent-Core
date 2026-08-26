@@ -6,6 +6,8 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { FileKeyStore } from '../src/auth/key-store.js';
 import type { RoutePlan } from '../src/capabilities/route-types.js';
+import { writeRegistryGeneration } from '../src/capabilities/registry-writer.js';
+import type { CapabilityRecord } from '../src/capabilities/types.js';
 import { loadConfig } from '../src/config.js';
 import { createHttpHandler } from '../src/http/app.js';
 import { FileAuditLogger } from '../src/logging/audit-log.js';
@@ -23,6 +25,44 @@ function routePlan(): RoutePlan {
     tier: 'atomic', mode: 'atomic_direct', domain: 'general', confidence: 1, risk: 'low',
     recommendedCapabilities: [], requiredSkillLoads: [], allowedTools: ['write_file'],
     verification: { required: true, suggestedTools: ['read_file'] }, reasonCodes: ['fixture'],
+  };
+}
+
+function capabilityRecord(
+  id: string,
+  name: string,
+  overrides: Partial<CapabilityRecord> = {},
+): CapabilityRecord {
+  return {
+    id,
+    name,
+    displayName: name,
+    aliases: [],
+    type: 'skill',
+    category: 'general',
+    categoryTitle: 'General',
+    declaredPurpose: `Support ${name} workflows`,
+    functionalSummary: `Provide guidance for ${name}`,
+    source: { url: `https://example.test/${id}`, repo: 'example/test', path: null, sha: 'fixture-sha' },
+    compatibility: ['chatgpt'],
+    language: ['en'],
+    triggers: [],
+    invocation: 'auto_candidate',
+    inputsContext: [],
+    outputsArtifacts: [],
+    requiredTools: [],
+    dependencies: [],
+    sideEffects: [],
+    risk: 'low',
+    license: { status: 'verified', id: 'MIT' },
+    state: 'cataloged',
+    nativeEligible: false,
+    normalizedPath: null,
+    equivalenceGroup: null,
+    catalogSha: 'fixture-sha',
+    catalogFile: 'fixture.md',
+    catalogRow: 1,
+    ...overrides,
   };
 }
 
@@ -89,6 +129,70 @@ describe('memory-aware route context', () => {
       .toThrow(expect.objectContaining<Partial<AgentCoreRouteError>>({ code: 'ROUTE_MEMORY_GUARDRAIL_BLOCKED' }));
   });
 
+  it('injects recalled decisions into real capability ranking instead of leaving memory as sideband metadata', async () => {
+    const root = await mkdtemp(path.join(process.env.TEMP || process.env.TMP || os.tmpdir(), 'agent-core-memory-routing-rank-'));
+    roots.push(root);
+    const capabilityDir = path.join(root, 'capabilities');
+    await writeRegistryGeneration(capabilityDir, [
+      capabilityRecord('generic-review', 'generic-review', {
+        category: 'general',
+        declaredPurpose: 'Review a general component',
+        functionalSummary: 'General review guidance',
+        triggers: ['review'],
+        state: 'native_ready',
+        nativeEligible: true,
+        normalizedPath: 'normalized/skills/generic-review/SKILL.md',
+      }),
+      capabilityRecord('frontend-quality', 'frontend-quality', {
+        category: 'frontend',
+        declaredPurpose: 'Improve frontend dashboard visual hierarchy and spacing',
+        functionalSummary: 'Frontend dashboard layout visual hierarchy spacing',
+        triggers: ['frontend', 'dashboard', 'visual', 'hierarchy', 'spacing'],
+        state: 'native_ready',
+        nativeEligible: true,
+        normalizedPath: 'normalized/skills/frontend-quality/SKILL.md',
+      }),
+    ], { catalogSha: 'fixture-sha', generatedAt: '2026-08-27T00:00:00.000Z' });
+    const defaults = loadConfig({}, root);
+    const runtime = createRuntimeServices([root], capabilityDir, undefined, {
+      ...defaults.memory,
+      enabled: true,
+      dbPath: path.join(root, 'runtime', 'memory', 'ranking.sqlite'),
+    });
+    runtimes.push(runtime);
+    const task = 'Review component';
+    expect(runtime.router.route(task).recommendedCapabilities[0]?.id).toBe('generic-review');
+
+    const keyStore = new FileKeyStore(path.join(root, 'data'));
+    const principal = await keyStore.create('memory-ranking-principal');
+    const scope = { principalId: principal.metadata.id, projectId: root };
+    const decision = await runtime.memory.commit({
+      scope,
+      canonicalKey: 'decision.component.frontend.layout',
+      kind: 'decision',
+      value: 'For this review component, use frontend dashboard visual hierarchy spacing and frontend layout quality.',
+      importance: 1,
+      pinned: true,
+      sourceType: 'test',
+    });
+    const app = createHttpHandler({
+      keyStore,
+      auditLogger: new FileAuditLogger(path.join(root, 'logs')),
+      mcpHandler: createMcpHttpHandler(runtime),
+    });
+    const server = createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    servers.push(server);
+    const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+    const routed = await call(baseUrl, principal.key, 'capability_route', { task, projectRoot: root });
+    const route = textBody(routed);
+    expect(route.memoryInjection).toMatchObject({ applied: true, memoryIds: [decision.memoryId] });
+    expect(route.reasonCodes).toContain('autonomous_memory_context');
+    expect(route.recommendedCapabilities[0]?.id).toBe('frontend-quality');
+    expect(route.domain).toBe('frontend');
+  });
+
   it('routes with memory evidence before execution and blocks a matching hard guardrail when enforcement is enabled', async () => {
     const root = await mkdtemp(path.join(process.env.TEMP || process.env.TMP || os.tmpdir(), 'agent-core-memory-route-'));
     roots.push(root);
@@ -146,6 +250,14 @@ describe('memory-aware route context', () => {
     expect(route.blockingGuardrails.map((item: any) => item.memoryId)).toContain(guardrail.memoryId);
     expect(route.priorFailures.map((item: any) => item.memoryId)).toContain(priorFailure.memoryId);
     expect(route.memoryConfidence).toBeGreaterThan(0);
+    expect(route.memoryInjection).toMatchObject({
+      applied: true,
+      memoryIds: expect.arrayContaining([priorFailure.memoryId]),
+      characterCount: expect.any(Number),
+      omittedCount: expect.any(Number),
+    });
+    expect(route.memoryInjection.memoryIds).not.toContain(guardrail.memoryId);
+    expect(route.reasonCodes).toContain('autonomous_memory_context');
 
     const storedRoute = runtime.routes.get(route.routeContextId)!;
     expect(storedRoute.memorySnapshot).toMatchObject({
@@ -236,6 +348,8 @@ describe('memory-aware route context', () => {
     expect(route.memorySummary).toEqual([]);
     expect(route.blockingGuardrails).toEqual([]);
     expect(route.memoryConfidence).toBe(0);
+    expect(route.memoryInjection).toEqual({ applied: false, memoryIds: [], characterCount: 0, omittedCount: 0 });
+    expect(route.reasonCodes).not.toContain('autonomous_memory_context');
   });
 
   it('keeps disabled memory routing behavior unchanged and reports the disabled state explicitly', async () => {
@@ -269,5 +383,7 @@ describe('memory-aware route context', () => {
     expect(route.priorFailures).toEqual([]);
     expect(route.relatedDecisions).toEqual([]);
     expect(route.memoryConfidence).toBe(0);
+    expect(route.memoryInjection).toEqual({ applied: false, memoryIds: [], characterCount: 0, omittedCount: 0 });
+    expect(route.reasonCodes).not.toContain('autonomous_memory_context');
   });
 });

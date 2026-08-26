@@ -4,6 +4,7 @@ import { CapabilityRouter } from '../capabilities/router.js';
 import { loadConfig, type ExecutionConfig, type GitHubConfig, type MemoryConfig } from '../config.js';
 import { ExecutionLogStore } from '../execution/log-store.js';
 import { ExecutionMemoryBridge } from '../execution/memory-bridge.js';
+import { ExecutionMemoryPreSearch } from '../execution/memory-search.js';
 import { ExecutionService } from '../execution/service.js';
 import { ExecutionStore } from '../execution/store.js';
 import { GitHubService, type GitHubServiceDependencies } from '../github/service.js';
@@ -53,6 +54,7 @@ export function createRuntimeServices(
   const execution = new ExecutionService(resolvedExecutionConfig, workspace, {
     store: executionStore,
     memoryBridge: executionBridge,
+    memorySearch: new ExecutionMemoryPreSearch(memory),
   });
   return {
     workspace,

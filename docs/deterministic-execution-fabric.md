@@ -71,6 +71,21 @@ Mutation tools require a current principal-bound route context. Read operations 
 
 `execution_create` persists a validated DAG but starts no process. `execution_start` dispatches ready nodes up to the run's concurrency bound. Dynamic nodes can be added atomically while a run is planned/running; invalid cycles or missing dependencies are rejected without partial insertion.
 
+## Autonomous memory pre-search
+
+Execution now performs a bounded DMF pre-search on every explicit launch path: initial DAG creation, run start, dynamic node addition, and retry. The query is derived only from the execution objective plus deterministic node IDs/purposes. Raw command text, environment values, stdout, and stderr are not copied into the memory query.
+
+The pre-search result is returned as `memoryPreSearch` and includes bounded recalled items, prior failures, related decisions, open conflicts, matching hard guardrails, the deterministic snapshot hash, and measured duration. Default execution-specific bounds are 12 recalled items and 6000 characters, further capped by the configured DMF recall budgets.
+
+Failure behavior is deliberate:
+
+- disabled DMF -> `status: disabled`, execution behavior remains unchanged;
+- healthy DMF with no matches -> `status: healthy`, `inspectionRequired: false`;
+- unavailable/degraded search -> `status: degraded`, execution fails open and records no invented evidence;
+- matching active hard guardrail with `AGENT_CORE_MEMORY_ENFORCE_HARD_GUARDRAILS=true` -> execution fails closed with `EXECUTION_MEMORY_GUARDRAIL_BLOCKED` before a process is launched (and, on create, before a run is persisted).
+
+This pre-search complements route-time memory adoption rather than replacing it. Route memory informs capability selection and planning; execution pre-search rechecks the concrete objective/node plan immediately before it can become process work. The dedicated benchmark gate requires real pre-search p95 to remain below 500 ms.
+
 ## Dependency and concurrency rules
 
 Default bounds:

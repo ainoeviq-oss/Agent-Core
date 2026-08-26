@@ -4,6 +4,15 @@ All notable stable Agent Core changes are recorded here. The project follows sem
 
 ## Unreleased
 
+### Added
+
+- Autonomous execution memory pre-search now recalls bounded relevant failures, decisions, conflicts, and hard guardrails from the execution objective/node purposes before create/start/dynamic-add/retry paths, without indexing raw command text; degraded memory search fails open while enforced hard guardrails fail closed before process launch.
+- Execution memory pre-search has a dedicated local performance gate requiring real p95 latency below 500 ms.
+
+### Changed
+
+- `capability_route` now injects a bounded deterministic projection of recalled non-guardrail memory into capability ranking and reports `memoryInjection` evidence, closing the gap between available DMF infrastructure and autonomous routing adoption.
+
 ## [0.5.3] - 2026-08-27 — Stable
 
 ### Fixed

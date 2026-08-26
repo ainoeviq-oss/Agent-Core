@@ -23,6 +23,7 @@ describe('tracked Agent Core capability-router behavior contract', () => {
       'projectId',
       'memoryDirective',
       'memorySummary',
+      'memoryInjection',
       'blockingGuardrails',
       'priorFailures',
       'relatedDecisions',
@@ -41,6 +42,8 @@ describe('tracked Agent Core capability-router behavior contract', () => {
     hasAll(skill, [
       'execution_create',
       'execution_start',
+      'memoryPreSearch',
+      'EXECUTION_MEMORY_GUARDRAIL_BLOCKED',
       'dependsOn',
       'execution_wait',
       'execution_status',

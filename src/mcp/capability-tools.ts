@@ -6,6 +6,7 @@ import type { ContinuityTaskRecord } from '../continuity/store.js';
 import type { ContinuityCapture } from '../continuity/types.js';
 import type { MemorySearchHit } from '../memory/types.js';
 import type { RuntimeServices } from '../runtime/services.js';
+import { injectMemoryIntoRoutingContext } from './memory-injection.js';
 
 function textResult(value: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] };
@@ -244,7 +245,11 @@ export function registerCapabilityTools(
       }
     }
 
-    const plan = runtime.router.route(task, context ?? '');
+    const memoryInjection = injectMemoryIntoRoutingContext(context, preflight);
+    const plan = runtime.router.route(task, memoryInjection.context);
+    if (memoryInjection.applied && !plan.reasonCodes.includes('autonomous_memory_context')) {
+      plan.reasonCodes = [...plan.reasonCodes, 'autonomous_memory_context'];
+    }
     const route = runtime.routes.create(key.id, plan, {
       reservation,
       projectId,
@@ -304,6 +309,12 @@ export function registerCapabilityTools(
       relatedDecisions: preflight?.relatedDecisions ?? [],
       memoryConfidence: memoryConfidence(memorySummary),
       memorySnapshotHash: preflight?.snapshotHash ?? null,
+      memoryInjection: {
+        applied: memoryInjection.applied,
+        memoryIds: memoryInjection.memoryIds,
+        characterCount: memoryInjection.characterCount,
+        omittedCount: memoryInjection.omittedCount,
+      },
       memoryDirective,
       continuityStatus,
       continuityTurnId,
