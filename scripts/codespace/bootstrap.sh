@@ -71,6 +71,25 @@ if (( ${#missing_packages[@]} > 0 )); then
   sudo apt-get "${apt_source_args[@]}" install -y "${missing_packages[@]}" >/dev/null || exit 20
 fi
 
+source_before="$(git rev-parse HEAD 2>/dev/null)" || {
+  log_error 'Unable to resolve the current source commit before synchronization.'
+  exit 11
+}
+if bash "$SCRIPT_DIR/sync-source.sh"; then
+  :
+else
+  sync_status=$?
+  exit "$sync_status"
+fi
+source_after="$(git rev-parse HEAD 2>/dev/null)" || {
+  log_error 'Unable to resolve the synchronized source commit.'
+  exit 11
+}
+if [[ "$source_after" != "$source_before" ]]; then
+  log_info 'Source checkout changed during synchronization; restarting bootstrap from the synchronized source.'
+  exec bash "$SCRIPT_DIR/bootstrap.sh" --phase "$phase"
+fi
+
 if ! node_version_compatible; then
   if ! resolve_nvm; then
     nvm_target="${HOME:-/home/codespace}/.nvm"
@@ -158,4 +177,4 @@ NODE
   log_info 'Codespace ChatGPT API key created. Value was not printed.'
 fi
 
-AGENT_CORE_BOOTSTRAP_ACTIVE=1 bash "$SCRIPT_DIR/ensure-running.sh" --repair --phase "$phase"
+AGENT_CORE_BOOTSTRAP_ACTIVE=1 AGENT_CORE_FORCE_RESTART=1 bash "$SCRIPT_DIR/ensure-running.sh" --repair --phase "$phase"

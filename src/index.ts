@@ -7,6 +7,7 @@ import { loadConfig, type AppConfig } from './config.js';
 import { createHttpHandler } from './http/app.js';
 import { FileAuditLogger } from './logging/audit-log.js';
 import { createMcpHttpHandler } from './mcp/handler.js';
+import { SERVER_VERSION } from './mcp/server.js';
 import { OAuthService } from './oauth/service.js';
 import { FileOAuthStore } from './oauth/store.js';
 import { createRuntimeServices, type RuntimeServices } from './runtime/services.js';
@@ -54,6 +55,7 @@ export async function startAgentCoreService(config: AppConfig = loadConfig()): P
         runtime.execution.health(),
       ]);
       return {
+        version: SERVER_VERSION,
         memory: { ...memory, state: runtime.memory.currentState },
         continuity: {
           enabled: memory.enabled,

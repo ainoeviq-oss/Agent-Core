@@ -44,6 +44,32 @@ if (( needs_bootstrap == 1 )); then
   exec bash "$SCRIPT_DIR/bootstrap.sh" --phase start
 fi
 
+if [[ "${AGENT_CORE_BOOTSTRAP_ACTIVE:-0}" != "1" ]]; then
+  source_before="$(git rev-parse HEAD 2>/dev/null)" || {
+    log_error 'Unable to resolve the current source commit before synchronization.'
+    exit 11
+  }
+  if bash "$SCRIPT_DIR/sync-source.sh"; then
+    :
+  else
+    sync_status=$?
+    exit "$sync_status"
+  fi
+  source_after="$(git rev-parse HEAD 2>/dev/null)" || {
+    log_error 'Unable to resolve the synchronized source commit.'
+    exit 11
+  }
+  if [[ "$source_after" != "$source_before" ]]; then
+    log_info 'Source checkout changed during synchronization; restarting bootstrap from the synchronized source.'
+    exec bash "$SCRIPT_DIR/bootstrap.sh" --phase "$phase"
+  fi
+fi
+
+expected_source_version="$(source_package_version)" || {
+  log_error 'Unable to resolve Agent Core package version from synchronized source.'
+  exit 50
+}
+restart_required="${AGENT_CORE_FORCE_RESTART:-0}"
 build_required=0
 if [[ ! -f dist/index.js ]]; then
   build_required=1
@@ -56,27 +82,32 @@ fi
 if (( build_required == 1 )); then
   log_info 'Build output is missing or stale; rebuilding Agent Core.'
   npm run build || exit 50
+  restart_required=1
 fi
 
 start_supervisor() {
   tmux new-session -d -s "$AGENT_CORE_TMUX_SESSION" "bash \"$SCRIPT_DIR/start-agent-core.sh\""
 }
 
-if ! tmux has-session -t "$AGENT_CORE_TMUX_SESSION" 2>/dev/null; then
+if [[ "$restart_required" == "1" ]] && tmux has-session -t "$AGENT_CORE_TMUX_SESSION" 2>/dev/null; then
+  log_info 'Restarting Agent Core supervisor to activate the synchronized build.'
+  tmux kill-session -t "$AGENT_CORE_TMUX_SESSION" 2>/dev/null || true
+  start_supervisor || exit 60
+elif ! tmux has-session -t "$AGENT_CORE_TMUX_SESSION" 2>/dev/null; then
   log_info 'Starting Agent Core supervisor session.'
   start_supervisor || exit 60
 fi
 
-if ! wait_for_local_health 40 0.5; then
-  log_error 'Local health did not become ready; performing one controlled service restart.'
+if ! wait_for_local_health 40 0.5 "$expected_source_version"; then
+  log_error "Local health did not become ready at synchronized source version $expected_source_version; performing one controlled service restart."
   tmux kill-session -t "$AGENT_CORE_TMUX_SESSION" 2>/dev/null || true
   start_supervisor || exit 60
-  if ! wait_for_local_health 40 0.5; then
-    log_error "Agent Core local health failed after restart. See $AGENT_CORE_CODESPACE_HOME/logs/agent-core.log"
+  if ! wait_for_local_health 40 0.5 "$expected_source_version"; then
+    log_error "Agent Core local health/version gate failed after restart. See $AGENT_CORE_CODESPACE_HOME/logs/agent-core.log"
     exit 70
   fi
 fi
-log_info 'Local Agent Core health is verified.'
+log_info "Local Agent Core health is verified at source version $expected_source_version."
 
 browse_url=""
 for _ in $(seq 1 60); do
@@ -114,7 +145,7 @@ base_url="${base_url%/}"
 public_health=""
 for _ in $(seq 1 30); do
   if public_health="$(curl -fsS "$base_url/health" 2>/dev/null)"; then
-    if printf '%s' "$public_health" | health_payload_ok; then
+    if printf '%s' "$public_health" | health_payload_ok "$expected_source_version"; then
       break
     fi
   fi

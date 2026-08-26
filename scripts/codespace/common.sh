@@ -45,32 +45,46 @@ ensure_node_runtime() {
 }
 
 health_payload_ok() {
+  local expected_version="${1:-}"
   node -e '
     let input = "";
     process.stdin.on("data", chunk => input += chunk);
     process.stdin.on("end", () => {
+      const expectedVersion = process.argv[1] || "";
       try {
         const value = JSON.parse(input);
         const ok = value.status === "ok"
           && value.memory?.healthy === true
           && value.continuity?.healthy === true
-          && value.execution?.healthy === true;
+          && value.execution?.healthy === true
+          && (!expectedVersion || value.version === expectedVersion);
         process.exit(ok ? 0 : 1);
       } catch {
         process.exit(1);
       }
     });
-  '
+  ' "$expected_version"
+}
+
+source_package_version() {
+  node - "$AGENT_CORE_REPO_ROOT/package.json" <<'NODE'
+const fs = require('node:fs');
+const [packagePath] = process.argv.slice(2);
+const parsed = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+if (typeof parsed.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(parsed.version)) process.exit(1);
+process.stdout.write(parsed.version);
+NODE
 }
 
 wait_for_local_health() {
   local attempts="${1:-40}"
   local delay="${2:-0.5}"
+  local expected_version="${3:-}"
   local health
   local i
   for ((i = 1; i <= attempts; i++)); do
     if health="$(curl -fsS "http://127.0.0.1:${AGENT_CORE_CODESPACE_PORT}/health" 2>/dev/null)"; then
-      if printf '%s' "$health" | health_payload_ok; then
+      if printf '%s' "$health" | health_payload_ok "$expected_version"; then
         return 0
       fi
     fi
@@ -153,11 +167,15 @@ write_connection_metadata() {
   local url_target="$AGENT_CORE_CODESPACE_HOME/mcp-url.txt"
   local tmp="${target}.tmp.$$"
   local url_tmp="${url_target}.tmp.$$"
+  local source_commit
+  local source_version
+  source_commit="$(git -C "$AGENT_CORE_REPO_ROOT" rev-parse HEAD 2>/dev/null)" || return 1
+  source_version="$(source_package_version)" || return 1
   mkdir -p "$AGENT_CORE_CODESPACE_HOME"
 
-  node - "$tmp" "$base_url" "$transport" "${CODESPACE_NAME:-}" "$AGENT_CORE_CODESPACE_PORT" <<'NODE'
+  node - "$tmp" "$base_url" "$transport" "${CODESPACE_NAME:-}" "$AGENT_CORE_CODESPACE_PORT" "$source_commit" "$source_version" "${AGENT_CORE_CODESPACE_SYNC_REMOTE:-origin}" "${AGENT_CORE_CODESPACE_SYNC_BRANCH:-main}" <<'NODE'
 const fs = require('node:fs');
-const [target, baseUrl, transport, codespaceName, portRaw] = process.argv.slice(2);
+const [target, baseUrl, transport, codespaceName, portRaw, sourceCommit, sourceVersion, sourceRemote, sourceBranch] = process.argv.slice(2);
 const port = Number(portRaw);
 const payload = {
   codespaceName: codespaceName || null,
@@ -166,6 +184,10 @@ const payload = {
   mcpUrl: `${baseUrl}/mcp`,
   healthUrl: `${baseUrl}/health`,
   transport,
+  sourceCommit,
+  sourceVersion,
+  sourceRemote,
+  sourceBranch,
   verified: true,
   verifiedAt: new Date().toISOString(),
 };
