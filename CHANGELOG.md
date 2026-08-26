@@ -4,9 +4,27 @@ All notable stable Agent Core changes are recorded here. The project follows sem
 
 ## Unreleased
 
+## [0.5.1] - 2026-08-26 — Stable
+
 ### Added
 
 - Native GitHub Fabric with direct GitHub REST API access, ephemeral authenticated HTTPS Git transport, dedicated GitHub Packages authentication, route-aware MCP tools, destructive-operation guards, canonical operator guidance, and opt-in read-only live acceptance without requiring interactive GitHub CLI login.
+
+### Changed
+
+- Stable runtime and plugin packaging now ship the tracked Native GitHub Fabric skill and canonical GitHub operator documentation while keeping local credentials and generated runtime state outside release artifacts.
+- Release smoke coverage now matches the complete routed GitHub-enabled MCP tool surface.
+
+### Security
+
+- GitHub credentials are read lazily from separate operator-managed files, redacted from GitHub errors, audit, and deterministic memory, and never embedded in Git command arguments, repository URLs, global npm configuration, source control, or release packages.
+- Destructive GitHub operations remain gated by explicit Agent Core confirmation before side effects.
+
+### Stability evidence
+
+- `npm run verify:release`: 76/76 test files passed, 329 normal tests passed, 4 benchmark-only tests skipped in the normal suite, with release metadata and documentation link checks passing.
+- Explicit release performance gates: 6/6 passed, including the 10k-task continuity snapshot, bounded dispatch, and persisted wake latency gates.
+- Opt-in live read-only GitHub acceptance passed for authenticated identity/repository REST access, HTTPS `git ls-remote`, and GitHub Packages access without exposing credential values.
 
 ## [0.5.0] - 2026-08-26 — Stable
 

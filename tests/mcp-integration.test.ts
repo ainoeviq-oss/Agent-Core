@@ -82,7 +82,7 @@ afterEach(async () => {
 });
 
 describe('Agent Core MCP integration', () => {
-  it('initializes v0.5.0 with exactly 52 routing, github, memory, continuity, and execution tools and schemas', async () => {
+  it('initializes v0.5.1 with exactly 52 routing, github, memory, continuity, and execution tools and schemas', async () => {
     const { baseUrl, created } = await setup();
     const initialize = await mcpRequest(baseUrl, created.key, {
       jsonrpc: '2.0', id: 1, method: 'initialize',
@@ -93,7 +93,7 @@ describe('Agent Core MCP integration', () => {
     });
     expect(initialize.response.status).toBe(200);
     expect(initialize.json.result.serverInfo).toMatchObject({
-      name: 'agent-core', version: '0.5.0',
+      name: 'agent-core', version: '0.5.1',
     });
     const listed = await mcpRequest(baseUrl, created.key, {
       jsonrpc: '2.0', id: 2, method: 'tools/list', params: {},
@@ -120,7 +120,7 @@ describe('Agent Core MCP integration', () => {
     const { baseUrl, created } = await setup();
     const status = await call(baseUrl, created.key, 'agent_core_status');
     expect(status.json.result.structuredContent).toMatchObject({
-      service: 'agent-core', serverName: 'agent-core', version: '0.5.0',
+      service: 'agent-core', serverName: 'agent-core', version: '0.5.1',
       authentication: 'bearer-api-key',
       key: { id: created.metadata.id, name: 'integration-client' },
     });

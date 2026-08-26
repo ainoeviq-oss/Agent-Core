@@ -80,7 +80,7 @@ export class GitHubApiService {
     private readonly config: GitHubConfig,
     private readonly credentials: GitHubCredentialProvider,
     private readonly fetchImpl: typeof fetch = fetch,
-    private readonly userAgent = 'Agent-Core/0.5.0',
+    private readonly userAgent = 'Agent-Core/0.5.1',
   ) {}
 
   async request(input: GitHubApiRequest): Promise<GitHubApiResult> {

@@ -30,21 +30,21 @@ ChatGPT / MCP Client
 | identity / route / policy   |
 +-------------+---------------+
               |
-       +------+-------+--------------------+
-       |              |                    |
-       v              v                    v
- Capability       DMF + Continuity    Execution Fabric
-  Registry        durable context      DAG + events
-       |              |                    |
-       +--------------+---------+----------+
-                                |
-                                v
-                      Verified local actions
-                                |
-                    +-----------+-----------+
-                    |                       |
-                    v                       v
-              Files / processes       Evidence / logs
+   +----------+----------+----------+----------------+
+   |                     |          |                |
+   v                     v          v                v
+Capability         DMF + Continuity Execution     Native GitHub
+ Registry           durable context   Fabric         Fabric
+   |                     |          DAG + events  REST/Git/Packages
+   +----------+----------+----------+----------------+
+              |
+              v
+       Verified bounded actions
+              |
+       +------+----------------+
+       |                       |
+       v                       v
+Files / processes        GitHub / evidence
 ```
 
 **Core rule:** the model interprets and decides; Agent Core persists, constrains, executes, and records reality.
