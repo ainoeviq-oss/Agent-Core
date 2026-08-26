@@ -93,3 +93,14 @@ Verification:
 - `npx vitest run tests/codespace-anchor-discovery.test.ts` — 1 file PASS, 5 tests PASS, 0 failures.
 
 Next task: Task 5 — lifecycle integration for anchor vs backend roles.
+
+## Task 2 — Streaming proxy + OAuth identity normalization
+
+- Status: GREEN
+- Added `src/codespace/anchor-proxy.ts`.
+- Added `tests/codespace-anchor-proxy.test.ts`.
+- `/mcp` response path is streamed without response buffering.
+- OAuth discovery/protected-resource JSON is bounded and normalized to the stable front-door base URL.
+- Authorization/token/registration request bodies are proxied without logging secrets.
+- Upstream failures fail closed as `502`.
+- Focused verification: build PASS; 7/7 proxy tests PASS.
