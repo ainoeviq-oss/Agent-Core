@@ -619,3 +619,73 @@ working tree before Note update                                clean
 ### Next task
 
 Task 24 — run the full local build/test/verification gates from the feature worktree, including brand and local release checks only after confirming those scripts cannot dispatch GitHub Actions/CI.
+
+## Checkpoint 024 — Task 24: Full local verification and release-consistency gates
+
+### Prior durable checkpoint resolved
+
+```text
+root/main HEAD   = a8ae93affc053c0fe953d52f676857a84845400a
+origin/main      = a8ae93affc053c0fe953d52f676857a84845400a
+worktree HEAD    = 49a5bb5eb534366a27aeeebab9aae55c649c41e8
+origin/feature   = 49a5bb5eb534366a27aeeebab9aae55c649c41e8
+```
+
+### CI-safety audit
+
+Before running the canonical release verification, the local scripts were inspected directly:
+
+```text
+verify         = npm run check:brand && npm run build && npm test
+verify:release = npm run verify && node scripts/release/check-release.mjs && node scripts/release/check-doc-links.mjs
+```
+
+No `github_actions`, `gh workflow`, `gh run`, `workflow_dispatch`, or `actions/` execution reference exists in the local verification scripts. `check-release.mjs` only inspects source/version/tracked-path invariants with local Node + Git reads. `check-doc-links.mjs` only validates local tracked markdown links.
+
+`package:release` is a Windows PowerShell packaging command and was intentionally not executed in Codespace.
+
+### Canonical full local gate
+
+Executed from the feature worktree:
+
+```text
+npm run verify:release
+```
+
+Fresh result:
+
+```text
+Agent Core brand scan                               PASS
+TypeScript build                                    PASS
+Test Files                                          80 passed, 1 skipped (81 total)
+Tests                                               350 passed, 32 skipped (382 total)
+Failures                                            0
+Release version/package-lock/server-version match   PASS (0.5.1)
+CHANGELOG current-version section                   PASS
+README version-neutral check                        PASS
+forbidden tracked runtime/secret paths              PASS
+historical docs/superpowers tracked                 0
+tracked files inspected                             234
+tracked markdown files checked                      24
+relative links checked                              22
+missing/escaping relative links                     0
+```
+
+The 32 skipped tests are existing platform/performance-gated cases (not failures), including Windows tray/launcher coverage that remains active on Windows and bounded performance tests not enabled in this environment.
+
+### Source impact
+
+No regression was found. Task 24 requires no source/test patch; only this durable verification checkpoint is added.
+
+### Repository comparison before Task 24 commit
+
+| Surface | Ref |
+| --- | --- |
+| Root `/workspaces/Agent-Core` HEAD | `a8ae93affc053c0fe953d52f676857a84845400a` |
+| `origin/main` | `a8ae93affc053c0fe953d52f676857a84845400a` |
+| Worktree parent HEAD | `49a5bb5eb534366a27aeeebab9aae55c649c41e8` |
+| `origin/feat/memory-continuity-execution-hardening` | `49a5bb5eb534366a27aeeebab9aae55c649c41e8` |
+
+### Next task
+
+Task 25 — run the final isolated acceptance matrix for secret leakage, restart/recovery/migration, deterministic continuity/project isolation, execution evidence/wake, plugin package safety, and restart persistence of schema-v2 declared execution artifacts.
