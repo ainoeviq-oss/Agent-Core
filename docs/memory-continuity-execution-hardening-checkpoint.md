@@ -789,3 +789,223 @@ git diff --check                                               PASS
 ### Next task
 
 Task 26 — produce the final pre-integration checkpoint: exact feature diff/commit inventory, acceptance evidence, known environment limitations, rollback/integration procedure, and final integration gates before fast-forwarding root `main`.
+
+## Checkpoint 026 — Task 26: Final pre-integration inventory, rollback boundary, and cutover map
+
+### Exact pre-integration repository state
+
+```text
+root checkout        = /workspaces/Agent-Core
+root branch          = main
+root HEAD            = a8ae93affc053c0fe953d52f676857a84845400a
+origin/main          = a8ae93affc053c0fe953d52f676857a84845400a
+worktree             = /workspaces/Agent-Core/.worktrees/memory-continuity-execution-hardening
+feature branch       = feat/memory-continuity-execution-hardening
+feature HEAD         = 72c0feac9c4f0f29fe824c268b8fdd29280254e8
+origin/feature       = 72c0feac9c4f0f29fe824c268b8fdd29280254e8
+upstream/main        = 663f78356308017c087aaa3bf912f3c1479420e4
+base is ancestor     = yes
+commits since base   = 11
+```
+
+Root tracked files are clean. Root contains one unrelated untracked Codespace editor file:
+
+```text
+.vscode/settings.json
+```
+
+It predates final integration, is not part of the feature diff, and MUST NOT be deleted, staged, or overwritten merely to make `git status` visually empty. Feature worktree is fully clean before this Note update.
+
+### Durable feature commit chain
+
+```text
+61214b019af4d5328192f3702d9ad6bd7cab6ed1 feat: harden memory continuity and execution evidence
+d5bd3ae364e091b540190baf06b5afa8ecb89c90 feat: emit coalesced execution output wake events
+3e475c1fa380efc324ccc214854cbd1e4a7686dd test: prove staged multi-command wake flow
+4f3b93c4427aa45b6b53aad319af394a004c7c9c test: prove deterministic merged execution evidence
+af63e61cc33be67bd30a1ba603f94c54eba81e73 feat: promote verified execution artifact manifests
+55db966b0a1019d8f57b513bc1211662f3be2211 feat: gate execution-backed task completion
+3441d6434daaf98908d6a97c5b9d804ab4cd87ae docs: harden Agent Core routing behavior contract
+96f4d9428841faa4ac26fd51c2e71e345f10320e test: verify generated plugin skill parity
+49a5bb5eb534366a27aeeebab9aae55c649c41e8 test: checkpoint focused hardening regressions
+e020f373e254a3f65d0fa8968ab97c2fee0584d7 test: checkpoint full local verification
+72c0feac9c4f0f29fe824c268b8fdd29280254e8 test: prove restart and hardening acceptance
+```
+
+Every checkpoint above was pushed non-force and its exact remote feature SHA verified before the next plan task began.
+
+### Exact feature diff inventory
+
+Feature vs root baseline:
+
+```text
+44 files changed
+3583 insertions
+207 deletions
+```
+
+Changed paths:
+
+```text
+docs/memory-continuity-execution-hardening-checkpoint.md
+plugin/agent-core/skills/agent-core-capability-router/SKILL.md
+src/continuity/promoter.ts
+src/continuity/store.ts
+src/continuity/types.ts
+src/execution/dag.ts
+src/execution/db-worker.ts
+src/execution/evidence.ts
+src/execution/log-store.ts
+src/execution/memory-bridge.ts
+src/execution/runner.ts
+src/execution/scheduler.ts
+src/execution/schema.ts
+src/execution/service.ts
+src/execution/store.ts
+src/execution/worker-client.ts
+src/mcp/capability-tools.ts
+src/mcp/continuity-tools.ts
+src/mcp/execution-tools.ts
+src/mcp/memory-tools.ts
+src/mcp/project-scope.ts
+src/mcp/tools.ts
+src/memory/backup.ts
+src/memory/service.ts
+src/runtime/route-context-store.ts
+src/runtime/services.ts
+src/runtime/workspace.ts
+tests/agent-core-router-skill.test.ts
+tests/continuity-checkpoint.test.ts
+tests/continuity-resume.acceptance.test.ts
+tests/execution-dag.test.ts
+tests/execution-evidence.test.ts
+tests/execution-mcp.test.ts
+tests/execution-memory-bridge.test.ts
+tests/execution-restart-artifact.acceptance.test.ts
+tests/execution-runner.test.ts
+tests/execution-schema.test.ts
+tests/execution-unified-lifecycle.test.ts
+tests/execution-wake.test.ts
+tests/memory-recovery.test.ts
+tests/plugin-package.test.ts
+tests/project-scope-routing.test.ts
+tests/route-context-store.test.ts
+tests/workspace.test.ts
+```
+
+Corrected forbidden-state audit:
+
+```text
+Top-level runtime/ change             none
+Top-level secrets/ change             none
+node_modules/ change                  none
+dist/ change                          none
+cache/ change                         none
+plugin/agent-core/generated/ change   none
+FORBIDDEN_CHANGED_PATHS               none
+git diff --check                      PASS
+```
+
+`src/runtime/*` is production source and is intentionally changed; it is not runtime state.
+
+### Useful source hashes
+
+```text
+src/execution/evidence.ts SHA256
+b04652110f35a5ca7d9ad37add63c3a78db6271302c2fd3e1fbfd748d1bc2aff
+
+src/mcp/project-scope.ts SHA256
+2242510da3ed453b75c270fbbbe917b6e14e37be29029934e914f7fe24b03566
+
+tracked router SKILL.md SHA256
+cd9620f4420cdc6a9c232dd79e954f4aa639dce4b554aec1d63efd208d1b0762
+```
+
+### Tasks 1–25 acceptance summary
+
+The feature branch has already satisfied the isolated-clone Definition of Done evidence:
+
+- memory/execution health lifecycle cannot remain falsely `healthy` after integrity failure;
+- backup metadata is not reported usable when its file is missing;
+- routed project identity replaces unconditional `workspace.roots[0]` scope in route-bound memory/continuity/execution/filesystem/process behavior;
+- multi-root ambiguity fails closed and cross-project operation/evidence paths are rejected;
+- stale abandoned continuity turns reconcile to interrupted and bounded natural continuation variants reuse one unique semantic task;
+- route output carries machine-readable memory/continuity inspection directives without duplicate memory preflight;
+- structured checkpoint outcomes/constraints are promoted with provenance while generic successful summary prose is not spammed into memory;
+- execution schema v2 persists `expectedArtifacts` with pre-migration backup and legacy v1 compatibility;
+- workspace-safe artifact verifier checks existence/type/size/SHA256 and rejects path escape;
+- process state and evidence state are explicit; exit 0 + missing required artifact becomes failure and does not release dependents;
+- bounded deterministic merged execution evidence is exposed without raw logs;
+- real stdout/stderr output availability is wired into coalesced persisted `node.output_available` wake events;
+- real A/B staged acceptance proves concurrent start, wake on A while B runs, evidence inspection, sequence re-arm, B wake, and factual A+B synthesis;
+- ExecutionMemoryBridge promotes verified artifact manifest/provenance and never raw log contents; degraded-memory queue/replay stays idempotent;
+- execution-backed semantic completion requires explicit `execution:<runId>` verified proof while non-execution tasks remain compatible;
+- native Agent Core skill makes memory/continuity/DAG/wake/evidence/checkpoint workflow mandatory;
+- generated plugin router skill is byte-identical to tracked skill and package safety checks exclude runtime/secrets/cache/token paths;
+- focused sweep: 33 files / 177 tests PASS + build PASS;
+- canonical `npm run verify:release`: 350 tests PASS, 0 failures, release consistency PASS, 24 markdown files / 22 relative links PASS;
+- final isolated acceptance matrix: 19 files / 95 tests PASS, including new expectedArtifacts service-restart durability acceptance;
+- no GitHub Actions/CI was run or relied upon.
+
+### Factual pre-cutover live state
+
+The currently running Agent Core still serves the root checkout intentionally and has not yet been migrated/reloaded with the feature:
+
+```text
+Agent Core version           0.5.1
+Node                         v24.16.0
+workspace                    /workspaces/Agent-Core
+memory                       healthy, schema 2
+continuity                   healthy / snapshot ready
+execution                    healthy, schema 1
+active execution runs        0
+```
+
+`execution schema 1` here is expected before Task 27. Feature tests prove migration to schema 2; live migration is deliberately deferred to the cutover so development never mutates the production execution DB.
+
+### Known environment limitations / non-blocking facts
+
+1. Codespace currently has no external capability registry at `/workspaces/Agent-Core/capabilities/registry/catalog.json`. Therefore an unqualified `npm run build:plugin` fails closed. Task 22 rebuilt the actual ignored core-only generated package using an explicit temporary empty registry, while deterministic fixture tests separately prove audited `native_ready` capability import, provenance, and license gates.
+2. The full Linux verification skips 32 existing Windows/platform/performance-gated tests. They are skips, not failures. The rest of the suite is green, and Windows shell compatibility remains covered by pure adapter contract tests while Windows-specific suites remain enabled on Windows.
+3. Root has untracked `.vscode/settings.json`; it is unrelated editor state and must remain untouched.
+4. The live execution DB remains schema 1 until Task 27 by design.
+
+### Rollback boundary
+
+Before Task 27 integration, the durable rollback anchors are:
+
+```text
+root/origin main baseline = a8ae93affc053c0fe953d52f676857a84845400a
+remote feature checkpoint = current Task 26 feature commit (after this Note is committed/pushed)
+```
+
+Task 27 MUST keep the feature branch/remote intact during cutover.
+
+Source rollback before `main` push is straightforward because integration is fast-forward-only: restore root `main` to `a8ae93affc053c0fe953d52f676857a84845400a` only if tracked root is otherwise clean; the feature branch remains the durable copy.
+
+Live DB rollback requires more than a source reset after schema migration. On execution DB v1→v2 open, `ExecutionStore.open()` creates a pre-migration SQLite backup through the worker and exposes `migrationBackupPath`. If live cutover must be rolled back to the old schema-1 runtime, stop the Agent Core supervisor, restore the execution DB from that exact pre-migration backup (including removal/reconciliation of current WAL/SHM under a stopped-runtime procedure), then restore source/runtime. Never run the old schema-1 source directly against the migrated schema-2 DB.
+
+### Approved Task 27 cutover procedure
+
+The canonical plan originally makes Task 27 an explicit approval boundary. The user has already explicitly authorized end-to-end Codespace implementation + repository push and subsequently instructed not to stop before completion, so Task 27 may proceed without another approval prompt.
+
+Task 27 sequence:
+
+1. Verify Task 26 feature commit is pushed and `origin/feature == local feature HEAD`.
+2. Verify root tracked state is clean; preserve unrelated `.vscode/settings.json` untracked.
+3. Confirm no active execution runs before restart/migration.
+4. Fast-forward root only: `git merge --ff-only feat/memory-continuity-execution-hardening`.
+5. From root, run fresh canonical `npm run verify:release`; no GitHub Actions/CI.
+6. Inspect/rebuild root `dist` through the local verification result and perform a controlled Codespace Agent Core supervisor reload so the new source is active.
+7. Allow live execution DB v1→v2 migration only during that controlled new-runtime startup; verify a pre-migration backup exists and execution health reports schema 2/integrity ok.
+8. Verify live memory/continuity/execution health, native Git availability, local/public `/health`, OAuth issuer, unauthenticated `/mcp` rejection, and current MCP URL.
+9. Reconnect the ChatGPT connector automatically if the controlled restart briefly invalidates the session; ask the user only if the connector genuinely cannot be recovered.
+10. Create one live schema-v2 execution with a required declared artifact under an ignored root runtime proof path; wait event-driven for completion and verify `resultVersion=2`, `processState=succeeded`, `evidenceState=verified`, artifact SHA256, and merged run verification.
+11. Append Task 27 live evidence to this Note in root, commit it on `main`, then push `main` normal non-force to writable `origin` and verify exact remote SHA. Never call GitHub Actions.
+12. Complete the main continuity task with a factual terminal `task_checkpoint`, explicitly citing `execution:<liveRunId>` plus fresh test/health/git evidence. Use `projectTerminal=true` only if no further plan work remains.
+13. Remove the now-clean isolated worktree and local feature branch only after root/main and origin/main are exact and verified. Preserve remote feature branch as historical checkpoint unless explicitly removed later.
+14. Final response may state completion only after all live/runtime/repository gates above are factual PASS.
+
+### Next task
+
+Task 27 — perform the approved fast-forward integration, fresh root verification, controlled live schema-v2 migration/restart, live evidence proof, main commit/push verification, continuity terminal checkpoint, and worktree cleanup.
