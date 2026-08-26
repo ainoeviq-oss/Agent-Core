@@ -168,12 +168,16 @@ export class GitHubGitService {
   private async runAuthenticated(args: string[], cwd: string): Promise<SpawnResult> {
     const token = await this.credentials.read('github');
     const askpassDir = path.join(this.runtimeRoot, 'askpass');
-    const askpassPath = path.join(askpassDir, `askpass-${randomUUID()}.cmd`);
+    const isWindows = process.platform === 'win32';
+    const askpassPath = path.join(askpassDir, `askpass-${randomUUID()}${isWindows ? '.cmd' : '.sh'}`);
+    const askpassSource = isWindows
+      ? '@echo off\r\nset "P=%~1"\r\necho %P% | findstr /I "username" >nul\r\nif %errorlevel%==0 (echo x-access-token) else (echo %AGENT_CORE_GITHUB_ASKPASS_TOKEN%)\r\n'
+      : '#!/usr/bin/env sh\ncase "$1" in\n  *sername*) printf "%s\\n" "x-access-token" ;;\n  *) printf "%s\\n" "$AGENT_CORE_GITHUB_ASKPASS_TOKEN" ;;\nesac\n';
     await mkdir(askpassDir, { recursive: true });
     await writeFile(
       askpassPath,
-      '@echo off\r\nset "P=%~1"\r\necho %P% | findstr /I "username" >nul\r\nif %errorlevel%==0 (echo x-access-token) else (echo %AGENT_CORE_GITHUB_ASKPASS_TOKEN%)\r\n',
-      { encoding: 'utf8', mode: 0o600 },
+      askpassSource,
+      { encoding: 'utf8', mode: isWindows ? 0o600 : 0o700 },
     );
 
     try {

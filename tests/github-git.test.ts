@@ -45,6 +45,8 @@ describe('GitHubGitService', () => {
       const helperPath = request.env?.GIT_ASKPASS;
       expect(helperPath).toBeTruthy();
       helperSource = await readFile(String(helperPath), 'utf8');
+      expect(path.extname(String(helperPath))).toBe(process.platform === 'win32' ? '.cmd' : '.sh');
+      if (process.platform !== 'win32') expect(helperSource).toContain('#!/usr/bin/env sh');
       return okResult('abc123\trefs/heads/main\n');
     });
 
