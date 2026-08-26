@@ -1175,3 +1175,69 @@ feature worktree state = clean
 3. after local/remote main are exact, remove the clean implementation worktree and local feature branch while preserving the remote feature branch as historical checkpoint;
 4. append cleanup/final repository evidence, commit/push one final main checkpoint;
 5. complete continuity task `09a8723c-2a75-452d-8afd-76259a4dd1a7` with explicit `execution:748ae908-2706-48b3-b88f-3b714add53f1` evidence plus test/health/git/backup evidence.
+
+## Checkpoint 027B — Task 27 cleanup and final repository checkpoint
+
+### First integrated main push
+
+The live-cutover evidence commit was pushed normal non-force:
+
+```text
+main commit = e10d42fa68338e69d18fab5f3ee0e435507c4e3b
+origin/main = e10d42fa68338e69d18fab5f3ee0e435507c4e3b
+```
+
+The historical remote feature checkpoint remained unchanged:
+
+```text
+origin/feat/memory-continuity-execution-hardening
+= f75bc00fbc94921f5cc313bd6a6a2c06ef37d84c
+```
+
+No GitHub Actions/CI was invoked during the push.
+
+### Isolated worktree cleanup
+
+Cleanup was performed only after root/main and origin/main were exact and the feature worktree was clean.
+
+Before cleanup:
+
+```text
+/workspaces/Agent-Core                                                   e10d42f [main]
+/workspaces/Agent-Core/.worktrees/memory-continuity-execution-hardening  f75bc00 [feat/memory-continuity-execution-hardening]
+```
+
+After cleanup:
+
+```text
+/workspaces/Agent-Core  e10d42f [main]
+local feat/memory-continuity-execution-hardening branch = removed
+/workspaces/Agent-Core/.worktrees/memory-continuity-execution-hardening = removed
+remote feature branch = preserved at f75bc00fbc94921f5cc313bd6a6a2c06ef37d84c
+```
+
+Root tracked state remained clean. The unrelated editor state remains deliberately untracked and preserved:
+
+```text
+.vscode/settings.json
+```
+
+### Final system state before this final Note commit
+
+```text
+root branch              = main
+root HEAD                = e10d42fa68338e69d18fab5f3ee0e435507c4e3b
+origin/main              = e10d42fa68338e69d18fab5f3ee0e435507c4e3b
+remote feature rollback  = f75bc00fbc94921f5cc313bd6a6a2c06ef37d84c
+local implementation worktree = removed
+local feature branch          = removed
+live memory schema            = 2 / healthy
+live execution schema         = 2 / healthy
+live v2 execution run         = 748ae908-2706-48b3-b88f-3b714add53f1 / completed / verified
+live artifact SHA256          = a7d319bd3e5c65bc393f3de31f4fc7380310f85aa53361d8b0f9b63f47b85c0c
+execution migration backup    = adab75e3a59dff6c105e853ba41a0353029c3d9185e6ccc1ef927cbfe5de729a
+MCP URL                       = https://ominous-xylophone-69xxp4v76vv93xq64-8765.app.github.dev/mcp
+GitHub Actions / CI           = never invoked or relied upon
+```
+
+This Note commit is the last tracked repository change required by the 27-task plan. After it is pushed and exact `origin/main` equality is re-verified, the remaining operation is the terminal continuity checkpoint for task `09a8723c-2a75-452d-8afd-76259a4dd1a7` using the live verified execution run plus fresh test/health/git/backup evidence.
