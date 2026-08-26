@@ -29,6 +29,15 @@ describe('Codespaces deployment contract', () => {
     expect(common).not.toMatch(/agent_core_live_[A-Za-z0-9_-]+/);
   });
 
+  it('pins the Phase 1 anchor identity without changing the non-anchor service port', async () => {
+    const common = await read('scripts/codespace/common.sh');
+    expect(common).toContain('AGENT_CORE_ANCHOR_CODESPACE_NAME="${AGENT_CORE_ANCHOR_CODESPACE_NAME:-ominous-xylophone-69xxp4v76vv93xq64}"');
+    expect(common).toContain('AGENT_CORE_ANCHOR_PUBLIC_BASE_URL="${AGENT_CORE_ANCHOR_PUBLIC_BASE_URL:-https://ominous-xylophone-69xxp4v76vv93xq64.app.github.dev}"');
+    expect(common).toContain('AGENT_CORE_ANCHOR_LOCAL_BACKEND_PORT="${AGENT_CORE_ANCHOR_LOCAL_BACKEND_PORT:-8766}"');
+    expect(common).toContain('codespace_anchor_role()');
+    expect(common).toContain('agent_core_service_port()');
+  });
+
   it('starts Agent Core with isolated Codespace runtime paths', async () => {
     const launcher = await read('scripts/codespace/start-agent-core.sh');
     expect(launcher).toContain('AGENT_CORE_HOST="0.0.0.0"');

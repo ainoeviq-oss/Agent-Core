@@ -4,8 +4,36 @@ set -euo pipefail
 AGENT_CORE_REPO_ROOT="${AGENT_CORE_REPO_ROOT:-/workspaces/Agent-Core}"
 AGENT_CORE_CODESPACE_HOME="${AGENT_CORE_CODESPACE_HOME:-/workspaces/.agent-core-codespace}"
 AGENT_CORE_CODESPACE_PORT="${AGENT_CORE_CODESPACE_PORT:-8765}"
+AGENT_CORE_ANCHOR_CODESPACE_NAME="${AGENT_CORE_ANCHOR_CODESPACE_NAME:-ominous-xylophone-69xxp4v76vv93xq64}"
+AGENT_CORE_ANCHOR_PUBLIC_BASE_URL="${AGENT_CORE_ANCHOR_PUBLIC_BASE_URL:-https://ominous-xylophone-69xxp4v76vv93xq64.app.github.dev}"
+AGENT_CORE_ANCHOR_PUBLIC_PORT="${AGENT_CORE_ANCHOR_PUBLIC_PORT:-8765}"
+AGENT_CORE_ANCHOR_LOCAL_BACKEND_PORT="${AGENT_CORE_ANCHOR_LOCAL_BACKEND_PORT:-8766}"
 AGENT_CORE_TMUX_SESSION="${AGENT_CORE_TMUX_SESSION:-agent-core-codespace}"
 AGENT_CORE_NODE_VERSION="${AGENT_CORE_NODE_VERSION:-24.16.0}"
+
+codespace_anchor_enabled() {
+  [[ -n "$AGENT_CORE_ANCHOR_CODESPACE_NAME" ]]
+}
+
+codespace_anchor_role() {
+  if codespace_anchor_enabled && [[ "${CODESPACE_NAME:-}" == "$AGENT_CORE_ANCHOR_CODESPACE_NAME" ]]; then
+    printf 'anchor\n'
+  else
+    printf 'backend\n'
+  fi
+}
+
+agent_core_service_port() {
+  if [[ "$(codespace_anchor_role)" == "anchor" ]]; then
+    printf '%s\n' "$AGENT_CORE_ANCHOR_LOCAL_BACKEND_PORT"
+  else
+    printf '%s\n' "$AGENT_CORE_CODESPACE_PORT"
+  fi
+}
+
+anchor_public_base_url() {
+  printf '%s\n' "${AGENT_CORE_ANCHOR_PUBLIC_BASE_URL%/}"
+}
 
 log_info() { printf '[agent-core-codespace] %s\n' "$*"; }
 log_error() { printf '[agent-core-codespace] ERROR: %s\n' "$*" >&2; }
