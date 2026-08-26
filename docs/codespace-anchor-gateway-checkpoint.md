@@ -129,3 +129,15 @@ Fresh-machine guardrail:
 All runtime behavior above is implemented in repository-tracked source/scripts; runtime target state, OAuth stores, database files, logs, and credentials remain outside Git.
 
 Next task: prove the complete fresh-Codespace bootstrap inventory is tracked and reproducible, then implement a Codespace-deletion-surviving stable front door.
+
+## Checkpoint — Fresh Codespace reproducibility gate
+
+Status: COMPLETE / GREEN
+
+Evidence:
+- Added `tests/codespace-fresh-machine.test.ts` to require the complete fresh-Codespace automation inventory to remain tracked.
+- The gate verifies `.devcontainer` create/start/attach hooks, only port 8765 forwarding, bootstrap prerequisites, Node/npm dependency recovery, source synchronization before build, automatic port-publicization, OAuth/MCP readiness gates, and runtime/secrets isolation.
+- All `scripts/codespace/*.sh` entries are now stored with Git mode `100755`, not merely chmod'd in the current filesystem.
+- Focused verification: 3 files / 24 tests PASS, 0 failures; `git diff --check` PASS.
+
+Tracked automation includes `.devcontainer/devcontainer.json`, bootstrap/common/sync/ensure/show/start/set/discover/watch scripts, plus anchor config/proxy/server/target/discovery source. A fresh checkout therefore receives the automation instead of depending on mutable state from this Codespace.
