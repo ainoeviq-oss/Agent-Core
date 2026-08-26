@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const CLOUDFLARE_API_BASE = 'https://api.cloudflare.com/client/v4';
-const DEFAULT_COMPATIBILITY_DATE = '2026-08-27';
+const DEFAULT_COMPATIBILITY_DATE = '2026-08-26';
 
 function normalizeHttpsOrigin(raw, errorCode) {
   let url;

@@ -112,6 +112,28 @@ describe('stable Cloudflare Worker gateway contract', () => {
     })).rejects.toThrow('CLOUDFLARE_ACCOUNT_ID_AMBIGUOUS');
   });
 
+  it('uses a Cloudflare compatibility date that is not ahead of the deployment UTC date', async () => {
+    const admin = await import(`${pathToFileURL(path.join(root, adminFile)).href}?t=${Date.now()}`) as Record<string, any>;
+    let metadata: Record<string, string> | undefined;
+    const fakeFetch = async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const form = init?.body as FormData;
+      const part = form.get('metadata');
+      expect(part).toBeInstanceOf(Blob);
+      metadata = JSON.parse(await (part as Blob).text()) as Record<string, string>;
+      return Response.json({ success: true, result: {} });
+    };
+
+    await admin.deployWorkerSource({
+      accountId: 'account123',
+      apiToken: 'token-redacted',
+      workerName: 'agent-core-gateway',
+      workerSource: 'export default { fetch() { return new Response(\"ok\"); } };',
+      fetchImpl: fakeFetch,
+    });
+
+    expect(metadata?.compatibility_date).toBe('2026-08-26');
+  });
+
   it('gateway admin updates only BACKEND_URL through the Cloudflare secret API and verifies all public gates', async () => {
     expect(existsSync(path.join(root, adminFile))).toBe(true);
     if (!existsSync(path.join(root, adminFile))) return;
