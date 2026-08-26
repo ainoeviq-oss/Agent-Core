@@ -220,3 +220,55 @@ git diff --check                                               PASS
 ### Next task
 
 Task 18 — prove and formalize the deterministic merged run evidence view used for final factual synthesis.
+
+## Checkpoint 018 — Task 18: Deterministic merged run evidence for final synthesis
+
+### Prior durable checkpoint resolved
+
+```text
+root/main HEAD   = a8ae93affc053c0fe953d52f676857a84845400a
+origin/main      = a8ae93affc053c0fe953d52f676857a84845400a
+worktree HEAD    = 3e475c1fa380efc324ccc214854cbd1e4a7686dd
+origin/feature   = 3e475c1fa380efc324ccc214854cbd1e4a7686dd
+```
+
+### Determinism proof
+
+A real MCP execution is intentionally created with input nodes in reverse order (`B`, then `A`). Both nodes produce required SHA256-verified artifacts and raw stdout sentinels. After persisted `run.completed`:
+
+- `execution_status.evidence.verification = verified`;
+- merged evidence is deterministically ordered `A`, `B`, independent of request ordering;
+- a second independent `execution_status` read returns an exactly equal evidence object;
+- artifact references are ordered consistently with the node evidence and preserve verified SHA256 metadata;
+- process state and evidence state remain distinct and verified;
+- raw stdout sentinel content is absent from the merged evidence view.
+
+No production code change was needed. The merged evidence builder introduced in Task 15 already satisfies Task 18's deterministic synthesis contract.
+
+### Changed files
+
+```text
+tests/execution-mcp.test.ts
+```
+
+### Verification
+
+```text
+npm run build                                                   PASS
+Task 18 deterministic evidence focused acceptance              PASS
+full tests/execution-mcp.test.ts                                9/9 PASS
+git diff --check                                               PASS
+```
+
+### Repository comparison before Task 18 commit
+
+| Surface | Ref |
+| --- | --- |
+| Root `/workspaces/Agent-Core` HEAD | `a8ae93affc053c0fe953d52f676857a84845400a` |
+| `origin/main` | `a8ae93affc053c0fe953d52f676857a84845400a` |
+| Worktree parent HEAD | `3e475c1fa380efc324ccc214854cbd1e4a7686dd` |
+| `origin/feat/memory-continuity-execution-hardening` | `3e475c1fa380efc324ccc214854cbd1e4a7686dd` |
+
+### Next task
+
+Task 19 — extend the existing `ExecutionMemoryBridge` to promote the verified artifact manifest and exact provenance into deterministic memory without copying raw logs, while preserving degraded-memory queue/replay behavior.

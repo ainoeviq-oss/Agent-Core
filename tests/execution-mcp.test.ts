@@ -279,6 +279,76 @@ describe('first-class execution MCP surface', () => {
     expect(JSON.stringify(status)).not.toContain('RAW-LOG-MUST-NOT-APPEAR-IN-STATUS');
   }, 10_000);
 
+  it('keeps merged run evidence deterministic across reversed input order and repeated status reads', async () => {
+    const f = await fixture('evidence-determinism');
+    const routed = await route(f);
+    const artifactA = path.join(f.work, 'evidence-a.json');
+    const artifactB = path.join(f.work, 'evidence-b.json');
+    const writeArtifact = (target: string, nodeId: string, rawLog: string) => nodeShellCommand(`
+      const fs = require('node:fs');
+      fs.writeFileSync(${JSON.stringify(target)}, JSON.stringify({ node: ${JSON.stringify(nodeId)}, verified: true }));
+      process.stdout.write(${JSON.stringify(rawLog)});
+    `);
+
+    const created = expectOk(await call(f.baseUrl, f.principalA.key, 'execution_create', {
+      routeContextId: routed.routeContextId,
+      objective: 'deterministic merged evidence fixture',
+      maxConcurrency: 2,
+      nodes: [
+        {
+          id: 'B', purpose: 'B intentionally supplied first', command: writeArtifact(artifactB, 'B', 'RAW-B-SENTINEL'), cwd: f.work,
+          expectedArtifacts: [{ path: artifactB, kind: 'file', hash: 'sha256', required: true }],
+        },
+        {
+          id: 'A', purpose: 'A intentionally supplied second', command: writeArtifact(artifactA, 'A', 'RAW-A-SENTINEL'), cwd: f.work,
+          expectedArtifacts: [{ path: artifactA, kind: 'file', hash: 'sha256', required: true }],
+        },
+      ],
+    }));
+    expectOk(await call(f.baseUrl, f.principalA.key, 'execution_start', {
+      routeContextId: routed.routeContextId,
+      runId: created.runId,
+    }));
+    const done = expectOk(await call(f.baseUrl, f.principalA.key, 'execution_wait', {
+      routeContextId: routed.routeContextId,
+      runId: created.runId,
+      afterSequence: created.lastEventSequence,
+      eventTypes: ['run.completed'],
+      timeoutMs: 5_000,
+    }));
+    expect(done.event?.eventType).toBe('run.completed');
+
+    const first = expectOk(await call(f.baseUrl, f.principalA.key, 'execution_status', {
+      routeContextId: routed.routeContextId,
+      runId: created.runId,
+    }));
+    const second = expectOk(await call(f.baseUrl, f.principalA.key, 'execution_status', {
+      routeContextId: routed.routeContextId,
+      runId: created.runId,
+    }));
+
+    expect(first.evidence.verification).toBe('verified');
+    expect(first.evidence.nodes.map((node: any) => node.nodeId)).toEqual(['A', 'B']);
+    expect(second.evidence).toEqual(first.evidence);
+    expect(first.evidence.nodes.map((node: any) => node.artifacts[0].path)).toEqual([artifactA, artifactB]);
+    for (const node of first.evidence.nodes) {
+      expect(node).toMatchObject({
+        resultVersion: 2,
+        processState: 'succeeded',
+        evidenceState: 'verified',
+        stdoutSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        stderrSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        artifacts: [expect.objectContaining({
+          verification: 'verified',
+          sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        })],
+      });
+    }
+    const serialized = JSON.stringify(first.evidence);
+    expect(serialized).not.toContain('RAW-A-SENTINEL');
+    expect(serialized).not.toContain('RAW-B-SENTINEL');
+  }, 10_000);
+
   it('a fresh same-principal route can mutate an older owned run while another principal/project cannot observe it', async () => {
     const f = await fixture('ownership');
     const originalRoute = await route(f);
