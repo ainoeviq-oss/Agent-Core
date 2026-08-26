@@ -246,13 +246,40 @@ mcp_status="$(curl -sS -o /dev/null -w '%{http_code}' "$base_url/mcp" 2>/dev/nul
   exit 92
 }
 
+connection_base_url="$base_url"
 transport="github-codespaces"
 if [[ "$role" == "anchor" ]]; then
   transport="codespace-anchor-gateway"
 elif [[ -n "${AGENT_CORE_PUBLIC_BASE_URL:-}" ]]; then
   transport="stable-front-door"
 fi
-write_connection_metadata "$base_url" "$transport"
 
-log_info 'READY: all local, forwarding, public-health, OAuth, and MCP-auth gates passed.'
-printf 'Agent Core Codespace MCP URL: %s/mcp\n' "$base_url"
+case "$AGENT_CORE_STABLE_GATEWAY_REQUIRED" in
+  0|1) ;;
+  *) log_error 'AGENT_CORE_STABLE_GATEWAY_REQUIRED must be 0 or 1.'; exit 93 ;;
+esac
+
+if stable_gateway_credentials_partial; then
+  log_error 'Cloudflare gateway credentials are partially configured; both CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are required.'
+  exit 93
+fi
+
+if stable_gateway_credentials_available; then
+  log_info 'Updating stable Cloudflare Worker backend after direct Codespace readiness gates passed.'
+  if ! bash "$SCRIPT_DIR/update-stable-gateway.sh" "$base_url" "$expected_source_version"; then
+    log_error 'Stable Cloudflare Worker backend update or verification failed.'
+    exit 93
+  fi
+  connection_base_url="${AGENT_CORE_STABLE_GATEWAY_BASE_URL%/}"
+  transport="cloudflare-workers-stable-gateway"
+elif [[ "$AGENT_CORE_STABLE_GATEWAY_REQUIRED" == "1" ]]; then
+  log_error 'Stable Cloudflare Worker gateway is required but Codespaces Secrets are unavailable.'
+  exit 93
+else
+  log_info 'Stable Cloudflare Worker update skipped because Codespaces Secrets are not configured; direct Codespace readiness remains valid.'
+fi
+
+write_connection_metadata "$connection_base_url" "$transport"
+
+log_info 'READY: all required local, forwarding, public-health, OAuth, MCP-auth, and configured stable-gateway gates passed.'
+printf 'Agent Core Codespace MCP URL: %s/mcp\n' "$connection_base_url"

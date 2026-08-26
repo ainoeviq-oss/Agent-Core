@@ -53,11 +53,14 @@ describe('Codespace anchor lifecycle integration', () => {
     expect(watcher).not.toMatch(/cat\s+.*agent-core-chatgpt-key/);
   });
 
-  it('uses the stable portless anchor origin for public readiness and connection metadata', async () => {
+  it('uses the portless anchor as the direct backend while allowing verified connection metadata to promote to the stable Worker origin', async () => {
     const ensure = await read('scripts/codespace/ensure-running.sh');
     expect(ensure).toContain('base_url="$(anchor_public_base_url)"');
+    expect(ensure).toContain('connection_base_url="$base_url"');
     expect(ensure).toContain('transport="codespace-anchor-gateway"');
-    expect(ensure).toContain('write_connection_metadata "$base_url" "$transport"');
+    expect(ensure).toContain('connection_base_url="${AGENT_CORE_STABLE_GATEWAY_BASE_URL%/}"');
+    expect(ensure).toContain('transport="cloudflare-workers-stable-gateway"');
+    expect(ensure).toContain('write_connection_metadata "$connection_base_url" "$transport"');
   });
 
   it('tracks fresh Codespace lifecycle hooks and forwards only public port 8765', async () => {

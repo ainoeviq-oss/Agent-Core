@@ -93,6 +93,8 @@ describe('Codespaces deployment contract', () => {
     expect(pkg.scripts['codespace:bootstrap']).toBe('bash scripts/codespace/bootstrap.sh --phase manual');
     expect(pkg.scripts['codespace:repair']).toBe('bash scripts/codespace/ensure-running.sh --repair --phase manual');
     expect(pkg.scripts['codespace:connection']).toBe('bash scripts/codespace/show-connection.sh');
+    expect(pkg.scripts['codespace:gateway:update']).toBe('bash scripts/codespace/update-stable-gateway.sh');
+    expect(pkg.scripts['codespace:gateway:deploy']).toBe('bash scripts/codespace/deploy-stable-gateway.sh');
   });
 
   it('never prints the Codespace API key during automatic lifecycle scripts', async () => {

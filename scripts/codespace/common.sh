@@ -11,6 +11,9 @@ AGENT_CORE_ANCHOR_LOCAL_BACKEND_PORT="${AGENT_CORE_ANCHOR_LOCAL_BACKEND_PORT:-87
 AGENT_CORE_ANCHOR_DISCOVERY_INTERVAL_SECONDS="${AGENT_CORE_ANCHOR_DISCOVERY_INTERVAL_SECONDS:-30}"
 AGENT_CORE_TMUX_SESSION="${AGENT_CORE_TMUX_SESSION:-agent-core-codespace}"
 AGENT_CORE_NODE_VERSION="${AGENT_CORE_NODE_VERSION:-24.16.0}"
+AGENT_CORE_STABLE_GATEWAY_BASE_URL="${AGENT_CORE_STABLE_GATEWAY_BASE_URL:-https://agent-core-gateway.joefreccejunior50-d7b.workers.dev}"
+AGENT_CORE_CLOUDFLARE_WORKER_NAME="${AGENT_CORE_CLOUDFLARE_WORKER_NAME:-agent-core-gateway}"
+AGENT_CORE_STABLE_GATEWAY_REQUIRED="${AGENT_CORE_STABLE_GATEWAY_REQUIRED:-0}"
 
 codespace_anchor_enabled() {
   [[ -n "$AGENT_CORE_ANCHOR_CODESPACE_NAME" ]]
@@ -62,6 +65,18 @@ anchor_discovery_session() {
 
 log_info() { printf '[agent-core-codespace] %s\n' "$*"; }
 log_error() { printf '[agent-core-codespace] ERROR: %s\n' "$*" >&2; }
+
+stable_gateway_credentials_available() {
+  [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_API_TOKEN:-}" ]]
+}
+
+stable_gateway_credentials_partial() {
+  local account_present=0
+  local token_present=0
+  [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]] && account_present=1
+  [[ -n "${CLOUDFLARE_API_TOKEN:-}" ]] && token_present=1
+  (( account_present != token_present ))
+}
 
 resolve_nvm() {
   local candidates=()

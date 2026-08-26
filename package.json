@@ -21,6 +21,8 @@
     "codespace:bootstrap": "bash scripts/codespace/bootstrap.sh --phase manual",
     "codespace:repair": "bash scripts/codespace/ensure-running.sh --repair --phase manual",
     "codespace:connection": "bash scripts/codespace/show-connection.sh",
+    "codespace:gateway:update": "bash scripts/codespace/update-stable-gateway.sh",
+    "codespace:gateway:deploy": "bash scripts/codespace/deploy-stable-gateway.sh",
     "codespace:anchor:set": "bash scripts/codespace/set-anchor-backend.sh",
     "codespace:anchor:discover": "bash scripts/codespace/discover-anchor-backend.sh"
   },
