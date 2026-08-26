@@ -201,16 +201,22 @@ export async function verifyStableGateway({
 async function runCli() {
   const [command, backendArg, versionArg, stableArg, workerArg, workerSourceArg] = process.argv.slice(2);
   const apiToken = process.env.CLOUDFLARE_API_TOKEN;
-  const accountId = await resolveCloudflareAccountId({
-    accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
-    apiToken,
-  });
   const workerName = workerArg || process.env.AGENT_CORE_CLOUDFLARE_WORKER_NAME || 'agent-core-gateway';
   const stableBaseUrl = stableArg || process.env.AGENT_CORE_STABLE_GATEWAY_BASE_URL;
   const backendUrl = backendArg;
   const expectedVersion = versionArg || '';
 
+  if (command === 'verify') {
+    await verifyStableGateway({ stableBaseUrl, backendUrl, expectedVersion });
+    process.stdout.write(`Stable gateway verified: ${validateStableBaseUrl(stableBaseUrl)}\n`);
+    return;
+  }
+
   if (command === 'update') {
+    const accountId = await resolveCloudflareAccountId({
+      accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
+      apiToken,
+    });
     await updateBackendSecret({ accountId, apiToken, workerName, backendUrl });
     await verifyStableGateway({ stableBaseUrl, backendUrl, expectedVersion });
     process.stdout.write(`Stable gateway backend verified: ${validateStableBaseUrl(stableBaseUrl)}\n`);
@@ -218,6 +224,10 @@ async function runCli() {
   }
 
   if (command === 'deploy') {
+    const accountId = await resolveCloudflareAccountId({
+      accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
+      apiToken,
+    });
     const scriptDir = path.dirname(fileURLToPath(import.meta.url));
     const defaultWorkerSource = path.resolve(scriptDir, '../../cloudflare/agent-core-gateway/worker.mjs');
     const workerSourcePath = workerSourceArg || defaultWorkerSource;

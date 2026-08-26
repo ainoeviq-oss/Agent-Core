@@ -8,7 +8,6 @@ source "$SCRIPT_DIR/common.sh"
 backend_url="${1:-}"
 expected_version="${2:-}"
 
-[[ -n "${CLOUDFLARE_API_TOKEN:-}" ]] || { log_error 'CLOUDFLARE_API_TOKEN is unavailable.'; exit 93; }
 [[ -n "$AGENT_CORE_STABLE_GATEWAY_BASE_URL" ]] || { log_error 'AGENT_CORE_STABLE_GATEWAY_BASE_URL is unavailable.'; exit 93; }
 [[ -n "$AGENT_CORE_CLOUDFLARE_WORKER_NAME" ]] || { log_error 'AGENT_CORE_CLOUDFLARE_WORKER_NAME is unavailable.'; exit 93; }
 
@@ -24,9 +23,22 @@ if [[ -z "$expected_version" ]]; then
   expected_version="$(source_package_version)" || { log_error 'Unable to resolve source version for stable gateway verification.'; exit 93; }
 fi
 
-node "$SCRIPT_DIR/stable-gateway-admin.mjs" \
-  update \
-  "${backend_url%/}" \
-  "$expected_version" \
-  "${AGENT_CORE_STABLE_GATEWAY_BASE_URL%/}" \
-  "$AGENT_CORE_CLOUDFLARE_WORKER_NAME"
+if [[ -n "${CLOUDFLARE_API_TOKEN:-}" ]]; then
+  node "$SCRIPT_DIR/stable-gateway-admin.mjs" \
+    update \
+    "${backend_url%/}" \
+    "$expected_version" \
+    "${AGENT_CORE_STABLE_GATEWAY_BASE_URL%/}" \
+    "$AGENT_CORE_CLOUDFLARE_WORKER_NAME"
+else
+  ensure_wrangler_oauth_config || { log_error 'Cloudflare Wrangler OAuth credential is unavailable.'; exit 93; }
+  printf '%s' "${backend_url%/}" | npx --yes "wrangler@$AGENT_CORE_WRANGLER_VERSION" \
+    secret put BACKEND_URL \
+    --name "$AGENT_CORE_CLOUDFLARE_WORKER_NAME" >/dev/null
+  node "$SCRIPT_DIR/stable-gateway-admin.mjs" \
+    verify \
+    "${backend_url%/}" \
+    "$expected_version" \
+    "${AGENT_CORE_STABLE_GATEWAY_BASE_URL%/}" \
+    "$AGENT_CORE_CLOUDFLARE_WORKER_NAME"
+fi

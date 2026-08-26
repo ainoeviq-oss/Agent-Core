@@ -202,16 +202,39 @@ describe('stable Cloudflare Worker gateway contract', () => {
     });
   });
 
+  it('materializes Wrangler OAuth from an encrypted Codespaces secret and treats it as a stable-gateway credential', () => {
+    const shell = String.raw`
+      set -euo pipefail
+      export HOME="$(mktemp -d)"
+      export CLOUDFLARE_API_TOKEN=""
+      export CLOUDFLARE_WRANGLER_OAUTH_CONFIG_B64="$(printf 'oauth_token = \"fake-oauth\"\nrefresh_token = \"fake-refresh\"\n' | base64 -w0)"
+      source scripts/codespace/common.sh
+      stable_gateway_credentials_available
+      ensure_wrangler_oauth_config
+      test -s "$HOME/.config/.wrangler/config/default.toml"
+      test "$(stat -c %a "$HOME/.config/.wrangler/config/default.toml")" = 600
+    `;
+    expect(() => execFileSync('bash', ['-lc', shell], { cwd: root, stdio: 'pipe' })).not.toThrow();
+  });
+
   it('Codespace lifecycle updates the stable gateway only after direct readiness and then publishes stable connection metadata', async () => {
     const ensure = await read('scripts/codespace/ensure-running.sh');
     const common = await read('scripts/codespace/common.sh');
 
     expect(common).toContain('AGENT_CORE_STABLE_GATEWAY_BASE_URL');
     expect(common).toContain('AGENT_CORE_CLOUDFLARE_WORKER_NAME');
-    expect(common).toContain('[[ -n "${CLOUDFLARE_API_TOKEN:-}" ]]');
+    expect(common).toContain('CLOUDFLARE_WRANGLER_OAUTH_CONFIG_B64');
+    expect(common).toContain('ensure_wrangler_oauth_config');
     expect(common).not.toContain('account_present=0');
-    expect(await read(updateScript)).not.toContain("CLOUDFLARE_ACCOUNT_ID is unavailable.");
-    expect(await read(deployScript)).not.toContain("CLOUDFLARE_ACCOUNT_ID is unavailable.");
+    const update = await read(updateScript);
+    const deploy = await read(deployScript);
+    const admin = await read(adminFile);
+    expect(update).not.toContain("CLOUDFLARE_API_TOKEN is unavailable.");
+    expect(update).toContain('secret put BACKEND_URL');
+    expect(update).toContain('wrangler@');
+    expect(deploy).not.toContain("CLOUDFLARE_API_TOKEN is unavailable.");
+    expect(deploy).toContain('wrangler@');
+    expect(admin).toContain("command === 'verify'");
     expect(ensure).toContain('update-stable-gateway.sh');
     expect(ensure.indexOf('update-stable-gateway.sh')).toBeGreaterThan(ensure.indexOf('Expected unauthenticated /mcp to return 401'));
     expect(ensure).toContain('cloudflare-workers-stable-gateway');

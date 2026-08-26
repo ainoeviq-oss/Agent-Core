@@ -14,6 +14,8 @@ AGENT_CORE_NODE_VERSION="${AGENT_CORE_NODE_VERSION:-24.16.0}"
 AGENT_CORE_STABLE_GATEWAY_BASE_URL="${AGENT_CORE_STABLE_GATEWAY_BASE_URL:-https://agent-core-gateway.joefreccejunior50-d7b.workers.dev}"
 AGENT_CORE_CLOUDFLARE_WORKER_NAME="${AGENT_CORE_CLOUDFLARE_WORKER_NAME:-agent-core-gateway}"
 AGENT_CORE_STABLE_GATEWAY_REQUIRED="${AGENT_CORE_STABLE_GATEWAY_REQUIRED:-0}"
+AGENT_CORE_WRANGLER_VERSION="${AGENT_CORE_WRANGLER_VERSION:-4.126.0}"
+AGENT_CORE_WRANGLER_CONFIG_FILE="${AGENT_CORE_WRANGLER_CONFIG_FILE:-${HOME:-/home/codespace}/.config/.wrangler/config/default.toml}"
 
 codespace_anchor_enabled() {
   [[ -n "$AGENT_CORE_ANCHOR_CODESPACE_NAME" ]]
@@ -66,8 +68,35 @@ anchor_discovery_session() {
 log_info() { printf '[agent-core-codespace] %s\n' "$*"; }
 log_error() { printf '[agent-core-codespace] ERROR: %s\n' "$*" >&2; }
 
+wrangler_oauth_config_available() {
+  [[ -s "$AGENT_CORE_WRANGLER_CONFIG_FILE" || -n "${CLOUDFLARE_WRANGLER_OAUTH_CONFIG_B64:-}" ]]
+}
+
+ensure_wrangler_oauth_config() {
+  if [[ -s "$AGENT_CORE_WRANGLER_CONFIG_FILE" ]]; then
+    return 0
+  fi
+  [[ -n "${CLOUDFLARE_WRANGLER_OAUTH_CONFIG_B64:-}" ]] || return 1
+
+  local config_dir
+  local tmp
+  config_dir="$(dirname "$AGENT_CORE_WRANGLER_CONFIG_FILE")"
+  tmp="${AGENT_CORE_WRANGLER_CONFIG_FILE}.tmp.$$"
+  mkdir -p "$config_dir"
+  if ! printf '%s' "$CLOUDFLARE_WRANGLER_OAUTH_CONFIG_B64" | base64 --decode > "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  chmod 600 "$tmp"
+  if ! grep -qE '^oauth_token[[:space:]]*=' "$tmp" || ! grep -qE '^refresh_token[[:space:]]*=' "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  mv -f "$tmp" "$AGENT_CORE_WRANGLER_CONFIG_FILE"
+}
+
 stable_gateway_credentials_available() {
-  [[ -n "${CLOUDFLARE_API_TOKEN:-}" ]]
+  [[ -n "${CLOUDFLARE_API_TOKEN:-}" ]] || wrangler_oauth_config_available
 }
 
 resolve_nvm() {
