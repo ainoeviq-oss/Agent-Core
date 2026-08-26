@@ -537,3 +537,85 @@ git diff --check                                               PASS
 ### Next task
 
 Task 23 — run the required focused local regression groups across memory health, project isolation, continuity, execution evidence/DAG/wake/bridge, plugin behavior, and secret-safety surfaces; no GitHub Actions/CI.
+
+## Checkpoint 023 — Task 23: Focused local regression sweep
+
+### Prior durable checkpoint resolved
+
+```text
+root/main HEAD   = a8ae93affc053c0fe953d52f676857a84845400a
+origin/main      = a8ae93affc053c0fe953d52f676857a84845400a
+worktree HEAD    = 96f4d9428841faa4ac26fd51c2e71e345f10320e
+origin/feature   = 96f4d9428841faa4ac26fd51c2e71e345f10320e
+```
+
+### Persisted regression DAG
+
+Execution run:
+
+```text
+runId             = bfb2f36f-d745-4ed5-a65c-43b1f9b558ae
+maxConcurrency    = 4
+terminal event    = run.completed
+lastEventSequence = 23
+```
+
+The first attempt to request concurrency 5 was rejected with `EXECUTION_CONCURRENCY_INVALID` before any run/process was created. The corrected DAG used the configured maximum 4: four independent nodes started concurrently and the fifth independent node filled the first available slot automatically.
+
+All five persisted nodes completed `succeeded`:
+
+| Node | Result | Factual evidence |
+| --- | --- | --- |
+| `build` | succeeded | `npm run build` / TypeScript compile PASS |
+| `memory` | succeeded | 8 test files, 32 tests PASS |
+| `continuity` | succeeded | 9 test files, 60 tests PASS |
+| `execution` | succeeded | 13 test files, 72 tests PASS |
+| `plugin-secret` | succeeded | 3 test files, 13 tests PASS |
+
+Focused aggregate:
+
+```text
+33 test files PASS
+177 tests PASS
+0 failures
+TypeScript build PASS
+```
+
+### Focused surfaces covered
+
+Memory group covers health/lifecycle, recovery + WAL crash semantics, v1→v2 memory migration backup, redaction, awareness, operational audit, project routing, and MCP memory behavior.
+
+Continuity/project group covers actual project identity, cross-project rejection, route state, checkpoint promotion/completion gate, deterministic continuation/reuse, stale-turn reconciliation, restart/resume, snapshot/store/type determinism, and principal isolation.
+
+Execution group covers DAG validation/concurrency, declared artifact evidence, result markers v1/v2, required-artifact fail-closed semantics, runner, scheduler, schema v2 + migration, persistent store, coalesced wake, staged A/B wake, deterministic merged evidence, MCP ownership/dynamic/retry/cancel, Execution→DMF manifest promotion, recovery, degraded subsystem isolation, and cross-session execution resume.
+
+Plugin/secret group covers tracked router behavior contract, generated package parity/safety, and synthetic GitHub credential redaction across MCP errors, memory, and audit logs.
+
+### Source impact
+
+No source regression was found and no production/test change was needed for Task 23. Only this durable checkpoint Note changes.
+
+### Verification
+
+```text
+execution run bfb2f36f-d745-4ed5-a65c-43b1f9b558ae        completed
+all 5 DAG nodes                                                succeeded
+33 focused test files                                          PASS
+177 focused tests                                              PASS
+npm run build                                                   PASS
+git diff --check                                               PASS
+working tree before Note update                                clean
+```
+
+### Repository comparison before Task 23 commit
+
+| Surface | Ref |
+| --- | --- |
+| Root `/workspaces/Agent-Core` HEAD | `a8ae93affc053c0fe953d52f676857a84845400a` |
+| `origin/main` | `a8ae93affc053c0fe953d52f676857a84845400a` |
+| Worktree parent HEAD | `96f4d9428841faa4ac26fd51c2e71e345f10320e` |
+| `origin/feat/memory-continuity-execution-hardening` | `96f4d9428841faa4ac26fd51c2e71e345f10320e` |
+
+### Next task
+
+Task 24 — run the full local build/test/verification gates from the feature worktree, including brand and local release checks only after confirming those scripts cannot dispatch GitHub Actions/CI.
