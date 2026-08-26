@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -71,11 +71,14 @@ describe('Agent Core plugin package builder', () => {
     expect(result.skills).toEqual(expect.arrayContaining(['agent-core-capability-router', 'agent-core-github', 'native-skill']));
 
     const router = await readFile(path.join(outputDir, 'skills', 'agent-core-capability-router', 'SKILL.md'), 'utf8');
+    const trackedRouter = await readFile(routerSkillPath, 'utf8');
+    expect(router).toBe(trackedRouter);
     expect(router).toContain('capability_route');
     expect(router).toContain('routeContextId');
     expect(router).toContain('skill_load(id, routeContextId)');
     expect(router).not.toMatch(/\b(?:ask|tell|require|instruct)\s+(?:the\s+)?user\b[^.\n]{0,120}\b(?:mention|name|invoke|call)\b[^.\n]{0,120}\b(?:capability_route|routeContextId|skill_load)\b/i);
     const github = await readFile(path.join(outputDir, 'skills', 'agent-core-github', 'SKILL.md'), 'utf8');
+    expect(github).toBe(await readFile(githubSkillPath, 'utf8'));
     expect(github).toContain('github_api');
     expect(github).toContain('github_git');
     expect(github).not.toContain('gh-token.txt contents');
@@ -114,6 +117,13 @@ describe('Agent Core plugin package builder', () => {
     expect(serialized).not.toContain('control-plane-api-key');
     expect(serialized).not.toContain('gh-token.txt');
     expect(serialized).not.toContain('packages-token.txt');
+
+    const packagedPaths = (await readdir(outputDir, { recursive: true }))
+      .map((entry) => String(entry).replaceAll('\\\\', '/').toLowerCase());
+    for (const candidate of packagedPaths) {
+      expect(candidate).not.toMatch(/(^|\/)(secrets?|runtime|cache)(\/|$)/);
+      expect(candidate).not.toMatch(/(?:gh-token|packages-token|oauth\.json|control-plane-api-key)/);
+    }
   });
 
   it('keeps the stable release builder explicitly credential-free while packaging the github skill', async () => {

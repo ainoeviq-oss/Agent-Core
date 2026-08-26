@@ -467,3 +467,73 @@ git diff --check                                               PASS
 ### Next task
 
 Task 22 — rebuild the generated Agent Core plugin package and prove exact tracked/generated core-skill parity plus secret/runtime exclusion.
+
+## Checkpoint 022 — Task 22: Generated plugin rebuild and exact skill parity
+
+### Prior durable checkpoint resolved
+
+```text
+root/main HEAD   = a8ae93affc053c0fe953d52f676857a84845400a
+origin/main      = a8ae93affc053c0fe953d52f676857a84845400a
+worktree HEAD    = 3441d6434daaf98908d6a97c5b9d804ab4cd87ae
+origin/feature   = 3441d6434daaf98908d6a97c5b9d804ab4cd87ae
+```
+
+### Package build facts
+
+The Codespace checkout currently has no external capability registry at `/workspaces/Agent-Core/capabilities/registry/catalog.json`, so an unqualified `npm run build:plugin` correctly failed rather than fabricating a registry. The actual ignored generated package was then rebuilt successfully with an explicit temporary empty local registry. This produces the two tracked Agent Core core skills only. Separately, the existing deterministic plugin-package fixture still proves that audited `native_ready` skills are imported only with verified provenance/license gates.
+
+Actual generated output:
+
+```text
+plugin/agent-core/generated/agent-core-package.json
+plugin/agent-core/generated/skills/agent-core-capability-router/SKILL.md
+plugin/agent-core/generated/skills/agent-core-github/SKILL.md
+```
+
+The generated directory remains intentionally ignored by repository policy and is not staged as durable source.
+
+### Exact parity evidence
+
+```text
+tracked router SHA256   = cd9620f4420cdc6a9c232dd79e954f4aa639dce4b554aec1d63efd208d1b0762
+generated router SHA256 = cd9620f4420cdc6a9c232dd79e954f4aa639dce4b554aec1d63efd208d1b0762
+cmp result              = BYTE_IDENTICAL
+```
+
+The plugin-package test now enforces byte-for-byte equality for both tracked core skills, not merely keyword presence.
+
+### Secret/runtime exclusion
+
+Generated package paths were scanned and contain no `secrets`, `runtime`, `cache`, `gh-token`, `packages-token`, `oauth.json`, or `control-plane-api-key` path. Package metadata remains credential-free. The fixture package test also checks generated paths for those forbidden classes.
+
+### Changed tracked files
+
+```text
+tests/plugin-package.test.ts
+```
+
+### Verification
+
+```text
+npm run build                                                   PASS
+tests/plugin-package.test.ts                                    4/4 PASS
+tests/agent-core-router-skill.test.ts                           3/3 PASS
+actual local generated package rebuild                          PASS
+tracked/generated router byte parity                            PASS
+forbidden generated-path scan                                   PASS
+git diff --check                                               PASS
+```
+
+### Repository comparison before Task 22 commit
+
+| Surface | Ref |
+| --- | --- |
+| Root `/workspaces/Agent-Core` HEAD | `a8ae93affc053c0fe953d52f676857a84845400a` |
+| `origin/main` | `a8ae93affc053c0fe953d52f676857a84845400a` |
+| Worktree parent HEAD | `3441d6434daaf98908d6a97c5b9d804ab4cd87ae` |
+| `origin/feat/memory-continuity-execution-hardening` | `3441d6434daaf98908d6a97c5b9d804ab4cd87ae` |
+
+### Next task
+
+Task 23 — run the required focused local regression groups across memory health, project isolation, continuity, execution evidence/DAG/wake/bridge, plugin behavior, and secret-safety surfaces; no GitHub Actions/CI.
