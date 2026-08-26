@@ -259,11 +259,6 @@ case "$AGENT_CORE_STABLE_GATEWAY_REQUIRED" in
   *) log_error 'AGENT_CORE_STABLE_GATEWAY_REQUIRED must be 0 or 1.'; exit 93 ;;
 esac
 
-if stable_gateway_credentials_partial; then
-  log_error 'Cloudflare gateway credentials are partially configured; both CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are required.'
-  exit 93
-fi
-
 if stable_gateway_credentials_available; then
   log_info 'Updating stable Cloudflare Worker backend after direct Codespace readiness gates passed.'
   if ! bash "$SCRIPT_DIR/update-stable-gateway.sh" "$base_url" "$expected_source_version"; then

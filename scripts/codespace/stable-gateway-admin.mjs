@@ -53,6 +53,30 @@ async function readCloudflareResult(response, code) {
   return body;
 }
 
+export async function resolveCloudflareAccountId({
+  accountId,
+  apiToken,
+  fetchImpl = fetch,
+}) {
+  const explicit = String(accountId ?? '').trim();
+  if (explicit) return explicit;
+
+  const safeToken = requireNonEmpty(apiToken, 'CLOUDFLARE_API_TOKEN_REQUIRED');
+  const response = await fetchImpl(`${CLOUDFLARE_API_BASE}/accounts`, {
+    method: 'GET',
+    headers: { authorization: `Bearer ${safeToken}` },
+  });
+  const body = await readCloudflareResult(response, 'CLOUDFLARE_ACCOUNT_ID_DISCOVERY_FAILED');
+  const accounts = Array.isArray(body?.result)
+    ? body.result.filter((entry) => typeof entry?.id === 'string' && entry.id.trim())
+    : [];
+  const totalCount = Number(body?.result_info?.total_count ?? accounts.length);
+
+  if (accounts.length === 0 || totalCount === 0) throw new Error('CLOUDFLARE_ACCOUNT_ID_NOT_FOUND');
+  if (accounts.length !== 1 || totalCount !== 1) throw new Error('CLOUDFLARE_ACCOUNT_ID_AMBIGUOUS');
+  return accounts[0].id.trim();
+}
+
 export async function updateBackendSecret({
   accountId,
   apiToken,
@@ -176,8 +200,11 @@ export async function verifyStableGateway({
 
 async function runCli() {
   const [command, backendArg, versionArg, stableArg, workerArg, workerSourceArg] = process.argv.slice(2);
-  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
   const apiToken = process.env.CLOUDFLARE_API_TOKEN;
+  const accountId = await resolveCloudflareAccountId({
+    accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
+    apiToken,
+  });
   const workerName = workerArg || process.env.AGENT_CORE_CLOUDFLARE_WORKER_NAME || 'agent-core-gateway';
   const stableBaseUrl = stableArg || process.env.AGENT_CORE_STABLE_GATEWAY_BASE_URL;
   const backendUrl = backendArg;

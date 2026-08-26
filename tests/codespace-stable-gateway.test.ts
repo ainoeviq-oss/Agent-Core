@@ -79,6 +79,39 @@ describe('stable Cloudflare Worker gateway contract', () => {
     }
   });
 
+  it('auto-discovers a unique Cloudflare account from the API token and keeps explicit account ID as an override', async () => {
+    const admin = await import(`${pathToFileURL(path.join(root, adminFile)).href}?t=${Date.now()}`) as Record<string, any>;
+    let requests = 0;
+    const fakeFetch = async (input: RequestInfo | URL): Promise<Response> => {
+      requests += 1;
+      expect(String(input)).toBe('https://api.cloudflare.com/client/v4/accounts');
+      return Response.json({ success: true, result: [{ id: 'auto-account-123' }] });
+    };
+
+    await expect(admin.resolveCloudflareAccountId({
+      accountId: 'explicit-account-456',
+      apiToken: 'token-redacted',
+      fetchImpl: fakeFetch,
+    })).resolves.toBe('explicit-account-456');
+    expect(requests).toBe(0);
+
+    await expect(admin.resolveCloudflareAccountId({
+      apiToken: 'token-redacted',
+      fetchImpl: fakeFetch,
+    })).resolves.toBe('auto-account-123');
+    expect(requests).toBe(1);
+
+    await expect(admin.resolveCloudflareAccountId({
+      apiToken: 'token-redacted',
+      fetchImpl: async () => Response.json({ success: true, result: [] }),
+    })).rejects.toThrow('CLOUDFLARE_ACCOUNT_ID_NOT_FOUND');
+
+    await expect(admin.resolveCloudflareAccountId({
+      apiToken: 'token-redacted',
+      fetchImpl: async () => Response.json({ success: true, result: [{ id: 'a' }, { id: 'b' }] }),
+    })).rejects.toThrow('CLOUDFLARE_ACCOUNT_ID_AMBIGUOUS');
+  });
+
   it('gateway admin updates only BACKEND_URL through the Cloudflare secret API and verifies all public gates', async () => {
     expect(existsSync(path.join(root, adminFile))).toBe(true);
     if (!existsSync(path.join(root, adminFile))) return;
@@ -153,6 +186,10 @@ describe('stable Cloudflare Worker gateway contract', () => {
 
     expect(common).toContain('AGENT_CORE_STABLE_GATEWAY_BASE_URL');
     expect(common).toContain('AGENT_CORE_CLOUDFLARE_WORKER_NAME');
+    expect(common).toContain('[[ -n "${CLOUDFLARE_API_TOKEN:-}" ]]');
+    expect(common).not.toContain('account_present=0');
+    expect(await read(updateScript)).not.toContain("CLOUDFLARE_ACCOUNT_ID is unavailable.");
+    expect(await read(deployScript)).not.toContain("CLOUDFLARE_ACCOUNT_ID is unavailable.");
     expect(ensure).toContain('update-stable-gateway.sh');
     expect(ensure.indexOf('update-stable-gateway.sh')).toBeGreaterThan(ensure.indexOf('Expected unauthenticated /mcp to return 401'));
     expect(ensure).toContain('cloudflare-workers-stable-gateway');

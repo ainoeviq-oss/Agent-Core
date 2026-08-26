@@ -8,7 +8,6 @@ source "$SCRIPT_DIR/common.sh"
 backend_url="${1:-}"
 expected_version="${2:-}"
 
-[[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]] || { log_error 'CLOUDFLARE_ACCOUNT_ID is unavailable.'; exit 93; }
 [[ -n "${CLOUDFLARE_API_TOKEN:-}" ]] || { log_error 'CLOUDFLARE_API_TOKEN is unavailable.'; exit 93; }
 [[ -n "$AGENT_CORE_STABLE_GATEWAY_BASE_URL" ]] || { log_error 'AGENT_CORE_STABLE_GATEWAY_BASE_URL is unavailable.'; exit 93; }
 [[ -n "$AGENT_CORE_CLOUDFLARE_WORKER_NAME" ]] || { log_error 'AGENT_CORE_CLOUDFLARE_WORKER_NAME is unavailable.'; exit 93; }

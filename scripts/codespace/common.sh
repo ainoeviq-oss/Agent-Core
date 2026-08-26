@@ -67,15 +67,7 @@ log_info() { printf '[agent-core-codespace] %s\n' "$*"; }
 log_error() { printf '[agent-core-codespace] ERROR: %s\n' "$*" >&2; }
 
 stable_gateway_credentials_available() {
-  [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${CLOUDFLARE_API_TOKEN:-}" ]]
-}
-
-stable_gateway_credentials_partial() {
-  local account_present=0
-  local token_present=0
-  [[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]] && account_present=1
-  [[ -n "${CLOUDFLARE_API_TOKEN:-}" ]] && token_present=1
-  (( account_present != token_present ))
+  [[ -n "${CLOUDFLARE_API_TOKEN:-}" ]]
 }
 
 resolve_nvm() {

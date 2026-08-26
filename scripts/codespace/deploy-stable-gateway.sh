@@ -5,7 +5,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/common.sh"
 
-[[ -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]] || { log_error 'CLOUDFLARE_ACCOUNT_ID is unavailable.'; exit 93; }
 [[ -n "${CLOUDFLARE_API_TOKEN:-}" ]] || { log_error 'CLOUDFLARE_API_TOKEN is unavailable.'; exit 93; }
 
 backend_url="${1:-}"
