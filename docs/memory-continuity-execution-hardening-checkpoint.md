@@ -1009,3 +1009,169 @@ Task 27 sequence:
 ### Next task
 
 Task 27 — perform the approved fast-forward integration, fresh root verification, controlled live schema-v2 migration/restart, live evidence proof, main commit/push verification, continuity terminal checkpoint, and worktree cleanup.
+
+## Checkpoint 027A — Task 27 live cutover evidence before main push
+
+### Source integration
+
+The verified feature branch was integrated into the root checkout by fast-forward only:
+
+```text
+root main before = a8ae93affc053c0fe953d52f676857a84845400a
+feature checkpoint = f75bc00fbc94921f5cc313bd6a6a2c06ef37d84c
+root main after ff-only = f75bc00fbc94921f5cc313bd6a6a2c06ef37d84c
+origin/main before cutover push = a8ae93affc053c0fe953d52f676857a84845400a
+origin/feature = f75bc00fbc94921f5cc313bd6a6a2c06ef37d84c
+```
+
+Unrelated root editor state remains preserved and untracked:
+
+```text
+.vscode/settings.json
+```
+
+No tracked root change existed before this Task 27 Note append.
+
+### Fresh authoritative root verification
+
+After the fast-forward, the canonical local release gate was run from `/workspaces/Agent-Core`:
+
+```text
+npm run verify:release
+```
+
+Fresh final-tree result:
+
+```text
+brand scan                            PASS
+TypeScript build                     PASS
+Test Files                           81 passed, 1 skipped (82 total)
+Tests                                351 passed, 32 skipped (383 total)
+Failures                             0
+release/version consistency          PASS (0.5.1)
+tracked files inspected              235
+tracked markdown files checked       24
+relative links checked               22
+missing/escaping relative links      0
+GitHub Actions / CI                  not invoked
+```
+
+### Controlled live runtime cutover
+
+The prior healthy supervisor was explicitly restarted because the self-healing controller correctly does not replace an already-healthy process merely because source changed. Restart was detached from the MCP session, then `scripts/codespace/ensure-running.sh --repair --phase attach` re-established all gates automatically.
+
+Cutover log:
+
+```text
+[agent-core-codespace] Starting Agent Core supervisor session.
+[agent-core-codespace] Local Agent Core health is verified.
+[agent-core-codespace] Forwarded port 8765 is public.
+[agent-core-codespace] READY: all local, forwarding, public-health, OAuth, and MCP-auth gates passed.
+Agent Core Codespace MCP URL: https://ominous-xylophone-69xxp4v76vv93xq64-8765.app.github.dev/mcp
+```
+
+The ChatGPT connector recovered without user/manual intervention.
+
+### Live execution DB migration v1 → v2
+
+Fresh live Agent Core status after restart:
+
+```text
+Agent Core             0.5.1
+Node                   v24.16.0
+workspace              /workspaces/Agent-Core
+memory                 schema 2 / healthy / integrity ok
+continuity             healthy / snapshot ready
+execution              schema 2 / healthy / integrity ok
+active execution runs  0 immediately after migration
+queued memory sync     0
+```
+
+The required pre-migration execution backup exists:
+
+```text
+path   = /workspaces/.agent-core-codespace/execution/backups/agent-core-execution.2026-08-26T16-57-38-676Z.pre-migration-v1-to-v2.sqlite
+bytes  = 147456
+SHA256 = adab75e3a59dff6c105e853ba41a0353029c3d9185e6ccc1ef927cbfe5de729a
+```
+
+This is the rollback anchor for the old schema-1 runtime. The old source must never be run directly against the migrated schema-2 DB.
+
+### Live transport/authentication gates
+
+```text
+local /health HTTP                  200
+public /health HTTP                 200
+OAuth metadata HTTP                200
+OAuth issuer                       https://ominous-xylophone-69xxp4v76vv93xq64-8765.app.github.dev
+unauthenticated public /mcp HTTP   401
+port 8765 visibility               public
+connection.json verified           true
+mcp-url.txt                         https://ominous-xylophone-69xxp4v76vv93xq64-8765.app.github.dev/mcp
+```
+
+Native GitHub Fabric after cutover:
+
+```text
+gitAvailable = true
+gitVersion   = git version 2.49.0
+```
+
+### Live server-side schema-v2 declared-artifact proof
+
+Because the ChatGPT client retained a cached pre-restart input schema for some tool argument descriptions, the newest server-side `execution_create(expectedArtifacts)` contract was exercised against the same live localhost MCP server with the existing custom Agent Core key loaded only into an internal process variable. The key value was never printed or persisted in task evidence.
+
+Live execution:
+
+```text
+runId                   = 748ae908-2706-48b3-b88f-3b714add53f1
+created state           = planned
+started state           = running
+bounded wait event      = run.completed
+final run state         = completed
+merged evidence         = verified
+node resultVersion      = 2
+node processState       = succeeded
+node evidenceState      = verified
+lastEventSequence       = 8
+```
+
+Required live artifact:
+
+```text
+path         = /workspaces/Agent-Core/runtime/acceptance/task27-live-v2-proof.json
+verification = verified
+bytes        = 49
+SHA256       = a7d319bd3e5c65bc393f3de31f4fc7380310f85aa53361d8b0f9b63f47b85c0c
+```
+
+An independent filesystem SHA256 calculation matched the execution evidence SHA exactly.
+
+The same run was then read through the normal `@Agent Core Codespace` connector and exposed the new merged evidence structure with:
+
+```text
+resultVersion = 2
+processState  = succeeded
+evidenceState = verified
+artifact path/type/size/SHA256 = verified factual values above
+```
+
+Thus the cached client input-schema display does not prevent the connector from observing the new live server behavior.
+
+### Pre-push repository comparison
+
+```text
+root main / local HEAD = f75bc00fbc94921f5cc313bd6a6a2c06ef37d84c + this Task 27 Note change
+origin/main            = a8ae93affc053c0fe953d52f676857a84845400a
+origin/feature         = f75bc00fbc94921f5cc313bd6a6a2c06ef37d84c
+feature worktree HEAD  = f75bc00fbc94921f5cc313bd6a6a2c06ef37d84c
+feature worktree state = clean
+```
+
+### Remaining Task 27 steps
+
+1. commit this live-cutover evidence on root `main`;
+2. push `main` normal non-force and verify exact remote SHA;
+3. after local/remote main are exact, remove the clean implementation worktree and local feature branch while preserving the remote feature branch as historical checkpoint;
+4. append cleanup/final repository evidence, commit/push one final main checkpoint;
+5. complete continuity task `09a8723c-2a75-452d-8afd-76259a4dd1a7` with explicit `execution:748ae908-2706-48b3-b88f-3b714add53f1` evidence plus test/health/git/backup evidence.
