@@ -71,3 +71,25 @@ Verification:
 - `npx vitest run tests/codespace-anchor-target.test.ts` — 1 file PASS, 7 tests PASS, 0 failures.
 
 Next task: Task 4 — safe automatic backend discovery.
+
+## Checkpoint — Task 4: Safe automatic backend discovery
+
+Status: COMPLETE / GREEN
+
+Implemented:
+- Added `src/codespace/anchor-discovery.ts` with injectable `gh` runner for deterministic tests and bounded real GitHub CLI execution at runtime.
+- Discovery filters the live canonical repository `ainoeviq-oss/Agent-Core`, excludes the configured anchor, accepts only `Available` replacement Codespaces, and inspects their port 8765 browse URL.
+- Each candidate must pass the same Task 3 health/OAuth/MCP verifier before becoming eligible.
+- Exactly one verified replacement is atomically selected.
+- Zero verified replacements restore/keep local fallback.
+- More than one verified replacement fails closed with `ANCHOR_DISCOVERY_AMBIGUOUS` and does not mutate the active target.
+- Added executable `scripts/codespace/discover-anchor-backend.sh` and `npm run codespace:anchor:discover`.
+
+Live contract observed before implementation:
+- `gh codespace list --json name,repository,state` reported the current anchor as repository `ainoeviq-oss/Agent-Core`, state `Available`.
+
+Verification:
+- `npm run build` — PASS.
+- `npx vitest run tests/codespace-anchor-discovery.test.ts` — 1 file PASS, 5 tests PASS, 0 failures.
+
+Next task: Task 5 — lifecycle integration for anchor vs backend roles.
