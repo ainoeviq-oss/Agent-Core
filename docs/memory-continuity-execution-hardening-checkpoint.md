@@ -345,3 +345,64 @@ git diff --check                                               PASS
 ### Next task
 
 Task 20 — add an execution-backed semantic completion evidence gate so `task_checkpoint(status=completed)` cannot contradict linked execution evidence, while non-execution semantic tasks remain unchanged.
+
+## Checkpoint 020 — Task 20: Execution-backed semantic completion evidence gate
+
+### Prior durable checkpoint resolved
+
+```text
+root/main HEAD   = a8ae93affc053c0fe953d52f676857a84845400a
+origin/main      = a8ae93affc053c0fe953d52f676857a84845400a
+worktree HEAD    = af63e61cc33be67bd30a1ba603f94c54eba81e73
+origin/feature   = af63e61cc33be67bd30a1ba603f94c54eba81e73
+```
+
+### Behavior implemented
+
+`task_checkpoint(status=completed)` now checks linked execution truth before continuity persistence. The gate executes before checkpoint/task/frontier/promotion/turn mutations.
+
+Deterministic contract:
+
+- non-execution continuity tasks remain backward-compatible and require no execution reference;
+- a continuity task with linked execution runs cannot complete while any linked run is `planned` or `running` (`CONTINUITY_EXECUTION_ACTIVE`);
+- once linked execution exists, completion requires at least one explicit `evidence` entry `type="tool", ref="execution:<runId>"` (`CONTINUITY_EXECUTION_EVIDENCE_REQUIRED`);
+- every explicit execution reference must resolve to the same principal/project/continuity task, have `state=completed`, and merged `evidence.verification=verified` (`CONTINUITY_EXECUTION_EVIDENCE_INVALID` otherwise);
+- failed historical runs that are not cited as completion proof do not automatically poison later verified work, but active runs always block completion;
+- process exit 0 with missing required artifact is rejected because its run/evidence are failed.
+
+No completion state is persisted on a rejected gate.
+
+### Changed files
+
+```text
+src/execution/service.ts
+src/mcp/continuity-tools.ts
+tests/continuity-checkpoint.test.ts
+```
+
+### RED evidence
+
+Three completion scenarios were incorrectly accepted before the implementation: missing explicit execution ref, required artifact evidence failure, and an active linked run.
+
+### GREEN verification
+
+```text
+npm run build                                                   PASS
+Task 20 execution completion focused tests                      4 PASS
+full continuity-checkpoint + execution-mcp regression           18/18 PASS
+non-execution completion regression                             PASS
+git diff --check                                               PASS
+```
+
+### Repository comparison before Task 20 commit
+
+| Surface | Ref |
+| --- | --- |
+| Root `/workspaces/Agent-Core` HEAD | `a8ae93affc053c0fe953d52f676857a84845400a` |
+| `origin/main` | `a8ae93affc053c0fe953d52f676857a84845400a` |
+| Worktree parent HEAD | `af63e61cc33be67bd30a1ba603f94c54eba81e73` |
+| `origin/feat/memory-continuity-execution-hardening` | `af63e61cc33be67bd30a1ba603f94c54eba81e73` |
+
+### Next task
+
+Task 21 — upgrade the native Agent Core capability-router skill to make memory, continuity, project identity, multi-command DAG, bounded wake, evidence inspection, retry/cancel, and factual terminal checkpoint behavior mandatory.

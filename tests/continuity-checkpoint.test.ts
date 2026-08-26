@@ -11,6 +11,7 @@ import { createHttpHandler } from '../src/http/app.js';
 import { FileAuditLogger } from '../src/logging/audit-log.js';
 import { createMcpHttpHandler } from '../src/mcp/handler.js';
 import { createRuntimeServices, type RuntimeServices } from '../src/runtime/services.js';
+import { nodeShellCommand, printCommand } from './helpers/platform-command.js';
 
 const roots: string[] = [];
 const servers: Server[] = [];
@@ -225,6 +226,104 @@ describe('continuity checkpoint MCP tools', () => {
     } finally {
       db.close();
     }
+  });
+
+  it('requires explicit verified execution evidence before completing an execution-backed continuity task', async () => {
+    const f = await fixture('execution-completion-gate');
+    const routed = await route(f, 'Execution-backed completion gate task');
+    await f.runtime.execution.open();
+
+    const artifactPath = path.join(f.root, 'verified-output.json');
+    const verifiedRun = await f.runtime.execution.create(f.scopeA, {
+      objective: 'Produce verified completion evidence',
+      continuityTaskId: routed.continuityTaskId,
+      originRouteContextId: routed.routeContextId,
+      nodes: [{
+        id: 'A',
+        purpose: 'produce verified artifact',
+        command: nodeShellCommand(`require('node:fs').writeFileSync(${JSON.stringify(artifactPath)}, '{"ok":true}')`),
+        cwd: f.root,
+        expectedArtifacts: [{ path: artifactPath, kind: 'file', hash: 'sha256', required: true }],
+      }],
+    });
+    await f.runtime.execution.start(f.scopeA, verifiedRun.runId);
+    const verifiedDone = await f.runtime.execution.wait(
+      f.scopeA, verifiedRun.runId, verifiedRun.lastEventSequence, { eventTypes: ['run.completed'] }, 5_000,
+    );
+    expect(verifiedDone.state.evidence.verification).toBe('verified');
+
+    const missingRef = await call(f.baseUrl, f.principalA.key, 'task_checkpoint', {
+      routeContextId: routed.routeContextId,
+      status: 'completed',
+      summary: 'Must not complete without an explicit execution evidence reference.',
+      projectTerminal: true,
+    });
+    expect(missingRef.raw.result.isError).toBe(true);
+    expect(missingRef.result.error.code).toBe('CONTINUITY_EXECUTION_EVIDENCE_REQUIRED');
+    expect((await f.runtime.memory.getContinuityTask(f.scopeA, routed.continuityTaskId))?.status).toBe('running');
+
+    const completed = await call(f.baseUrl, f.principalA.key, 'task_checkpoint', {
+      routeContextId: routed.routeContextId,
+      status: 'completed',
+      summary: 'Completion is backed by the exact verified execution run.',
+      evidence: [{ type: 'tool', ref: `execution:${verifiedRun.runId}`, result: 'verified' }],
+      projectTerminal: true,
+    });
+    expect(completed.raw.result.isError).not.toBe(true);
+    expect(completed.result.taskStatus).toBe('completed');
+  }, 10_000);
+
+  it('rejects execution-backed completion when an explicitly referenced run failed required artifact evidence', async () => {
+    const f = await fixture('execution-completion-failed-evidence');
+    const routed = await route(f, 'Failed execution evidence completion gate');
+    await f.runtime.execution.open();
+    const failedRun = await f.runtime.execution.create(f.scopeA, {
+      objective: 'Exit zero but fail required artifact evidence',
+      continuityTaskId: routed.continuityTaskId,
+      originRouteContextId: routed.routeContextId,
+      nodes: [{
+        id: 'A', purpose: 'omit required artifact', command: printCommand('process-success'), cwd: f.root,
+        expectedArtifacts: [{ path: path.join(f.root, 'missing-required.txt'), kind: 'file', required: true }],
+      }],
+    });
+    await f.runtime.execution.start(f.scopeA, failedRun.runId);
+    const failedDone = await f.runtime.execution.wait(
+      f.scopeA, failedRun.runId, failedRun.lastEventSequence, { eventTypes: ['run.failed'] }, 5_000,
+    );
+    expect(failedDone.state.state).toBe('failed');
+    expect(failedDone.state.evidence.verification).toBe('failed');
+
+    const denied = await call(f.baseUrl, f.principalA.key, 'task_checkpoint', {
+      routeContextId: routed.routeContextId,
+      status: 'completed',
+      summary: 'Must not contradict failed required execution evidence.',
+      evidence: [{ type: 'tool', ref: `execution:${failedRun.runId}`, result: 'verified' }],
+      projectTerminal: true,
+    });
+    expect(denied.raw.result.isError).toBe(true);
+    expect(denied.result.error.code).toBe('CONTINUITY_EXECUTION_EVIDENCE_INVALID');
+    expect((await f.runtime.memory.getContinuityTask(f.scopeA, routed.continuityTaskId))?.status).toBe('running');
+  }, 10_000);
+
+  it('blocks semantic completion while a linked execution run is still planned or running', async () => {
+    const f = await fixture('execution-completion-active');
+    const routed = await route(f, 'Active execution completion gate');
+    await f.runtime.execution.open();
+    const activeRun = await f.runtime.execution.create(f.scopeA, {
+      objective: 'Still planned',
+      continuityTaskId: routed.continuityTaskId,
+      originRouteContextId: routed.routeContextId,
+      nodes: [{ id: 'A', purpose: 'planned work', command: printCommand('A'), cwd: f.root }],
+    });
+    const denied = await call(f.baseUrl, f.principalA.key, 'task_checkpoint', {
+      routeContextId: routed.routeContextId,
+      status: 'completed',
+      summary: 'Cannot complete while execution remains active.',
+      evidence: [{ type: 'tool', ref: `execution:${activeRun.runId}`, result: 'verified' }],
+      projectTerminal: true,
+    });
+    expect(denied.raw.result.isError).toBe(true);
+    expect(denied.result.error.code).toBe('CONTINUITY_EXECUTION_ACTIVE');
   });
 
   it('promotes a failed terminal checkpoint into failure memory and preserves next frontier', async () => {

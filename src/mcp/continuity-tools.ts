@@ -68,6 +68,54 @@ function scope(runtime: RuntimeServices, key: VerifiedKey, routeContextId?: stri
   return resolvedProjectScope(runtime, key, routeContextId);
 }
 
+async function requireExecutionCompletionEvidence(
+  runtime: RuntimeServices,
+  currentScope: ReturnType<typeof scope>,
+  continuityTaskId: string,
+  input: ContinuityCheckpointInput,
+): Promise<void> {
+  if (input.status !== 'completed' || !runtime.execution.config.enabled) return;
+  await runtime.execution.open();
+  const linkedRuns = await runtime.execution.runsForContinuityTask(currentScope, continuityTaskId);
+  const executionRefs = (input.evidence ?? [])
+    .filter((item) => item.type === 'tool' && item.ref.startsWith('execution:'))
+    .map((item) => item.ref.slice('execution:'.length).trim());
+
+  if (linkedRuns.length === 0) {
+    if (executionRefs.length > 0) {
+      throw new ContinuityToolError(
+        'CONTINUITY_EXECUTION_EVIDENCE_INVALID',
+        'Execution evidence reference is not linked to the current continuity task',
+      );
+    }
+    return;
+  }
+
+  if (linkedRuns.some((run) => run.state === 'planned' || run.state === 'running')) {
+    throw new ContinuityToolError(
+      'CONTINUITY_EXECUTION_ACTIVE',
+      'Execution-backed task cannot be completed while a linked execution run is still active',
+    );
+  }
+  if (executionRefs.length === 0) {
+    throw new ContinuityToolError(
+      'CONTINUITY_EXECUTION_EVIDENCE_REQUIRED',
+      'Execution-backed completion requires an explicit tool evidence reference: execution:<runId>',
+    );
+  }
+
+  const byRunId = new Map(linkedRuns.map((run) => [run.runId, run]));
+  for (const runId of new Set(executionRefs)) {
+    const run = byRunId.get(runId);
+    if (!run || run.state !== 'completed' || run.evidence.verification !== 'verified') {
+      throw new ContinuityToolError(
+        'CONTINUITY_EXECUTION_EVIDENCE_INVALID',
+        `Execution evidence is not a completed verified run linked to this continuity task: ${runId}`,
+      );
+    }
+  }
+}
+
 function requireContinuityRoute(runtime: RuntimeServices, key: VerifiedKey, routeContextId: string) {
   const route = runtime.routes.get(routeContextId);
   if (!route) {
@@ -150,6 +198,7 @@ export function registerContinuityTools(server: McpServer, runtime: RuntimeServi
       projectTerminal,
     } as ContinuityCheckpointInput);
     const currentScope = scope(runtime, key, routeContextId);
+    await requireExecutionCompletionEvidence(runtime, currentScope, route.continuityTaskId!, input);
     const checkpoint = await runtime.memory.checkpointContinuity(
       currentScope,
       route.continuityTaskId!,

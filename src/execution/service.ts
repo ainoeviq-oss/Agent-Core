@@ -427,6 +427,21 @@ export class ExecutionService {
     return this.logs.readLog(runId, nodeId, attemptNo, stream, offset, maxBytes);
   }
 
+  async runsForContinuityTask(scope: ExecutionScope, continuityTaskId: string): Promise<ExecutionRunView[]> {
+    this.assertReady();
+    const taskId = continuityTaskId.normalize('NFKC').trim();
+    if (!taskId) throw new ExecutionStoreError('EXECUTION_CONTINUITY_TASK_REQUIRED', 'continuityTaskId is required');
+    const runs = (await this.store.listRuns(scope, 1000))
+      .filter((run) => run.continuityTaskId === taskId)
+      .sort((left, right) => left.runId.localeCompare(right.runId));
+    const views: ExecutionRunView[] = [];
+    for (const run of runs) {
+      const view = await this.status(scope, run.runId);
+      if (view) views.push(view);
+    }
+    return views;
+  }
+
   async continuitySummary(scope: ExecutionScope): Promise<ExecutionContinuitySummary> {
     this.assertReady();
     const runs = await this.store.listRuns(scope, 100);
