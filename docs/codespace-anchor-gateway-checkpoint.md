@@ -32,3 +32,24 @@ Repository comparison before Task 1 commit:
 - Root untracked `.vscode/` is unrelated and must remain untouched.
 
 Next task: Task 2 — streaming anchor reverse proxy + OAuth identity normalization.
+
+## Checkpoint — Task 2: Streaming reverse proxy + OAuth identity normalization
+
+Status: COMPLETE / GREEN
+
+Implemented:
+- Added `src/codespace/anchor-proxy.ts` using only Node standard HTTP/HTTPS primitives.
+- Proxy allowlists only Agent Core public health/MCP/OAuth surfaces.
+- `/mcp` and normal OAuth/token traffic stream end-to-end; OAuth discovery JSON alone is bounded-buffered for identity normalization.
+- `WWW-Authenticate` resource metadata, authorization-server metadata, and protected-resource metadata are rewritten to the stable anchor origin.
+- Hop-by-hop/proxy authorization headers are stripped.
+- Logging is restricted to method/path/backend mode and never includes authorization, cookies, request body, token, or API-key values.
+
+Verification:
+- `npm run build` — PASS.
+- `npx vitest run tests/codespace-anchor-proxy.test.ts` — 1 file PASS, 7 tests PASS, 0 failures.
+- Streaming test observed the first MCP/SSE chunk before the backend completed the response.
+
+Task 2 source checkpoint will be the commit immediately following this note update.
+
+Next task: Task 3 — atomic backend target state + verification.
