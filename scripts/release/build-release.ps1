@@ -62,6 +62,7 @@ $runtimeFiles = @(
   'docs\local-agent-continuity.md',
   'docs\deterministic-execution-fabric.md',
   'docs\multi-command-wake-workflow.md',
+  'docs\github.md',
   'docs\stability.md',
   'docs\roadmap',
   'docs\diagrams',

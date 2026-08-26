@@ -8,6 +8,7 @@ The current documentation tree is intentionally compact. Historical implementati
 - [`local-agent-continuity.md`](local-agent-continuity.md) — durable task/checkpoint/frontier state across routes and sessions.
 - [`deterministic-execution-fabric.md`](deterministic-execution-fabric.md) — DAG execution, logs, events, retries, recovery and operational boundaries.
 - [`multi-command-wake-workflow.md`](multi-command-wake-workflow.md) — agent-facing dependency-aware asynchronous execution behavior.
+- [`github.md`](github.md) — Native GitHub Fabric credentials, REST/Git/Packages transports, destructive gates, rotation, and live read-only acceptance.
 
 ## Stability and operations
 

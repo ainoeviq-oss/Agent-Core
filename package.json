@@ -11,6 +11,7 @@
     "cli": "node dist/cli.js",
     "sync:capabilities": "npm run build && node scripts/sync-capabilities.mjs",
     "build:plugin": "npm run build && node scripts/build-plugin-package.mjs",
+    "acceptance:github": "npm run build && node scripts/github-live-acceptance.mjs",
     "check:brand": "node scripts/check-agent-core-brand.mjs",
     "benchmark:memory": "npm run build && node scripts/benchmark-memory.mjs",
     "benchmark:execution": "npm run build && node scripts/benchmark-execution.mjs",

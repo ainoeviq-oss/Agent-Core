@@ -6,7 +6,7 @@ All notable stable Agent Core changes are recorded here. The project follows sem
 
 ### Added
 
-- Native GitHub Fabric with direct GitHub REST API access, ephemeral authenticated HTTPS Git transport, dedicated GitHub Packages authentication, route-aware MCP tools, destructive-operation guards, and tracked plugin guidance without requiring interactive GitHub CLI login.
+- Native GitHub Fabric with direct GitHub REST API access, ephemeral authenticated HTTPS Git transport, dedicated GitHub Packages authentication, route-aware MCP tools, destructive-operation guards, canonical operator guidance, and opt-in read-only live acceptance without requiring interactive GitHub CLI login.
 
 ## [0.5.0] - 2026-08-26 — Stable
 

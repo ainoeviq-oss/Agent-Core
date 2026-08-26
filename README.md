@@ -16,6 +16,7 @@ The design keeps semantic reasoning in the connected model while Agent Core supp
 | Local Continuity | Task/checkpoint/frontier state that can be rehydrated by a later route or chat session |
 | Execution Fabric | Durable DAG execution, bounded concurrency, retries, logs, restart recovery |
 | Event wake | Persist-before-signal event delivery without busy database polling |
+| Native GitHub Fabric | Route-aware GitHub REST, HTTPS Git, Actions, Releases, Issues/PRs and Packages without interactive login |
 | Windows lifecycle | One launcher, tray controls, watchdog recovery, tunnel supervision, optional autostart |
 
 ## Architecture
@@ -93,6 +94,7 @@ Agent Core groups its MCP tools by responsibility:
 - **Filesystem & search** - bounded read/write/edit/move/info and recursive filename/content search.
 - **Processes** - guarded PowerShell execution plus owned background-process lifecycle tools.
 - **Capability routing** - route, search, inspect dependencies, load audited native-ready skills, registry coverage.
+- **GitHub** - route-aware repository, Git, issue, pull-request, Actions, release, Packages/npm, and bounded generic REST operations with lazy local credentials.
 - **Memory** - status, search, inspect, commit, revise, forget, explain, export.
 - **Continuity** - checkpoint, status, task inspection, actionable frontier.
 - **Execution** - create/start/status/wait/log/add/retry/cancel dependency-aware command runs.
@@ -123,6 +125,7 @@ Generated runtime state, secrets, caches, local capability sources, and release 
 - Raw execution stdout/stderr is treated as sensitive operator evidence and is never promoted wholesale into semantic memory.
 - Execution recovery never infers success from a vanished process or PID; durable result evidence is authoritative.
 - Deferred third-party capabilities cannot become executable skills until their audit gates pass.
+- GitHub credentials remain in operator-managed local files under `secrets/github`; REST/Git and Packages credentials are separated, read lazily, redacted from errors/audit/memory, and excluded from release packages.
 
 See [`SECURITY.md`](SECURITY.md) for the repository security model.
 
@@ -149,6 +152,7 @@ Key documents:
 - [`docs/deterministic-execution-fabric.md`](docs/deterministic-execution-fabric.md)
 - [`docs/multi-command-wake-workflow.md`](docs/multi-command-wake-workflow.md)
 - [`docs/stability.md`](docs/stability.md)
+- [`docs/github.md`](docs/github.md) — Native GitHub Fabric operator/security guide and opt-in live acceptance
 - [`docs/roadmap/self-fork-integration.md`](docs/roadmap/self-fork-integration.md) - planning only; not implemented
 
 ## Development and verification
@@ -169,7 +173,7 @@ npm run package:release
 
 ## Plugin packaging
 
-The tracked plugin source contains the native Agent Core Capability Router. Local audited `native_ready` skills can additionally be materialized from the deferred capability registry with:
+The tracked plugin source contains the native Agent Core Capability Router and Native GitHub Fabric skills. Local audited `native_ready` skills can additionally be materialized from the deferred capability registry with:
 
 ```powershell
 npm run build:plugin
