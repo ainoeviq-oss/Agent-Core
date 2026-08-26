@@ -69,6 +69,11 @@ expected_source_version="$(source_package_version)" || {
   log_error 'Unable to resolve Agent Core package version from synchronized source.'
   exit 50
 }
+role="$(codespace_anchor_role)"
+backend_session="${AGENT_CORE_TMUX_SESSION}"
+service_session="$(agent_core_service_session)"
+proxy_session="$(anchor_proxy_session)"
+anchor_discovery_session="$(anchor_discovery_session)"
 restart_required="${AGENT_CORE_FORCE_RESTART:-0}"
 build_required=0
 if [[ ! -f dist/index.js ]]; then
@@ -85,29 +90,82 @@ if (( build_required == 1 )); then
   restart_required=1
 fi
 
-start_supervisor() {
-  tmux new-session -d -s "$AGENT_CORE_TMUX_SESSION" "bash \"$SCRIPT_DIR/start-agent-core.sh\""
+start_service_supervisor() {
+  tmux new-session -d -s "$service_session" "bash \"$SCRIPT_DIR/start-agent-core.sh\""
 }
 
-if [[ "$restart_required" == "1" ]] && tmux has-session -t "$AGENT_CORE_TMUX_SESSION" 2>/dev/null; then
-  log_info 'Restarting Agent Core supervisor to activate the synchronized build.'
-  tmux kill-session -t "$AGENT_CORE_TMUX_SESSION" 2>/dev/null || true
-  start_supervisor || exit 60
-elif ! tmux has-session -t "$AGENT_CORE_TMUX_SESSION" 2>/dev/null; then
+start_anchor_supervisor() {
+  [[ "$role" == "anchor" ]] || return 0
+  tmux new-session -d -s "$proxy_session" "bash \"$SCRIPT_DIR/start-anchor-proxy.sh\""
+}
+
+start_anchor_discovery_supervisor() {
+  [[ "$role" == "anchor" ]] || return 0
+  tmux new-session -d -s "$anchor_discovery_session" "bash \"$SCRIPT_DIR/watch-anchor-backend.sh\""
+}
+
+# A pre-anchor release may still have the legacy Agent Core supervisor bound
+# directly to public port 8765. On the anchor only, retire that session before
+# the proxy takes ownership of the public port. Non-anchor Codespaces retain it.
+if [[ "$role" == "anchor" && "$backend_session" != "$service_session" ]] \
+  && tmux has-session -t "$backend_session" 2>/dev/null; then
+  log_info 'Stopping legacy public Agent Core supervisor before anchor cutover.'
+  tmux kill-session -t "$backend_session" 2>/dev/null || true
+fi
+
+if [[ "$restart_required" == "1" ]]; then
+  if [[ "$role" == "anchor" ]] && tmux has-session -t "$proxy_session" 2>/dev/null; then
+    log_info 'Restarting Codespace anchor proxy to activate the synchronized build.'
+    tmux kill-session -t "$proxy_session" 2>/dev/null || true
+  fi
+  if [[ "$role" == "anchor" ]] && tmux has-session -t "$anchor_discovery_session" 2>/dev/null; then
+    log_info 'Restarting Codespace anchor discovery watcher to activate the synchronized build.'
+    tmux kill-session -t "$anchor_discovery_session" 2>/dev/null || true
+  fi
+  if tmux has-session -t "$service_session" 2>/dev/null; then
+    log_info 'Restarting Agent Core supervisor to activate the synchronized build.'
+    tmux kill-session -t "$service_session" 2>/dev/null || true
+  fi
+  start_service_supervisor || exit 60
+elif ! tmux has-session -t "$service_session" 2>/dev/null; then
   log_info 'Starting Agent Core supervisor session.'
-  start_supervisor || exit 60
+  start_service_supervisor || exit 60
 fi
 
 if ! wait_for_local_health 40 0.5 "$expected_source_version"; then
-  log_error "Local health did not become ready at synchronized source version $expected_source_version; performing one controlled service restart."
-  tmux kill-session -t "$AGENT_CORE_TMUX_SESSION" 2>/dev/null || true
-  start_supervisor || exit 60
+  log_error "Local Agent Core backend did not become ready at synchronized source version $expected_source_version; performing one controlled service restart."
+  tmux kill-session -t "$service_session" 2>/dev/null || true
+  start_service_supervisor || exit 60
   if ! wait_for_local_health 40 0.5 "$expected_source_version"; then
     log_error "Agent Core local health/version gate failed after restart. See $AGENT_CORE_CODESPACE_HOME/logs/agent-core.log"
     exit 70
   fi
 fi
-log_info "Local Agent Core health is verified at source version $expected_source_version."
+log_info "Local Agent Core backend health is verified at source version $expected_source_version on port $(agent_core_service_port)."
+
+if [[ "$role" == "anchor" ]]; then
+  if [[ ! -s "$AGENT_CORE_CODESPACE_HOME/anchor/backend.json" ]]; then
+    bash "$SCRIPT_DIR/set-anchor-backend.sh" local >/dev/null || exit 71
+  fi
+  if ! tmux has-session -t "$proxy_session" 2>/dev/null; then
+    log_info 'Starting Codespace anchor proxy session.'
+    start_anchor_supervisor || exit 60
+  fi
+
+  if ! wait_for_anchor_proxy_health 40 0.5 "$expected_source_version"; then
+    log_error 'Anchor proxy target is not healthy; reverting atomically to the local fallback backend.'
+    node dist/codespace/anchor-target.js local >/dev/null || exit 71
+    if ! wait_for_anchor_proxy_health 40 0.5 "$expected_source_version"; then
+      log_error "Anchor proxy health failed after local fallback. See $AGENT_CORE_CODESPACE_HOME/logs/anchor-proxy.log"
+      exit 71
+    fi
+  fi
+  log_info "Anchor proxy health is verified on public port $AGENT_CORE_ANCHOR_PUBLIC_PORT."
+  if ! tmux has-session -t "$anchor_discovery_session" 2>/dev/null; then
+    log_info 'Starting Codespace anchor backend discovery watcher.'
+    start_anchor_discovery_supervisor || exit 60
+  fi
+fi
 
 browse_url=""
 for _ in $(seq 1 60); do
@@ -116,7 +174,7 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 if [[ -z "$browse_url" ]]; then
-  log_error "Agent Core is listening locally but GitHub Codespaces has not registered forwarded port $AGENT_CORE_CODESPACE_PORT."
+  log_error "Agent Core front door is listening locally but GitHub Codespaces has not registered forwarded port $AGENT_CORE_CODESPACE_PORT."
   exit 80
 fi
 
@@ -136,10 +194,14 @@ fi
 }
 log_info "Forwarded port $AGENT_CORE_CODESPACE_PORT is public."
 
-base_url="$(public_base_url)" || {
-  log_error 'Unable to resolve public Agent Core base URL.'
-  exit 90
-}
+if [[ "$role" == "anchor" ]]; then
+  base_url="$(anchor_public_base_url)"
+else
+  base_url="$(public_base_url)" || {
+    log_error 'Unable to resolve public Agent Core base URL.'
+    exit 90
+  }
+fi
 base_url="${base_url%/}"
 
 public_health=""
@@ -185,7 +247,11 @@ mcp_status="$(curl -sS -o /dev/null -w '%{http_code}' "$base_url/mcp" 2>/dev/nul
 }
 
 transport="github-codespaces"
-[[ -n "${AGENT_CORE_PUBLIC_BASE_URL:-}" ]] && transport="stable-front-door"
+if [[ "$role" == "anchor" ]]; then
+  transport="codespace-anchor-gateway"
+elif [[ -n "${AGENT_CORE_PUBLIC_BASE_URL:-}" ]]; then
+  transport="stable-front-door"
+fi
 write_connection_metadata "$base_url" "$transport"
 
 log_info 'READY: all local, forwarding, public-health, OAuth, and MCP-auth gates passed.'

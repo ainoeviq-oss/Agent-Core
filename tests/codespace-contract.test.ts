@@ -38,10 +38,12 @@ describe('Codespaces deployment contract', () => {
     expect(common).toContain('agent_core_service_port()');
   });
 
-  it('starts Agent Core with isolated Codespace runtime paths', async () => {
+  it('starts Agent Core with isolated Codespace runtime paths and role-aware binding', async () => {
     const launcher = await read('scripts/codespace/start-agent-core.sh');
-    expect(launcher).toContain('AGENT_CORE_HOST="0.0.0.0"');
-    expect(launcher).toContain('AGENT_CORE_PORT="$AGENT_CORE_CODESPACE_PORT"');
+    expect(launcher).toContain('service_port="$(agent_core_service_port)"');
+    expect(launcher).toContain('service_host="$(agent_core_service_host)"');
+    expect(launcher).toContain('AGENT_CORE_HOST="$service_host"');
+    expect(launcher).toContain('AGENT_CORE_PORT="$service_port"');
     expect(launcher).toContain('AGENT_CORE_ALLOWED_ROOTS="$AGENT_CORE_REPO_ROOT"');
     expect(launcher).toContain('exec "$NODE_BIN" dist/index.js');
     expect(launcher).not.toContain('agent_core_live_');

@@ -8,6 +8,7 @@ AGENT_CORE_ANCHOR_CODESPACE_NAME="${AGENT_CORE_ANCHOR_CODESPACE_NAME:-ominous-xy
 AGENT_CORE_ANCHOR_PUBLIC_BASE_URL="${AGENT_CORE_ANCHOR_PUBLIC_BASE_URL:-https://ominous-xylophone-69xxp4v76vv93xq64.app.github.dev}"
 AGENT_CORE_ANCHOR_PUBLIC_PORT="${AGENT_CORE_ANCHOR_PUBLIC_PORT:-8765}"
 AGENT_CORE_ANCHOR_LOCAL_BACKEND_PORT="${AGENT_CORE_ANCHOR_LOCAL_BACKEND_PORT:-8766}"
+AGENT_CORE_ANCHOR_DISCOVERY_INTERVAL_SECONDS="${AGENT_CORE_ANCHOR_DISCOVERY_INTERVAL_SECONDS:-30}"
 AGENT_CORE_TMUX_SESSION="${AGENT_CORE_TMUX_SESSION:-agent-core-codespace}"
 AGENT_CORE_NODE_VERSION="${AGENT_CORE_NODE_VERSION:-24.16.0}"
 
@@ -33,6 +34,30 @@ agent_core_service_port() {
 
 anchor_public_base_url() {
   printf '%s\n' "${AGENT_CORE_ANCHOR_PUBLIC_BASE_URL%/}"
+}
+
+agent_core_service_host() {
+  if [[ "$(codespace_anchor_role)" == "anchor" ]]; then
+    printf '127.0.0.1\n'
+  else
+    printf '0.0.0.0\n'
+  fi
+}
+
+agent_core_service_session() {
+  if [[ "$(codespace_anchor_role)" == "anchor" ]]; then
+    printf 'agent-core-codespace-backend\n'
+  else
+    printf '%s\n' "$AGENT_CORE_TMUX_SESSION"
+  fi
+}
+
+anchor_proxy_session() {
+  printf 'agent-core-codespace-anchor\n'
+}
+
+anchor_discovery_session() {
+  printf 'agent-core-codespace-anchor-discovery\n'
 }
 
 log_info() { printf '[agent-core-codespace] %s\n' "$*"; }
@@ -104,14 +129,15 @@ process.stdout.write(parsed.version);
 NODE
 }
 
-wait_for_local_health() {
-  local attempts="${1:-40}"
-  local delay="${2:-0.5}"
-  local expected_version="${3:-}"
+wait_for_health_port() {
+  local port="$1"
+  local attempts="${2:-40}"
+  local delay="${3:-0.5}"
+  local expected_version="${4:-}"
   local health
   local i
   for ((i = 1; i <= attempts; i++)); do
-    if health="$(curl -fsS "http://127.0.0.1:${AGENT_CORE_CODESPACE_PORT}/health" 2>/dev/null)"; then
+    if health="$(curl -fsS "http://127.0.0.1:${port}/health" 2>/dev/null)"; then
       if printf '%s' "$health" | health_payload_ok "$expected_version"; then
         return 0
       fi
@@ -119,6 +145,35 @@ wait_for_local_health() {
     sleep "$delay"
   done
   return 1
+}
+
+wait_for_service_health() {
+  local attempts="${1:-40}"
+  local delay="${2:-0.5}"
+  local expected_version="${3:-}"
+  local service_port="$(agent_core_service_port)"
+  local health
+  local i
+  for ((i = 1; i <= attempts; i++)); do
+    if health="$(curl -fsS "http://127.0.0.1:${service_port}/health" 2>/dev/null)"; then
+      if printf '%s' "$health" | health_payload_ok "$expected_version"; then
+        return 0
+      fi
+    fi
+    sleep "$delay"
+  done
+  return 1
+}
+
+wait_for_local_health() {
+  wait_for_service_health "$@"
+}
+
+wait_for_anchor_proxy_health() {
+  local attempts="${1:-40}"
+  local delay="${2:-0.5}"
+  local expected_version="${3:-}"
+  wait_for_health_port "$AGENT_CORE_ANCHOR_PUBLIC_PORT" "$attempts" "$delay" "$expected_version"
 }
 
 codespace_port_json() {

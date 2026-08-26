@@ -104,3 +104,28 @@ Next task: Task 5 — lifecycle integration for anchor vs backend roles.
 - Authorization/token/registration request bodies are proxied without logging secrets.
 - Upstream failures fail closed as `502`.
 - Focused verification: build PASS; 7/7 proxy tests PASS.
+
+## Checkpoint — Task 5: Role-aware lifecycle + fresh-Codespace automation integration
+
+Status: COMPLETE / GREEN
+
+Implemented:
+- Anchor local Agent Core service binds only `127.0.0.1:8766`; non-anchor Codespaces retain `0.0.0.0:8765`.
+- Public anchor proxy owns port 8765 and resolves the active backend atomically on every request.
+- Anchor supervisors are isolated as `agent-core-codespace-backend`, `agent-core-codespace-anchor`, and `agent-core-codespace-anchor-discovery`; ordinary backend Codespaces retain the existing `agent-core-codespace` supervisor.
+- The lifecycle retires a legacy direct 8765 supervisor automatically before anchor proxy cutover, avoiding `EADDRINUSE` on upgrade.
+- Missing anchor target state initializes to local fallback before public readiness.
+- `watch-anchor-backend.sh` performs bounded recurring discovery without logging secrets; ambiguity/failure preserves the last verified target.
+- Public port 8765 remains the only forwarded port; 8766 stays internal.
+- Anchor READY uses the portless stable anchor origin and transport `codespace-anchor-gateway`; non-anchor behavior remains direct Codespaces unless an independent stable front door is configured.
+- Existing `.devcontainer` create/start/attach hooks remain the canonical fresh-machine entrypoints.
+
+Verification:
+- `npm run build` — PASS.
+- Anchor/config/proxy/target/discovery/lifecycle/Codespace/source-sync focused sweep — 7 files PASS, 49 tests PASS, 0 failures.
+- `git diff --check` — PASS.
+
+Fresh-machine guardrail:
+All runtime behavior above is implemented in repository-tracked source/scripts; runtime target state, OAuth stores, database files, logs, and credentials remain outside Git.
+
+Next task: prove the complete fresh-Codespace bootstrap inventory is tracked and reproducible, then implement a Codespace-deletion-surviving stable front door.

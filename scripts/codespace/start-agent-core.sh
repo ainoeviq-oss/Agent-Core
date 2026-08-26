@@ -12,6 +12,8 @@ ensure_node_runtime || {
   exit 30
 }
 NODE_BIN="$(command -v node)"
+service_port="$(agent_core_service_port)"
+service_host="$(agent_core_service_host)"
 
 mkdir -p \
   "$AGENT_CORE_CODESPACE_HOME/data" \
@@ -20,8 +22,8 @@ mkdir -p \
   "$AGENT_CORE_CODESPACE_HOME/execution/runs" \
   "$AGENT_CORE_CODESPACE_HOME/secrets"
 
-export AGENT_CORE_HOST="0.0.0.0"
-export AGENT_CORE_PORT="$AGENT_CORE_CODESPACE_PORT"
+export AGENT_CORE_HOST="$service_host"
+export AGENT_CORE_PORT="$service_port"
 export AGENT_CORE_DATA_DIR="$AGENT_CORE_CODESPACE_HOME/data"
 export AGENT_CORE_LOG_DIR="$AGENT_CORE_CODESPACE_HOME/logs"
 export AGENT_CORE_CAPABILITY_DIR="$AGENT_CORE_REPO_ROOT/capabilities"
