@@ -16,7 +16,7 @@ The design keeps semantic reasoning in the connected model while Agent Core supp
 | Local Continuity | Task/checkpoint/frontier state that can be rehydrated by a later route or chat session |
 | Execution Fabric | Durable DAG execution, bounded concurrency, retries, logs, restart recovery |
 | Event wake | Persist-before-signal event delivery without busy database polling |
-| Native GitHub Fabric | Route-aware GitHub REST, HTTPS Git, Actions, Releases, Issues/PRs and Packages without interactive login |
+| Native GitHub Fabric | Route-aware GitHub REST, HTTPS Git, Releases, Issues/PRs and Packages without interactive login |
 | Windows lifecycle | One launcher, tray controls, watchdog recovery, tunnel supervision, optional autostart |
 
 ## Architecture
@@ -94,7 +94,7 @@ Agent Core groups its MCP tools by responsibility:
 - **Filesystem & search** - bounded read/write/edit/move/info and recursive filename/content search.
 - **Processes** - guarded PowerShell execution plus owned background-process lifecycle tools.
 - **Capability routing** - route, search, inspect dependencies, load audited native-ready skills, registry coverage.
-- **GitHub** - route-aware repository, Git, issue, pull-request, Actions, release, Packages/npm, and bounded generic REST operations with lazy local credentials.
+- **GitHub** - route-aware repository, Git, issue, pull-request, release, Packages/npm, and bounded generic REST operations with lazy local credentials. GitHub Actions/CI is intentionally forbidden for this repository.
 - **Memory** - status, search, inspect, commit, revise, forget, explain, export.
 - **Continuity** - checkpoint, status, task inspection, actionable frontier.
 - **Execution** - create/start/status/wait/log/add/retry/cancel dependency-aware command runs.
@@ -183,6 +183,6 @@ Local generated skill packages include provenance/license evidence and remain ig
 
 ## Releases
 
-Stable release artifacts are generated reproducibly with the repository release tooling and are accepted only after dependency install, build, full tests, brand checks, release-metadata checks, package construction, and checksum verification. Publication can be performed by the tag-triggered workflow when GitHub-hosted Actions is available or by an authenticated local release operator using the same verified artifacts. GitHub Packages publication uses the `stable` dist-tag.
+Stable release artifacts are generated, verified, packaged, and published directly from the local Agent Core authority. Once the local release gate has passed and the build is declared stable, that verification is authoritative and must not be repeated through GitHub-hosted CI. GitHub Actions is disabled for this repository and must not be used, dispatched, rerun, or treated as a release fallback. Publication uses Native GitHub Fabric for Git/tag/release operations and the dedicated package credential for GitHub Packages under the `stable` dist-tag.
 
 Release history and behavior changes are recorded in [`CHANGELOG.md`](CHANGELOG.md).

@@ -23,7 +23,7 @@ The tracked core is intentionally small. It does not vendor OAuth state, API cre
 - repository operations through `github_repo`;
 - authenticated HTTPS Git through `github_git`;
 - issues and pull requests through `github_issue` and `github_pr`;
-- workflows through `github_actions`;
+- `github_actions` is intentionally forbidden for the Agent Core repository;
 - releases through `github_release`;
 - package operations through `github_packages`;
 - same-origin REST escape-hatch calls through `github_api`.
@@ -44,7 +44,7 @@ Generated output is local and ignored by Git.
 
 ## Stable release package
 
-The stable release workflow packages the **tracked core** rather than depending on untracked local registry state. This keeps tagged release assets reproducible from the repository alone.
+Stable release packaging runs directly from the local Agent Core authority and packages the **tracked core** rather than depending on untracked local registry state. GitHub Actions/CI is not part of the release path and is forbidden for this repository. This keeps published assets reproducible from the locally verified repository state alone.
 
 The published plugin source package contains:
 

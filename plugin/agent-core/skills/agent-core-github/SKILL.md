@@ -1,6 +1,6 @@
 ---
 name: agent-core-github
-description: Use Agent Core's Native GitHub Fabric for authenticated GitHub repository, Git, issue, pull request, Actions, release, package, and REST API work without interactive GitHub CLI login.
+description: Use Agent Core's Native GitHub Fabric for authenticated GitHub repository, Git, issue, pull request, release, package, and REST API work without interactive GitHub CLI login. GitHub Actions/CI is forbidden for the Agent Core repository.
 ---
 
 # Agent Core Native GitHub Fabric
@@ -13,6 +13,12 @@ Agent Core owns authentication and transport. Do not ask the user to run `gh aut
 
 All actionable GitHub tools except `github_status` are route-bound. Obtain one coherent route through `capability_route` for the current GitHub objective and reuse that `routeContextId` for operations belonging to that objective.
 
+## Absolute GitHub Actions / CI ban
+
+For the Agent Core repository, never invoke `github_actions` for any purpose. Do not list, inspect, dispatch, rerun, cancel, enable, debug, or otherwise use GitHub Actions. Do not use CI as verification, fallback, release automation, or a secondary confidence check. A locally verified stable result is authoritative and must not be re-tested on GitHub-hosted runners.
+
+Stable publication is local-direct only: build/package locally, push Git/tag through Native GitHub Fabric, publish the package with the dedicated package credential, create/update the GitHub Release, upload verified assets, and check remote equality/metadata directly. If a repository workflow file exists, it must remain non-executable and GitHub Actions must remain disabled in repository settings.
+
 ## Choose the narrowest tool
 
 Prefer purpose-built tools before the generic REST escape hatch:
@@ -22,7 +28,7 @@ Prefer purpose-built tools before the generic REST escape hatch:
 - `github_git` — authenticated HTTPS clone, fetch, pull, push, `ls-remote`, and safe remote URL management.
 - `github_issue` — issue listing, reading, creation, updates, closure, and comments.
 - `github_pr` — pull request listing, reading, creation, updates, reviews, comments, and merges.
-- `github_actions` — workflows, runs, dispatch, cancellation, and reruns.
+- `github_actions` — **FORBIDDEN for the Agent Core repository. Never invoke.**
 - `github_release` — release listing, reading, creation, editing, deletion, and asset upload.
 - `github_packages` — GitHub Packages metadata/version operations plus scoped npm view/publish/install.
 - `github_api` — same-origin GitHub REST escape hatch when no purpose-built tool covers the endpoint.
@@ -39,7 +45,7 @@ The general GitHub credential is for REST and authenticated HTTPS Git operations
 
 Never invent or automatically supply destructive confirmation. Use the exact literal `CONFIRM_GITHUB_DESTRUCTIVE_OPERATION` only when the user has clearly and explicitly requested the guarded destructive action in the current task.
 
-Guarded examples include repository deletion/transfer/archive, release deletion, package-version deletion, force push, PR merge, selected workflow cancellation, and generic non-GET `github_api` calls.
+Guarded examples include repository deletion/transfer/archive, release deletion, package-version deletion, force push, PR merge, and generic non-GET `github_api` calls. GitHub Actions operations are not guarded alternatives; they are forbidden entirely for this repository.
 
 A route created for a read-only GitHub objective must not be repurposed for mutation. Create a new route whose task accurately states the requested mutation.
 

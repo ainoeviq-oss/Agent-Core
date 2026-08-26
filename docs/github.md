@@ -4,6 +4,14 @@ Native GitHub Fabric gives Agent Core a first-class GitHub transport without `gh
 
 The connected model decides what GitHub action is appropriate. Agent Core applies route policy, workspace policy, credential isolation, destructive-operation gates, transport bounds, redaction, and factual result reporting.
 
+## Absolute GitHub Actions / CI ban
+
+GitHub Actions is permanently disabled for the Agent Core repository. CI execution is not an allowed release path, verification fallback, secondary check, or recovery mechanism. The `github_actions` tool must never be invoked for this repository, including read/list, dispatch, rerun, cancel, or workflow-management operations.
+
+Local verification is the execution authority. Once a local release gate has passed and the build has been declared stable, that evidence must not be repeated on GitHub-hosted runners. Release publication is direct: local package construction and checksum verification, authenticated Git/tag push, GitHub Package publication through the dedicated package credential, GitHub Release creation, asset upload, and final remote metadata/equality checks.
+
+The repository-side GitHub Actions setting is disabled, and tracked workflow files intentionally contain no executable workflow definition. Re-enabling Actions or adding an executable workflow is a policy violation unless this repository policy is explicitly replaced by the operator.
+
 ## MCP surface
 
 The GitHub capability adds nine MCP tools to the Agent Core tool surface:
@@ -13,7 +21,7 @@ The GitHub capability adds nine MCP tools to the Agent Core tool surface:
 - `github_git` — clone/fetch/pull/push/ls-remote and local remote URL operations.
 - `github_issue` — issue list/get/create/update/close/comment operations.
 - `github_pr` — pull-request list/get/create/update/review/comment/merge operations.
-- `github_actions` — workflow/run inspection plus dispatch/cancel/rerun operations.
+- `github_actions` — policy-disabled for this repository; do not invoke it for read, dispatch, cancellation, rerun, or any other workflow operation.
 - `github_release` — release list/get/create/edit/delete and asset upload operations.
 - `github_packages` — GitHub Packages REST and npm operations.
 - `github_api` — bounded generic GitHub REST access for endpoints not yet represented by a higher-level tool.
@@ -100,7 +108,7 @@ Agent Core does not modify the user's global npm configuration for GitHub authen
 
 ## Destructive-operation gates
 
-High-impact GitHub actions require the exact Agent Core destructive confirmation before side effects begin. This includes operations such as force push, repository delete/archive/transfer, pull-request merge, release delete, package-version delete, Actions cancellation, and generic non-GET `github_api` calls where the tool cannot infer a narrower safe semantic contract.
+High-impact GitHub mutations require the exact Agent Core destructive confirmation before side effects begin. This includes operations such as force push, repository delete/archive/transfer, pull-request merge, release delete, package-version delete, and generic non-GET `github_api` calls where the tool cannot infer a narrower safe semantic contract. GitHub Actions operations are not covered by this gate because they are forbidden entirely for this repository.
 
 The gate runs before credential reads or process/network side effects whenever possible.
 

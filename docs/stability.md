@@ -73,7 +73,9 @@ Execution SQLite automatic WAL checkpointing was replaced with explicit durable 
 
 ## Release gate
 
-Every stable release tag must pass all of the following before publication:
+Stable certification is performed locally by the Agent Core execution authority. Every stable release must pass the local gates below before publication. Once those local gates pass and the build is declared stable, that evidence is authoritative and must not be repeated through GitHub Actions or any other CI runner. GitHub Actions is disabled for this repository and is not an allowed verification or publication path.
+
+The local release gates are:
 
 | Gate | Requirement |
 |---|---|
@@ -88,7 +90,7 @@ Every stable release tag must pass all of the following before publication:
 | GitHub Release | release is published only after verification succeeds |
 | GitHub Package | plugin package publishes successfully under the stable channel |
 
-If any gate fails, the release workflow must fail rather than publishing a successful stable receipt.
+If any local gate fails, local publication stops. After the local gates pass, publication proceeds directly from the verified local artifacts through Native GitHub Fabric and GitHub Packages. CI must not rerun those gates or block the release.
 
 ## Evidence policy
 

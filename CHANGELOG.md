@@ -14,6 +14,7 @@ All notable stable Agent Core changes are recorded here. The project follows sem
 
 - Stable runtime and plugin packaging now ship the tracked Native GitHub Fabric skill and canonical GitHub operator documentation while keeping local credentials and generated runtime state outside release artifacts.
 - Release smoke coverage now matches the complete routed GitHub-enabled MCP tool surface.
+- GitHub Actions/CI is permanently disabled for the Agent Core repository. Stable verification and publication are local-direct only; already accepted local stability evidence is not rerun on GitHub-hosted runners, and repository workflow files intentionally contain no executable workflow.
 
 ### Security
 
