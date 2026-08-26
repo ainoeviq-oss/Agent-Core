@@ -164,3 +164,59 @@ git diff --check                                               PASS
 ### Next task
 
 Task 17 — prove the complete A/B concurrent wake → inspect A → re-arm wait after latest sequence → inspect B flow with factual evidence.
+
+## Checkpoint 017 — Task 17: Staged A/B wake and evidence proof
+
+### Prior durable checkpoint resolved
+
+```text
+root/main HEAD   = a8ae93affc053c0fe953d52f676857a84845400a
+origin/main      = a8ae93affc053c0fe953d52f676857a84845400a
+worktree HEAD    = d5bd3ae364e091b540190baf06b5afa8ecb89c90
+origin/feature   = d5bd3ae364e091b540190baf06b5afa8ecb89c90
+```
+
+### Acceptance proof
+
+A real-runner two-node execution with `maxConcurrency=2` proves the required event-driven orchestration contract:
+
+1. independent A and B are simultaneously `running`;
+2. A creates a required declared artifact and finishes first;
+3. the first bounded wait wakes on persisted `node.succeeded(A)`;
+4. B is still `running` when A wakes the waiter;
+5. A exposes result-marker v2 with `processState=succeeded`, `evidenceState=verified`, verified artifact path and SHA256;
+6. the next wait is armed using the latest observed sequence from A's wake result;
+7. B later creates its declared artifact and wakes that second waiter on `node.succeeded(B)` with a strictly later sequence;
+8. merged evidence contains deterministic A+B entries, both verified, and a bounded final wait observes persisted `run.completed`.
+
+No caller-side database polling is used. The acceptance uses only bounded event-driven waits and factual persisted status/evidence.
+
+### Changed files
+
+```text
+tests/execution-wake.test.ts
+```
+
+No production code change was required; Tasks 11–16 already provided the necessary behavior.
+
+### Verification
+
+```text
+npm run build                                                   PASS
+Task 17 focused real-runner acceptance                          PASS
+full tests/execution-wake.test.ts                               7/7 PASS
+git diff --check                                               PASS
+```
+
+### Repository comparison before Task 17 commit
+
+| Surface | Ref |
+| --- | --- |
+| Root `/workspaces/Agent-Core` HEAD | `a8ae93affc053c0fe953d52f676857a84845400a` |
+| `origin/main` | `a8ae93affc053c0fe953d52f676857a84845400a` |
+| Worktree parent HEAD | `d5bd3ae364e091b540190baf06b5afa8ecb89c90` |
+| `origin/feat/memory-continuity-execution-hardening` | `d5bd3ae364e091b540190baf06b5afa8ecb89c90` |
+
+### Next task
+
+Task 18 — prove and formalize the deterministic merged run evidence view used for final factual synthesis.

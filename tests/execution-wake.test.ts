@@ -275,6 +275,97 @@ describe('persisted execution event journal and event-driven wake', () => {
     }
   }, 10_000);
 
+  it('proves A/B concurrent wake -> inspect A evidence -> re-arm after latest sequence -> inspect B evidence', async () => {
+    const f = await realFixture('staged-ab');
+    try {
+      const artifactA = path.join(f.work, 'artifact-a.json');
+      const artifactB = path.join(f.work, 'artifact-b.json');
+      const commandA = nodeShellCommand(`
+        const fs = require('node:fs');
+        setTimeout(() => fs.writeFileSync(${JSON.stringify(artifactA)}, JSON.stringify({ node: 'A', ok: true })), 150);
+      `);
+      const commandB = nodeShellCommand(`
+        const fs = require('node:fs');
+        setTimeout(() => fs.writeFileSync(${JSON.stringify(artifactB)}, JSON.stringify({ node: 'B', ok: true })), 800);
+      `);
+      const created = await f.service.create(f.scope, {
+        objective: 'staged A/B wake evidence fixture',
+        maxConcurrency: 2,
+        nodes: [
+          {
+            id: 'B', purpose: 'slower independent B', command: commandB, cwd: f.work,
+            expectedArtifacts: [{ path: artifactB, kind: 'file', hash: 'sha256', required: true }],
+          },
+          {
+            id: 'A', purpose: 'faster independent A', command: commandA, cwd: f.work,
+            expectedArtifacts: [{ path: artifactA, kind: 'file', hash: 'sha256', required: true }],
+          },
+        ],
+      });
+      const firstWait = f.service.wait(
+        f.scope,
+        created.runId,
+        created.lastEventSequence,
+        { eventTypes: ['node.succeeded'], nodeIds: ['A'] },
+        5_000,
+      );
+      const started = await f.service.start(f.scope, created.runId);
+      expect(started.nodes.filter((node) => node.state === 'running').map((node) => node.nodeId).sort())
+        .toEqual(['A', 'B']);
+
+      const wokeA = await firstWait;
+      expect(wokeA.timedOut).toBe(false);
+      expect(wokeA.event).toMatchObject({ eventType: 'node.succeeded', nodeId: 'A' });
+      expect(wokeA.state.nodes.find((node) => node.nodeId === 'B')?.state).toBe('running');
+      expect(wokeA.state.evidence.nodes.find((node) => node.nodeId === 'A')).toMatchObject({
+        processState: 'succeeded',
+        evidenceState: 'verified',
+        resultVersion: 2,
+        artifacts: [expect.objectContaining({
+          path: artifactA,
+          verification: 'verified',
+          sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        })],
+      });
+      const latestAfterA = wokeA.lastEventSequence;
+      expect(latestAfterA).toBeGreaterThan(wokeA.event!.sequence - 1);
+
+      const wokeB = await f.service.wait(
+        f.scope,
+        created.runId,
+        latestAfterA,
+        { eventTypes: ['node.succeeded'], nodeIds: ['B'] },
+        5_000,
+      );
+      expect(wokeB.timedOut).toBe(false);
+      expect(wokeB.event).toMatchObject({ eventType: 'node.succeeded', nodeId: 'B' });
+      expect(wokeB.event!.sequence).toBeGreaterThan(latestAfterA);
+      expect(wokeB.state.evidence.nodes.map((node) => node.nodeId)).toEqual(['A', 'B']);
+      for (const evidence of wokeB.state.evidence.nodes) {
+        expect(evidence).toMatchObject({ processState: 'succeeded', evidenceState: 'verified', resultVersion: 2 });
+        expect(evidence.artifacts).toHaveLength(1);
+        expect(evidence.artifacts[0]).toMatchObject({
+          verification: 'verified',
+          sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        });
+      }
+
+      const completed = await f.service.wait(
+        f.scope,
+        created.runId,
+        wokeB.lastEventSequence,
+        { eventTypes: ['run.completed'] },
+        5_000,
+      );
+      expect(completed.event?.eventType).toBe('run.completed');
+      expect(completed.state.state).toBe('completed');
+      expect(completed.state.evidence.verification).toBe('verified');
+      expect(completed.state.evidence.nodes.map((node) => node.nodeId)).toEqual(['A', 'B']);
+    } finally {
+      await f.service.close();
+    }
+  }, 10_000);
+
   it('emits retry and terminal run events with globally monotonic per-run sequence values', async () => {
     const runner = new ControlledRunner();
     const f = await fixture('retry-events', runner);
