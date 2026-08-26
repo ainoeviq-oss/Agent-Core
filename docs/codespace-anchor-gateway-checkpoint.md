@@ -53,3 +53,21 @@ Verification:
 Task 2 source checkpoint will be the commit immediately following this note update.
 
 Next task: Task 3 — atomic backend target state + verification.
+
+## Checkpoint — Task 3: Atomic backend target state + verification
+
+Status: COMPLETE / GREEN
+
+Implemented:
+- Added runtime-only target contract in `src/codespace/anchor-target.ts`.
+- Missing/malformed state deterministically falls back to `http://127.0.0.1:8766`.
+- Target writes use private `0600` temp files followed by atomic rename.
+- Remote candidate validation requires HTTPS `*.app.github.dev`, rejects the anchor origin itself, requires healthy Agent Core `/health`, valid OAuth discovery, and unauthenticated `/mcp` HTTP 401.
+- `verifyAndWriteRemoteBackend()` performs all verification before state mutation.
+- Added `scripts/codespace/set-anchor-backend.sh` and `npm run codespace:anchor:set` for explicit local/remote switching from the anchor only.
+
+Verification:
+- `npm run build` — PASS.
+- `npx vitest run tests/codespace-anchor-target.test.ts` — 1 file PASS, 7 tests PASS, 0 failures.
+
+Next task: Task 4 — safe automatic backend discovery.

@@ -20,7 +20,8 @@
     "package:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release/build-release.ps1",
     "codespace:bootstrap": "bash scripts/codespace/bootstrap.sh --phase manual",
     "codespace:repair": "bash scripts/codespace/ensure-running.sh --repair --phase manual",
-    "codespace:connection": "bash scripts/codespace/show-connection.sh"
+    "codespace:connection": "bash scripts/codespace/show-connection.sh",
+    "codespace:anchor:set": "bash scripts/codespace/set-anchor-backend.sh"
   },
   "engines": {
     "node": ">=24.15.0"
