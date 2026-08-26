@@ -74,7 +74,7 @@ Agent Core sends:
 ```text
 Accept: application/vnd.github+json
 X-GitHub-Api-Version: 2026-03-10
-User-Agent: Agent-Core/0.5.1
+User-Agent: Agent-Core/0.5.2
 ```
 
 The API version is explicit rather than relying on GitHub's default. It can be overridden with `AGENT_CORE_GITHUB_API_VERSION` when Agent Core is intentionally moved to a different supported GitHub API version.

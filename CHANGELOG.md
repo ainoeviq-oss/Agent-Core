@@ -4,6 +4,37 @@ All notable stable Agent Core changes are recorded here. The project follows sem
 
 ## Unreleased
 
+## [0.5.2] - 2026-08-27 — Stable
+
+### Added
+
+- Project-scoped route identity now propagates deterministically through memory, continuity, and execution so multi-project work cannot silently fall back to the first workspace root.
+- Execution evidence schema v2 with optional declared artifacts, workspace-bounded verification, required-evidence gating, factual file metadata, and SHA-256 verification.
+- Coalesced `node.output_available` wake events and staged multi-command wake/re-wait behavior for concurrent execution without log polling or event flooding.
+- Deterministic merged execution evidence views and restart acceptance proving declared-artifact contracts survive service close/reopen and remain verifiable.
+- Codespace self-healing runtime lifecycle and portable Git askpass handling for native Linux operation while preserving Windows behavior.
+
+### Changed
+
+- Semantic task completion for execution-backed continuity tasks now requires explicit verified execution evidence; successful process exit alone cannot finalize the task.
+- Execution-to-DMF promotion now carries verified artifact manifests with exact attempt provenance while continuing to exclude raw stdout/stderr.
+- Agent Core routing skill guidance now makes project resolution, deterministic memory/continuity inspection, multi-command execution, wake/re-wait, and evidence verification explicit operational contracts.
+- Stable plugin package parity is checked byte-for-byte against the tracked router skill before release.
+
+### Security
+
+- Cross-project memory, continuity, and execution access is fail-closed under route-bound project identity.
+- Required artifacts are verified from bounded filesystem evidence rather than inferred from command output.
+- Raw execution logs remain local evidence and are not promoted automatically into long-term deterministic memory.
+- Secrets, runtime databases, generated state, local credentials, and raw execution evidence remain excluded from release packages.
+
+### Stability evidence
+
+- Final stable hardening acceptance completed all 27 planned tasks and was integrated into `main` with no GitHub Actions/CI.
+- Live Codespace cutover migrated Execution Fabric schema v1 to v2 with an automatic pre-migration backup and `integrity=ok`.
+- Live schema-v2 declared-artifact run completed with `evidenceState=verified` and an independently matching SHA-256.
+- `npm run verify:release`: 81 test files passed, 351 tests passed, 32 platform/performance tests skipped by the normal suite, with zero failures; release metadata and documentation link checks also passed.
+
 ## [0.5.1] - 2026-08-26 — Stable
 
 ### Added
