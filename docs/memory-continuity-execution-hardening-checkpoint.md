@@ -103,3 +103,64 @@ For Task N:
 8. Push normal non-force to `origin/feat/memory-continuity-execution-hardening`.
 9. Resolve and record the exact remote feature SHA.
 10. Only then begin Task N+1.
+
+## Checkpoint 016 — Task 16: Real runner output-available wake wiring
+
+### Prior durable checkpoint resolved
+
+```text
+root/main HEAD   = a8ae93affc053c0fe953d52f676857a84845400a
+origin/main      = a8ae93affc053c0fe953d52f676857a84845400a
+worktree HEAD    = 61214b019af4d5328192f3702d9ad6bd7cab6ed1
+origin/feature   = 61214b019af4d5328192f3702d9ad6bd7cab6ed1
+```
+
+### Behavior implemented
+
+Real `ExecutionCommandRunner` stdout/stderr chunks now emit metadata-only availability callbacks with:
+
+```text
+stream
+offset
+nextOffset
+chunkBytes
+```
+
+The scheduler routes those callbacks through the existing `ExecutionEventJournal` as `node.output_available`. The journal remains the single coalescing and persist-before-signal authority. No raw stdout/stderr content is stored in the event payload. Pending output notification work is settled before runner terminal completion, so an already-observed output notification is not overtaken by the terminal node event.
+
+Observer failure is non-authoritative and cannot rewrite factual process success/failure.
+
+### Changed files
+
+```text
+src/execution/runner.ts
+src/execution/scheduler.ts
+tests/execution-wake.test.ts
+```
+
+### RED evidence
+
+Real-runner `execution_wait(eventTypes=[node.output_available])` timed out because no production runner caller invoked `recordOutputAvailable()`.
+
+### GREEN verification
+
+```text
+npm run build                                                   PASS
+execution-wake real-runner focused regression                  PASS
+execution-wake + execution-runner + execution-scheduler        18/18 PASS
+git diff --check                                               PASS
+```
+
+### Repository comparison before Task 16 commit
+
+| Surface | Ref / state |
+| --- | --- |
+| Root `/workspaces/Agent-Core` HEAD | `a8ae93affc053c0fe953d52f676857a84845400a` |
+| `origin/main` | `a8ae93affc053c0fe953d52f676857a84845400a` |
+| Worktree parent HEAD | `61214b019af4d5328192f3702d9ad6bd7cab6ed1` |
+| `origin/feat/memory-continuity-execution-hardening` before Task 16 push | `61214b019af4d5328192f3702d9ad6bd7cab6ed1` |
+| Task 16 checkpoint | this commit on `feat/memory-continuity-execution-hardening`; exact resolved SHA is verified immediately after push and recorded by the next checkpoint comparison |
+
+### Next task
+
+Task 17 — prove the complete A/B concurrent wake → inspect A → re-arm wait after latest sequence → inspect B flow with factual evidence.

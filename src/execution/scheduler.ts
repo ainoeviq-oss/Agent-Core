@@ -1,13 +1,19 @@
 import { randomUUID } from 'node:crypto';
 import { ExecutionLogStore, type ExecutionResultMarker } from './log-store.js';
-import type { ExecutionRunHandle } from './runner.js';
+import type { ExecutionRunHandle, ExecutionRunOptions } from './runner.js';
 import type { ExecutionScope, ExecutionRunState } from './types.js';
 import { ExecutionStore, ExecutionStoreError, type ExecutionNodeRecord } from './store.js';
 import type { ValidatedExecutionNode } from './dag.js';
 import type { ExecutionEventJournal, ExecutionEventType } from './wake.js';
 
 export interface ExecutionRunnerLike {
-  start(runId: string, node: ValidatedExecutionNode, attemptId: string, attemptNo: number): Promise<ExecutionRunHandle>;
+  start(
+    runId: string,
+    node: ValidatedExecutionNode,
+    attemptId: string,
+    attemptNo: number,
+    options?: ExecutionRunOptions,
+  ): Promise<ExecutionRunHandle>;
 }
 
 export interface ExecutionSchedulerStatus {
@@ -221,7 +227,13 @@ export class ExecutionScheduler {
 
     let handle: ExecutionRunHandle;
     try {
-      handle = await this.runner.start(runId, asValidated(node), attemptId, attemptNo);
+      handle = await this.runner.start(runId, asValidated(node), attemptId, attemptNo, {
+        onOutputAvailable: (payload) => this.emit(scope, runId, 'node.output_available', {
+          nodeId: node.nodeId,
+          attemptId,
+          payload: { ...payload },
+        }).then(() => undefined),
+      });
       await this.store.setAttemptPid(scope, runId, attemptId, handle.pid);
       await this.emit(scope, runId, 'node.started', {
         nodeId: node.nodeId,

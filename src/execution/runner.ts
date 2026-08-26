@@ -15,17 +15,34 @@ export interface ExecutionRunHandle {
   terminate(state?: 'interrupted' | 'cancelled'): void;
 }
 
+export interface ExecutionOutputAvailable {
+  stream: 'stdout' | 'stderr';
+  offset: number;
+  nextOffset: number;
+  chunkBytes: number;
+}
+
+export interface ExecutionRunOptions {
+  onOutputAvailable?(event: ExecutionOutputAvailable): void | Promise<void>;
+}
+
 interface StreamEvidence {
   bytes: number;
   hash: Hash;
 }
 
-function createEvidenceTransform(evidence: StreamEvidence): Transform {
+function createEvidenceTransform(
+  evidence: StreamEvidence,
+  stream: 'stdout' | 'stderr',
+  notify?: (event: ExecutionOutputAvailable) => void,
+): Transform {
   return new Transform({
     transform(chunk: Buffer | string, _encoding, callback) {
       const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      const offset = evidence.bytes;
       evidence.bytes += buffer.length;
       evidence.hash.update(buffer);
+      notify?.({ stream, offset, nextOffset: evidence.bytes, chunkBytes: buffer.length });
       callback(null, buffer);
     },
   });
@@ -77,22 +94,35 @@ export class ExecutionCommandRunner {
     node: ValidatedExecutionNode,
     attemptId: string,
     attemptNo: number,
+    options: ExecutionRunOptions = {},
   ): Promise<ExecutionRunHandle> {
     const paths = await this.logs.prepareAttempt(runId, node.id, attemptNo);
     const startedAt = Date.now();
     const stdoutEvidence: StreamEvidence = { bytes: 0, hash: createHash('sha256') };
     const stderrEvidence: StreamEvidence = { bytes: 0, hash: createHash('sha256') };
+    const pendingOutputNotifications = new Set<Promise<void>>();
+    const notifyOutput = (event: ExecutionOutputAvailable) => {
+      if (!options.onOutputAvailable) return;
+      let work: Promise<void>;
+      try {
+        work = Promise.resolve(options.onOutputAvailable(event)).then(() => undefined, () => undefined);
+      } catch {
+        return;
+      }
+      pendingOutputNotifications.add(work);
+      void work.finally(() => pendingOutputNotifications.delete(work));
+    };
     const child = spawnCommand(node.command, node.cwd);
     child.stdin.end();
 
     const stdoutPipeline = pipeline(
       child.stdout,
-      createEvidenceTransform(stdoutEvidence),
+      createEvidenceTransform(stdoutEvidence, 'stdout', notifyOutput),
       createWriteStream(paths.stdoutPath, { flags: 'a' }),
     );
     const stderrPipeline = pipeline(
       child.stderr,
-      createEvidenceTransform(stderrEvidence),
+      createEvidenceTransform(stderrEvidence, 'stderr', notifyOutput),
       createWriteStream(paths.stderrPath, { flags: 'a' }),
     );
 
@@ -116,6 +146,9 @@ export class ExecutionCommandRunner {
       const terminal = await closePromise;
       clearTimeout(timer);
       const pipelineResults = await Promise.allSettled([stdoutPipeline, stderrPipeline]);
+      if (pendingOutputNotifications.size > 0) {
+        await Promise.allSettled([...pendingOutputNotifications]);
+      }
       completed = true;
       const pipelineFailure = pipelineResults.find((result): result is PromiseRejectedResult => result.status === 'rejected');
       if (!processError && pipelineFailure) {

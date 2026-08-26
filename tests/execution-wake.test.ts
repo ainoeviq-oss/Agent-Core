@@ -11,6 +11,7 @@ import { ExecutionService } from '../src/execution/service.js';
 import { EXECUTION_EVENT_TYPES } from '../src/execution/wake.js';
 import type { ExecutionScope } from '../src/execution/types.js';
 import { WorkspacePolicy } from '../src/runtime/workspace.js';
+import { nodeShellCommand } from './helpers/platform-command.js';
 
 const roots: string[] = [];
 
@@ -70,6 +71,26 @@ async function fixture(label: string, runner = new ControlledRunner()) {
   const service = new ExecutionService(config, new WorkspacePolicy([root]), { runner });
   await service.open();
   return { root, work, config, service, runner, scope: { principalId: 'principal-wake', projectId: root } satisfies ExecutionScope };
+}
+
+async function realFixture(label: string) {
+  const base = process.env.TEMP || process.env.TMP || os.tmpdir();
+  const root = await mkdtemp(path.join(base, `agent-core-execution-wake-real-${label}-`));
+  roots.push(root);
+  const work = path.join(root, 'work');
+  await mkdir(work, { recursive: true });
+  const baseConfig = loadConfig({}, root).execution;
+  const config = {
+    ...baseConfig,
+    enabled: true,
+    dbPath: path.join(root, 'runtime', 'execution', 'wake.sqlite'),
+    logRoot: path.join(root, 'runtime', 'execution', 'runs'),
+    maxConcurrency: 2,
+    waitMaxMs: 5_000,
+  };
+  const service = new ExecutionService(config, new WorkspacePolicy([root]));
+  await service.open();
+  return { root, work, config, service, scope: { principalId: 'principal-wake-real', projectId: root } satisfies ExecutionScope };
 }
 
 async function eventually(assertion: () => void | Promise<void>, timeoutMs = 2000) {
@@ -197,6 +218,62 @@ describe('persisted execution event journal and event-driven wake', () => {
       await f.service.close();
     }
   });
+
+  it('wires real runner stdout/stderr availability into persisted coalesced wake events without raw log content', async () => {
+    const f = await realFixture('runner-output');
+    try {
+      const command = nodeShellCommand(`
+        process.stdout.write('FIRST-CHUNK');
+        process.stderr.write('ERR-CHUNK');
+        setTimeout(() => process.stdout.write('SECOND-CHUNK'), 350);
+        setTimeout(() => {}, 650);
+      `);
+      const created = await f.service.create(f.scope, {
+        objective: 'runner output availability fixture',
+        nodes: [{ id: 'A', purpose: 'emit bounded output', command, cwd: f.work }],
+      });
+      const waiting = f.service.wait(
+        f.scope,
+        created.runId,
+        created.lastEventSequence,
+        { eventTypes: ['node.output_available'], nodeIds: ['A'] },
+        5_000,
+      );
+      await f.service.start(f.scope, created.runId);
+      const woke = await waiting;
+      expect(woke.timedOut).toBe(false);
+      expect(woke.event).toMatchObject({
+        eventType: 'node.output_available',
+        nodeId: 'A',
+        payload: {
+          stream: expect.stringMatching(/^(stdout|stderr)$/),
+          offset: expect.any(Number),
+          nextOffset: expect.any(Number),
+          chunkBytes: expect.any(Number),
+        },
+      });
+      expect(JSON.stringify(woke.event?.payload)).not.toContain('FIRST-CHUNK');
+      expect(JSON.stringify(woke.event?.payload)).not.toContain('ERR-CHUNK');
+
+      const terminal = await f.service.wait(
+        f.scope,
+        created.runId,
+        woke.lastEventSequence,
+        { eventTypes: ['run.completed'] },
+        5_000,
+      );
+      expect(terminal.event?.eventType).toBe('run.completed');
+      const events = await f.service.events(f.scope, created.runId, 0);
+      const outputEvents = events.filter((event) => event.eventType === 'node.output_available');
+      expect(outputEvents.length).toBeGreaterThanOrEqual(1);
+      expect(outputEvents.length).toBeLessThanOrEqual(3);
+      expect(events.map((event) => event.sequence)).toEqual(events.map((_, index) => index + 1));
+      expect(events.findIndex((event) => event.eventType === 'node.output_available'))
+        .toBeLessThan(events.findIndex((event) => event.eventType === 'node.succeeded'));
+    } finally {
+      await f.service.close();
+    }
+  }, 10_000);
 
   it('emits retry and terminal run events with globally monotonic per-run sequence values', async () => {
     const runner = new ControlledRunner();
