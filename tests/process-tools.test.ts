@@ -2,10 +2,27 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ProcessManager } from '../src/runtime/process-manager.js';
+import { ProcessManager, type ProcessSessionOwner } from '../src/runtime/process-manager.js';
 import { WorkspacePolicy } from '../src/runtime/workspace.js';
 
 const roots: string[] = [];
+
+async function waitForStdout(
+  manager: ProcessManager,
+  sessionId: string,
+  owner: ProcessSessionOwner,
+  needle: string,
+  timeoutMs = 5_000,
+) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const snapshot = manager.read(sessionId, owner);
+    if (snapshot.stdout.includes(needle) || !snapshot.running) return snapshot;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return manager.read(sessionId, owner);
+}
+
 async function setup() {
   const root = await mkdtemp(path.join(os.tmpdir(), 'agent-core-proc-'));
   roots.push(root);
@@ -62,8 +79,9 @@ describe('ProcessManager', () => {
       owner: ownerA,
     });
 
+    const ready = await waitForStdout(manager, started.sessionId, ownerA, 'owned-ready');
     expect(manager.sessionContext(started.sessionId, ownerA)).toEqual(ownerA);
-    expect(manager.read(started.sessionId, ownerA).stdout).toContain('owned-ready');
+    expect(ready.stdout).toContain('owned-ready');
     expect(manager.list(ownerA).map((item) => item.sessionId)).toContain(started.sessionId);
     expect(manager.list(ownerB).map((item) => item.sessionId)).not.toContain(started.sessionId);
     expect(() => manager.read(started.sessionId, ownerB)).toThrow(/not found/i);

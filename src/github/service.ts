@@ -7,6 +7,7 @@ import { GitHubCredentialProvider } from './credentials.js';
 import { GitHubFabricError } from './errors.js';
 import { GitHubGitService } from './git-service.js';
 import { GitHubPackageService } from './package-service.js';
+import type { ProcessRunner } from './process.js';
 import { assertDestructiveConfirmation } from './safety.js';
 
 function segment(value: string, label: string): string {
@@ -90,17 +91,28 @@ export interface GitHubReleaseInput {
   destructiveConfirmation?: string;
 }
 
+export interface GitHubServiceDependencies {
+  fetchImpl?: typeof fetch;
+  processRunner?: ProcessRunner;
+}
+
 export class GitHubService {
   readonly credentials: GitHubCredentialProvider;
   readonly api: GitHubApiService;
   readonly git: GitHubGitService;
   readonly packages: GitHubPackageService;
+  private readonly fetchImpl: typeof fetch;
 
-  constructor(readonly config: GitHubConfig, readonly workspace: WorkspacePolicy) {
+  constructor(
+    readonly config: GitHubConfig,
+    readonly workspace: WorkspacePolicy,
+    dependencies: GitHubServiceDependencies = {},
+  ) {
     this.credentials = new GitHubCredentialProvider(config);
-    this.api = new GitHubApiService(config, this.credentials);
-    this.git = new GitHubGitService(config, this.credentials, workspace);
-    this.packages = new GitHubPackageService(config, this.credentials, workspace, this.api);
+    this.fetchImpl = dependencies.fetchImpl ?? fetch;
+    this.api = new GitHubApiService(config, this.credentials, this.fetchImpl);
+    this.git = new GitHubGitService(config, this.credentials, workspace, dependencies.processRunner);
+    this.packages = new GitHubPackageService(config, this.credentials, workspace, this.api, dependencies.processRunner);
   }
 
   async status() {
@@ -218,7 +230,7 @@ export class GitHubService {
     url.searchParams.set('name', name);
     let response: Response;
     try {
-      response = await fetch(url, {
+      response = await this.fetchImpl(url, {
         method: 'POST',
         redirect: 'manual',
         signal: AbortSignal.timeout(this.config.requestTimeoutMs),
