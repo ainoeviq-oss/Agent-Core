@@ -202,6 +202,56 @@ describe('stable Cloudflare Worker gateway contract', () => {
     });
   });
 
+  it('waits for the Worker backend-host binding to converge before declaring confirmation failure', async () => {
+    const admin = await import(`${pathToFileURL(path.join(root, adminFile)).href}?t=${Date.now()}`) as Record<string, any>;
+    let healthCalls = 0;
+    let sleepCalls = 0;
+    const fakeFetch = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === 'https://agent-core-gateway.example/health') {
+        healthCalls += 1;
+        const backendHost = healthCalls < 3
+          ? 'old-backend-8765.app.github.dev'
+          : 'replacement-8765.app.github.dev';
+        return new Response(JSON.stringify({ status: 'ok', version: '0.5.3', memory: { healthy: true }, continuity: { healthy: true }, execution: { healthy: true } }), {
+          status: 200,
+          headers: { 'x-agent-core-backend-host': backendHost },
+        });
+      }
+      if (url.endsWith('/.well-known/oauth-authorization-server')) {
+        return Response.json({
+          issuer: 'https://agent-core-gateway.example',
+          authorization_endpoint: 'https://agent-core-gateway.example/oauth/authorize',
+          token_endpoint: 'https://agent-core-gateway.example/oauth/token',
+          registration_endpoint: 'https://agent-core-gateway.example/oauth/register',
+        });
+      }
+      if (url.endsWith('/.well-known/oauth-protected-resource/mcp')) {
+        return Response.json({ resource: 'https://agent-core-gateway.example/mcp', authorization_servers: ['https://agent-core-gateway.example'] });
+      }
+      if (url.endsWith('/mcp')) {
+        return new Response('{\"error\":\"unauthorized\"}', {
+          status: 401,
+          headers: { 'www-authenticate': 'Bearer resource_metadata=\"https://agent-core-gateway.example/.well-known/oauth-protected-resource/mcp\", scope=\"mcp:tools\"' },
+        });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    };
+
+    await expect(admin.verifyStableGateway({
+      stableBaseUrl: 'https://agent-core-gateway.example',
+      backendUrl: 'https://replacement-8765.app.github.dev',
+      expectedVersion: '0.5.3',
+      confirmationAttempts: 4,
+      confirmationDelayMs: 1,
+      sleepImpl: async () => { sleepCalls += 1; },
+      fetchImpl: fakeFetch,
+    })).resolves.toBeUndefined();
+
+    expect(healthCalls).toBe(3);
+    expect(sleepCalls).toBe(2);
+  });
+
   it('materializes Wrangler OAuth from an encrypted Codespaces secret and treats it as a stable-gateway credential', () => {
     const shell = String.raw`
       set -euo pipefail

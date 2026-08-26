@@ -150,22 +150,50 @@ async function requireJson(response, code) {
   }
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export async function verifyStableGateway({
   stableBaseUrl,
   backendUrl,
   expectedVersion = '',
+  confirmationAttempts = 20,
+  confirmationDelayMs = 500,
+  sleepImpl = sleep,
   fetchImpl = fetch,
 }) {
   const stable = validateStableBaseUrl(stableBaseUrl);
   const backend = validateBackendUrl(backendUrl);
   const expectedBackendHost = new URL(backend).hostname;
+  const attempts = Number.isInteger(confirmationAttempts) && confirmationAttempts > 0
+    ? confirmationAttempts
+    : 1;
+  const delayMs = Number.isFinite(confirmationDelayMs) && confirmationDelayMs >= 0
+    ? confirmationDelayMs
+    : 500;
+  let confirmationError = 'STABLE_GATEWAY_HEALTH_FAILED';
+  let confirmed = false;
 
-  const healthResponse = await fetchImpl(`${stable}/health`, { redirect: 'manual' });
-  const health = await requireJson(healthResponse, 'STABLE_GATEWAY_HEALTH_FAILED');
-  if (!healthPayloadOk(health, expectedVersion)) throw new Error('STABLE_GATEWAY_HEALTH_FAILED');
-  if (healthResponse.headers.get('x-agent-core-backend-host') !== expectedBackendHost) {
-    throw new Error('STABLE_GATEWAY_BACKEND_CONFIRMATION_FAILED');
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const healthResponse = await fetchImpl(`${stable}/health`, { redirect: 'manual' });
+      const health = await requireJson(healthResponse, 'STABLE_GATEWAY_HEALTH_FAILED');
+      if (healthPayloadOk(health, expectedVersion)) {
+        if (healthResponse.headers.get('x-agent-core-backend-host') === expectedBackendHost) {
+          confirmed = true;
+          break;
+        }
+        confirmationError = 'STABLE_GATEWAY_BACKEND_CONFIRMATION_FAILED';
+      } else {
+        confirmationError = 'STABLE_GATEWAY_HEALTH_FAILED';
+      }
+    } catch {
+      confirmationError = 'STABLE_GATEWAY_HEALTH_FAILED';
+    }
+
+    if (attempt < attempts) await sleepImpl(delayMs);
   }
+
+  if (!confirmed) throw new Error(confirmationError);
 
   const oauth = await requireJson(
     await fetchImpl(`${stable}/.well-known/oauth-authorization-server`, { redirect: 'manual' }),
