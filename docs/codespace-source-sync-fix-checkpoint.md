@@ -170,3 +170,50 @@ GitHub origin/main:
 7. Verify local HEAD == origin/main == `connection.json.sourceCommit`.
 8. Verify package version == live `/health.version` == `agent_core_status.version` == `connection.json.sourceVersion`.
 9. Publish a new patch release instead of rewriting immutable v0.5.2 if the integrated fix changes the stable source.
+
+## Live integrated restart proof
+
+Integrated main/remote commit before version cut:
+
+`481b7d9627e2b6cb2818d0692bf1720cd31d8692`
+
+The real Codespace command was executed after integration:
+
+`bash scripts/codespace/ensure-running.sh --repair --phase attach`
+
+Observed lifecycle evidence:
+
+```text
+Source checkout already matches origin/main at 481b7d9627e2b6cb2818d0692bf1720cd31d8692.
+ERROR: Local health did not become ready at synchronized source version 0.5.2; performing one controlled service restart.
+Local Agent Core health is verified at source version 0.5.2.
+Forwarded port 8765 is public.
+READY: all local, forwarding, public-health, OAuth, and MCP-auth gates passed.
+```
+
+The temporary `ERROR:` line is expected proof of the new fail-closed gate: the previously running process did not satisfy the new version-aware health contract, so the lifecycle refused to call it READY and performed the bounded controlled restart.
+
+Post-restart factual agreement:
+
+- attach repair exit: `0`;
+- local HEAD: `481b7d9627e2b6cb2818d0692bf1720cd31d8692`;
+- remote `origin/main`: `481b7d9627e2b6cb2818d0692bf1720cd31d8692`;
+- `connection.json.sourceCommit`: `481b7d9627e2b6cb2818d0692bf1720cd31d8692`;
+- package version: `0.5.2`;
+- local `/health.version`: `0.5.2`;
+- public `/health.version`: `0.5.2`;
+- live `agent_core_status.version`: `0.5.2`;
+- `connection.json.sourceVersion`: `0.5.2`;
+- `connection.json.sourceRemote`: `origin`;
+- `connection.json.sourceBranch`: `main`;
+- connection metadata verified: `true`;
+- `.vscode` preserved: yes;
+- tracked dirty state: no.
+
+Assertion result:
+
+`SOURCE_PROCESS_METADATA_AGREEMENT=PASS`
+
+### Stable release consequence
+
+The source-sync fix is newer than the immutable v0.5.2 tag/source. v0.5.2 must not be moved or rewritten. The fixed lifecycle will therefore be published as the next patch release, v0.5.3, after a fresh canonical release gate.
