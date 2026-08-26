@@ -40,6 +40,9 @@ export function summarizeOperationalInput(toolName: string, input: Record<string
     'path', 'source', 'destination', 'cwd', 'depth', 'maxEntries', 'startLine', 'lineCount', 'maxBytes',
     'mode', 'expectedReplacements', 'query', 'maxResults', 'timeoutMs', 'contentBytes', 'oldStringBytes',
     'newStringBytes', 'sessionId', 'stdoutBytes', 'stderrBytes', 'signal', 'startedAt', 'finishedAt', 'stopped',
+    'operation', 'owner', 'repo', 'org', 'method', 'endpoint', 'remote', 'ref', 'refspec', 'branch',
+    'workflow', 'issueNumber', 'pullNumber', 'runId', 'releaseId', 'assetPath', 'packageType', 'packageName',
+    'versionId', 'packageSpec', 'force', 'tag',
   ];
   for (const key of allowed) {
     const value = safeScalar(input[key]);

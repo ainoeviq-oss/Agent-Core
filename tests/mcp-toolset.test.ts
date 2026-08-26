@@ -17,9 +17,11 @@ const GATED_TOOLS = [
   'list_directory', 'read_file', 'read_multiple_files', 'write_file', 'edit_file',
   'create_directory', 'move_file', 'get_file_info', 'search_files', 'execute_command',
   'start_process',
+  'github_repo', 'github_git', 'github_issue', 'github_pr', 'github_actions',
+  'github_release', 'github_packages', 'github_api',
 ] as const;
 const DIRECT_TOOLS = [
-  'workspace_info', 'read_process_output', 'stop_process', 'list_processes',
+  'workspace_info', 'read_process_output', 'stop_process', 'list_processes', 'github_status',
 ] as const;
 
 async function setup() {
@@ -74,12 +76,12 @@ afterEach(async () => {
 });
 
 describe('Agent Core MCP V2 toolset', () => {
-  it('discovers route-aware operational tools while preserving direct recovery tools', async () => {
+  it('discovers route-aware operational and github tools while preserving direct recovery/status tools', async () => {
     const { baseUrl, created } = await setup();
     const tools = await listTools(baseUrl, created.key);
     const names = tools.map((tool) => tool.name);
     expect(names).toEqual(expect.arrayContaining([
-      'workspace_info', ...GATED_TOOLS, 'read_process_output', 'stop_process', 'list_processes',
+      'workspace_info', ...GATED_TOOLS, 'read_process_output', 'stop_process', 'list_processes', 'github_status',
     ]));
 
     for (const name of GATED_TOOLS) {

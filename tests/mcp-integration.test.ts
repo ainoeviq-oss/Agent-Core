@@ -19,6 +19,8 @@ const GATED_TOOLS = [
   'list_directory', 'read_file', 'read_multiple_files', 'write_file', 'edit_file',
   'create_directory', 'move_file', 'get_file_info', 'search_files', 'execute_command',
   'start_process',
+  'github_repo', 'github_git', 'github_issue', 'github_pr', 'github_actions',
+  'github_release', 'github_packages', 'github_api',
 ] as const;
 
 async function setup() {
@@ -80,7 +82,7 @@ afterEach(async () => {
 });
 
 describe('Agent Core MCP integration', () => {
-  it('initializes v0.5.0 with exactly 43 automatic-routing, memory, continuity, and execution tools and schemas', async () => {
+  it('initializes v0.5.0 with exactly 52 routing, github, memory, continuity, and execution tools and schemas', async () => {
     const { baseUrl, created } = await setup();
     const initialize = await mcpRequest(baseUrl, created.key, {
       jsonrpc: '2.0', id: 1, method: 'initialize',
@@ -98,11 +100,12 @@ describe('Agent Core MCP integration', () => {
     });
     const tools = listed.json.result.tools as Array<Record<string, any>>;
     const names = tools.map((tool) => tool.name);
-    expect(names).toHaveLength(43);
+    expect(names).toHaveLength(52);
     for (const name of ['task_checkpoint', 'continuity_status', 'continuity_get_task', 'continuity_frontier']) {
       expect(names).toContain(name);
     }
     expect(names).toContain('capability_route');
+    expect(names).toContain('github_status');
     expect(names).not.toContain('capability_recommend');
     for (const name of GATED_TOOLS) {
       const tool = tools.find((entry) => entry.name === name)!;
@@ -113,7 +116,7 @@ describe('Agent Core MCP integration', () => {
     }
   });
 
-  it('reports the automatic-routing stage and authenticated principal', async () => {
+  it('reports the automatic-routing stage, native github fabric, and authenticated principal', async () => {
     const { baseUrl, created } = await setup();
     const status = await call(baseUrl, created.key, 'agent_core_status');
     expect(status.json.result.structuredContent).toMatchObject({
@@ -128,6 +131,7 @@ describe('Agent Core MCP integration', () => {
         'routing.capability_route', 'routing.principal_bound_context',
         'routing.execution_gate', 'execution.deterministic_fabric',
         'execution.event_driven_wake', 'execution.evidence_bridge',
+        'github.native_fabric', 'tool.github_status', 'tool.github_api',
         'tool.capability_route', 'tool.write_file',
       ]),
     });

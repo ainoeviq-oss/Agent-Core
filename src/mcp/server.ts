@@ -5,6 +5,7 @@ import type { RuntimeServices } from '../runtime/services.js';
 import { CAPABILITY_TOOL_NAMES, registerCapabilityTools } from './capability-tools.js';
 import { CONTINUITY_TOOL_NAMES, registerContinuityTools } from './continuity-tools.js';
 import { EXECUTION_TOOL_NAMES, registerExecutionTools } from './execution-tools.js';
+import { GITHUB_TOOL_NAMES, registerGitHubTools } from './github-tools.js';
 import { MEMORY_TOOL_NAMES, registerMemoryTools } from './memory-tools.js';
 import { OPERATIONAL_TOOL_NAMES, registerOperationalTools } from './tools.js';
 
@@ -115,7 +116,7 @@ export function createAgentCoreMcpServer(key: VerifiedKey, runtime: RuntimeServi
 
   server.registerTool('agent_core_capabilities', {
     title: 'Agent Core Capabilities',
-    description: 'Describe Agent Core automatic capability routing, authentication, operational tools, deterministic memory, and deferred capability registry.',
+    description: 'Describe Agent Core automatic capability routing, authentication, operational tools, Native GitHub Fabric, deterministic memory, and deferred capability registry.',
     outputSchema: {
       stage: z.string(),
       enabled: z.array(z.string()),
@@ -138,7 +139,9 @@ export function createAgentCoreMcpServer(key: VerifiedKey, runtime: RuntimeServi
         'execution.deterministic_fabric',
         'execution.event_driven_wake',
         'execution.evidence_bridge',
+        'github.native_fabric',
         ...OPERATIONAL_TOOL_NAMES.map((name) => `tool.${name}`),
+        ...GITHUB_TOOL_NAMES.map((name) => `tool.${name}`),
         ...CAPABILITY_TOOL_NAMES.map((name) => `tool.${name}`),
         ...MEMORY_TOOL_NAMES.map((name) => `tool.${name}`),
         ...CONTINUITY_TOOL_NAMES.map((name) => `tool.${name}`),
@@ -153,6 +156,7 @@ export function createAgentCoreMcpServer(key: VerifiedKey, runtime: RuntimeServi
   });
 
   registerOperationalTools(server, runtime, key);
+  registerGitHubTools(server, runtime, key);
   registerCapabilityTools(server, runtime, key);
   registerMemoryTools(server, runtime, key);
   registerContinuityTools(server, runtime, key);

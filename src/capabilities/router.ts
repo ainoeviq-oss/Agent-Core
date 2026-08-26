@@ -6,6 +6,7 @@ const STRUCTURED_SIGNAL = /\b(and|then|after|before|review|refactor|debug|test|d
 const HIGH_IMPACT_SIGNAL = /\b(production|deploy|credential|secret|system|admin|registry|delete|remove|shutdown|format)\b/i;
 const READ_ONLY_SIGNAL = /\b(read|show|inspect|list|search|find|get|check|view)\b/i;
 const MUTATION_SIGNAL = /\b(create|write|edit|change|update|move|rename|append|replace|delete|remove|refactor|fix|build|implement|deploy)\b/i;
+const GITHUB_SIGNAL = /\bgithub\b/i;
 
 const ROUTE_REQUIRED_TOOLS = [
   'list_directory',
@@ -24,6 +25,17 @@ const ROUTE_REQUIRED_TOOLS = [
   'execution_add_nodes',
   'execution_retry',
   'execution_cancel',
+] as const;
+
+const GITHUB_ROUTE_TOOLS = [
+  'github_repo',
+  'github_git',
+  'github_issue',
+  'github_pr',
+  'github_actions',
+  'github_release',
+  'github_packages',
+  'github_api',
 ] as const;
 
 const ATOMIC_READ_TOOLS = [
@@ -94,12 +106,16 @@ function modeFor(tier: RouteTier, skillLoads: Array<{ id: string; name: string }
   return skillLoads.length ? 'skill_guided' : 'capability_guided';
 }
 
+function withGitHubTools(task: string, tools: readonly string[]): string[] {
+  return GITHUB_SIGNAL.test(task) ? [...tools, ...GITHUB_ROUTE_TOOLS] : [...tools];
+}
+
 function allowedTools(task: string, tier: RouteTier): string[] {
-  if (tier !== 'atomic') return [...ROUTE_REQUIRED_TOOLS];
+  if (tier !== 'atomic') return withGitHubTools(task, ROUTE_REQUIRED_TOOLS);
   const isReadOnly = READ_ONLY_SIGNAL.test(task) && !MUTATION_SIGNAL.test(task);
-  if (isReadOnly) return [...ATOMIC_READ_TOOLS];
-  if (MUTATION_SIGNAL.test(task)) return [...ATOMIC_MUTATION_TOOLS];
-  return [...ROUTE_REQUIRED_TOOLS];
+  if (isReadOnly) return withGitHubTools(task, ATOMIC_READ_TOOLS);
+  if (MUTATION_SIGNAL.test(task)) return withGitHubTools(task, ATOMIC_MUTATION_TOOLS);
+  return withGitHubTools(task, ROUTE_REQUIRED_TOOLS);
 }
 
 function verificationFor(task: string, tier: RouteTier): RouteVerification {
@@ -124,6 +140,7 @@ function reasonCodes(
   if (STRUCTURED_SIGNAL.test(task)) reasons.push('structured_task_signal');
   if (topScore >= 8) reasons.push('strong_capability_match');
   if (skillLoads.length) reasons.push('native_skill_required');
+  if (GITHUB_SIGNAL.test(task)) reasons.push('github_native_fabric');
   if (tier === 'atomic') reasons.push('atomic_direct');
   return reasons;
 }

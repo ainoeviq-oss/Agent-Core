@@ -1,10 +1,11 @@
 import path from 'node:path';
 import { CapabilityRegistry } from '../capabilities/registry-service.js';
 import { CapabilityRouter } from '../capabilities/router.js';
-import { loadConfig, type ExecutionConfig, type MemoryConfig } from '../config.js';
+import { loadConfig, type ExecutionConfig, type GitHubConfig, type MemoryConfig } from '../config.js';
 import { ExecutionMemoryBridge } from '../execution/memory-bridge.js';
 import { ExecutionService } from '../execution/service.js';
 import { ExecutionStore } from '../execution/store.js';
+import { GitHubService } from '../github/service.js';
 import type { RoutingAuditLogger } from '../logging/audit-log.js';
 import { MemoryService } from '../memory/service.js';
 import { FileSystemService } from './filesystem.js';
@@ -23,6 +24,7 @@ export interface RuntimeServices {
   routes: RouteContextStore;
   memory: MemoryService;
   execution: ExecutionService;
+  github: GitHubService;
 }
 
 export function createRuntimeServices(
@@ -31,12 +33,14 @@ export function createRuntimeServices(
   routingAuditLogger?: RoutingAuditLogger,
   memoryConfig?: MemoryConfig,
   executionConfig?: ExecutionConfig,
+  githubConfig?: GitHubConfig,
 ): RuntimeServices {
   const workspace = new WorkspacePolicy(allowedRoots);
   const capabilities = CapabilityRegistry.open(capabilityDir);
   const defaults = loadConfig({}, allowedRoots[0] ?? process.cwd());
   const resolvedMemoryConfig = memoryConfig ?? defaults.memory;
   const resolvedExecutionConfig = executionConfig ?? defaults.execution;
+  const resolvedGitHubConfig = githubConfig ?? defaults.github;
   const memory = new MemoryService(resolvedMemoryConfig);
   const executionStore = new ExecutionStore();
   const executionBridge = new ExecutionMemoryBridge(executionStore, memory);
@@ -56,5 +60,6 @@ export function createRuntimeServices(
     ),
     memory,
     execution,
+    github: new GitHubService(resolvedGitHubConfig, workspace),
   };
 }
