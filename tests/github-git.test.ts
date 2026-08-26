@@ -176,6 +176,7 @@ describe('GitHubGitService', () => {
     let captured: SpawnRequest | undefined;
     const { service } = await setup(async (request) => { captured = request; return okResult('git version 2.55.0.windows.5\n'); });
     await expect(service.status()).resolves.toEqual({ gitAvailable: true, gitVersion: 'git version 2.55.0.windows.5' });
+    expect(captured?.executable).toBe(process.platform === 'win32' ? 'git.exe' : 'git');
     expect(captured?.args).toEqual(['--version']);
     expect(captured?.env?.AGENT_CORE_GITHUB_ASKPASS_TOKEN).toBeUndefined();
   });

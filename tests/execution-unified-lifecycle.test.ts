@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { FileKeyStore } from '../src/auth/key-store.js';
 import { loadConfig, type AppConfig } from '../src/config.js';
 import { startAgentCoreService, type AgentCoreService } from '../src/index.js';
+import { printCommand, sleepCommand } from './helpers/platform-command.js';
 
 const roots: string[] = [];
 const services: AgentCoreService[] = [];
@@ -110,7 +111,7 @@ describe('unified Agent Core continuity + execution lifecycle', () => {
     const run = await service.execution.create(scope, {
       objective: 'failure must remain factual while memory is degraded',
       continuityTaskId: 'task-degraded-memory',
-      nodes: [{ id: 'A', purpose: 'fail factually', command: "[Console]::Error.WriteLine('failure'); exit 9", cwd: work }],
+      nodes: [{ id: 'A', purpose: 'fail factually', command: printCommand('', 'failure\n', 9), cwd: work }],
     });
     await service.execution.start(scope, run.runId);
     const terminal = await service.execution.wait(scope, run.runId, run.lastEventSequence, { eventTypes: ['run.failed'] }, 5000);
@@ -133,7 +134,7 @@ describe('unified Agent Core continuity + execution lifecycle', () => {
     const run = await first.execution.create(scope, {
       objective: 'long run interrupted by graceful service close',
       continuityTaskId: 'task-graceful-close',
-      nodes: [{ id: 'A', purpose: 'sleep', command: "Write-Output 'started'; Start-Sleep -Seconds 30", cwd: work }],
+      nodes: [{ id: 'A', purpose: 'sleep', command: sleepCommand(30_000, 'started\n'), cwd: work }],
     });
     await first.execution.start(scope, run.runId);
     expect((await first.execution.status(scope, run.runId))?.nodes[0]?.state).toBe('running');
@@ -142,7 +143,7 @@ describe('unified Agent Core continuity + execution lifecycle', () => {
     services.splice(services.indexOf(first), 1);
     await expect(first.execution.create(scope, {
       objective: 'must reject after close',
-      nodes: [{ id: 'B', purpose: 'B', command: "Write-Output 'B'", cwd: work }],
+      nodes: [{ id: 'B', purpose: 'B', command: printCommand('B\n'), cwd: work }],
     })).rejects.toThrow(/closed|not open/i);
     expect(await fileSizeOrZero(`${config.memory.dbPath}-wal`)).toBe(0);
     expect(await fileSizeOrZero(`${config.execution.dbPath}-wal`)).toBe(0);

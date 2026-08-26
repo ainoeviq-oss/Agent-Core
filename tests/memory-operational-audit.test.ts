@@ -11,6 +11,7 @@ import { createHttpHandler } from '../src/http/app.js';
 import { FileAuditLogger } from '../src/logging/audit-log.js';
 import { createMcpHttpHandler } from '../src/mcp/handler.js';
 import { createRuntimeServices, type RuntimeServices } from '../src/runtime/services.js';
+import { printCommand, sleepCommand } from './helpers/platform-command.js';
 
 const roots: string[] = [];
 const servers: Server[] = [];
@@ -93,7 +94,7 @@ describe('automatic operational evidence capture', () => {
       context: 'Use execute_command and report its normal result.',
     }));
     const secret = 'task12-secret-bearer-token-123456789';
-    const command = `Write-Output 'Authorization: Bearer ${secret}'`;
+    const command = printCommand(`Authorization: Bearer ${secret}\n`);
     const executed = await call(f.baseUrl, f.principal.key, 'execute_command', {
       command,
       cwd: f.root,
@@ -198,7 +199,7 @@ describe('automatic operational evidence capture', () => {
     }
 
     const started = await call(f.baseUrl, f.principal.key, 'start_process', {
-      command: "Write-Output 'lifecycle-ready'; Start-Sleep -Seconds 5",
+      command: sleepCommand(5000, 'lifecycle-ready\n'),
       cwd: f.root,
       routeContextId: route.routeContextId,
     });

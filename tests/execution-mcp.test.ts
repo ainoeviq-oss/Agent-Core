@@ -10,6 +10,7 @@ import { createHttpHandler } from '../src/http/app.js';
 import { FileAuditLogger } from '../src/logging/audit-log.js';
 import { createMcpHttpHandler } from '../src/mcp/handler.js';
 import { createRuntimeServices, type RuntimeServices } from '../src/runtime/services.js';
+import { printCommand, retryMarkerCommand, sleepCommand } from './helpers/platform-command.js';
 
 const roots: string[] = [];
 const servers: Server[] = [];
@@ -187,7 +188,7 @@ describe('first-class execution MCP surface', () => {
       objective: 'wait and log fixture',
       nodes: [{
         id: 'A', purpose: 'A',
-        command: "[Console]::Out.Write('ABCDEFGHIJK'); [Console]::Error.Write('ERR-A')",
+        command: printCommand('ABCDEFGHIJK', 'ERR-A'),
         cwd: f.work,
       }],
     }));
@@ -228,7 +229,7 @@ describe('first-class execution MCP surface', () => {
     const created = expectOk(await call(f.baseUrl, f.principalA.key, 'execution_create', {
       routeContextId: originalRoute.routeContextId,
       objective: 'old owned run',
-      nodes: [{ id: 'A', purpose: 'A', command: "Write-Output 'A'", cwd: f.work }],
+      nodes: [{ id: 'A', purpose: 'A', command: printCommand('A\n'), cwd: f.work }],
     }));
 
     const deniedRead = await call(f.baseUrl, f.principalB.key, 'execution_status', { runId: created.runId });
@@ -260,8 +261,8 @@ describe('first-class execution MCP surface', () => {
       routeContextId: routed.routeContextId,
       objective: 'dynamic C fixture',
       nodes: [
-        { id: 'B', purpose: 'slow B', command: "Start-Sleep -Seconds 3; Write-Output 'B'", cwd: f.work },
-        { id: 'A', purpose: 'fast A', command: "Start-Sleep -Milliseconds 100; Write-Output 'A'", cwd: f.work },
+        { id: 'B', purpose: 'slow B', command: sleepCommand(3000, '', 'B\n'), cwd: f.work },
+        { id: 'A', purpose: 'fast A', command: sleepCommand(100, '', 'A\n'), cwd: f.work },
       ],
     }));
     expectOk(await call(f.baseUrl, f.principalA.key, 'execution_start', {
@@ -277,7 +278,7 @@ describe('first-class execution MCP surface', () => {
     const added = expectOk(await call(f.baseUrl, f.principalA.key, 'execution_add_nodes', {
       routeContextId: routed.routeContextId,
       runId: created.runId,
-      nodes: [{ id: 'C', purpose: 'dynamic C', command: "Write-Output 'C'", cwd: f.work, dependsOn: ['A'] }],
+      nodes: [{ id: 'C', purpose: 'dynamic C', command: printCommand('C\n'), cwd: f.work, dependsOn: ['A'] }],
     }));
     expect(added.nodes.map((node: any) => node.nodeId)).toEqual(['A', 'B', 'C']);
     const cDone = expectOk(await call(f.baseUrl, f.principalA.key, 'execution_wait', {
@@ -309,7 +310,7 @@ describe('first-class execution MCP surface', () => {
     const f = await fixture('retry');
     const routed = await route(f);
     const markerPath = path.join(f.work, 'retry.marker');
-    const command = `if (Test-Path '${markerPath}') { [Console]::Out.Write('attempt-two'); exit 0 } else { Set-Content -Path '${markerPath}' -Value 'seen'; [Console]::Error.Write('attempt-one'); exit 9 }`;
+    const command = retryMarkerCommand(markerPath);
     const created = expectOk(await call(f.baseUrl, f.principalA.key, 'execution_create', {
       routeContextId: routed.routeContextId,
       objective: 'retry fixture',
@@ -352,8 +353,8 @@ describe('first-class execution MCP surface', () => {
       routeContextId: routed.routeContextId,
       objective: 'cancel fixture',
       nodes: [
-        { id: 'B', purpose: 'B', command: "Start-Sleep -Seconds 5; Write-Output 'B'", cwd: f.work },
-        { id: 'A', purpose: 'A', command: "Start-Sleep -Seconds 5; Write-Output 'A'", cwd: f.work },
+        { id: 'B', purpose: 'B', command: sleepCommand(5000, '', 'B\n'), cwd: f.work },
+        { id: 'A', purpose: 'A', command: sleepCommand(5000, '', 'A\n'), cwd: f.work },
       ],
     }));
     const started = expectOk(await call(f.baseUrl, f.principalA.key, 'execution_start', {

@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
 import { FileKeyStore } from '../src/auth/key-store.js';
 
+const windowsIt = process.platform === 'win32' ? it : it.skip;
 const roots: string[] = [];
 async function temp(prefix: string) {
   const dir = await mkdtemp(path.join(os.tmpdir(), prefix));
@@ -16,7 +17,7 @@ afterEach(async () => {
 });
 
 describe('Agent Core cutover utilities', () => {
-  it('backs up owned state without printing secret contents', async () => {
+  windowsIt('backs up owned state without printing secret contents', async () => {
     const source = await temp('agent-core-source-');
     const backup = await temp('agent-core-backup-');
     await mkdir(path.join(source, 'runtime', 'data'), { recursive: true });
@@ -51,7 +52,7 @@ describe('Agent Core cutover utilities', () => {
 
 
 describe('Agent Core capability path migration', () => {
-  it('rewrites stale absolute capability provenance paths after a root rename', async () => {
+  windowsIt('rewrites stale absolute capability provenance paths after a root rename', async () => {
     const target = await temp('agent-core-path-migrate-');
     const capabilityDir = path.join(target, 'capabilities');
     const provenanceDir = path.join(capabilityDir, 'provenance');

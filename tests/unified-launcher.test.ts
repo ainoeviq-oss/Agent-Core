@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+const windowsIt = process.platform === 'win32' ? it : it.skip;
 const repoRoot = path.resolve(import.meta.dirname, '..');
 const batPath = path.join(repoRoot, 'Start-Agent-Core.bat');
 const launcherPath = path.join(repoRoot, 'scripts', 'windows', 'agent-core-launcher.ps1');
@@ -29,7 +30,7 @@ describe('Agent Core unified launcher', () => {
     expect(source).not.toMatch(/[A-Z]:\\Projects\\Agent-Core/i);
   });
 
-  it('reports a script-relative portable contract without changing runtime state', () => {
+  windowsIt('reports a script-relative portable contract without changing runtime state', () => {
     expect(existsSync(launcherPath)).toBe(true);
     const result = runContract(launcherPath);
     expect(result.status).toBe(0);
@@ -42,7 +43,7 @@ describe('Agent Core unified launcher', () => {
     expect(body.launchMode).toBe('background-tray-bundle');
   });
 
-  it('rebinds root-derived paths when the launcher directory is relocated', () => {
+  windowsIt('rebinds root-derived paths when the launcher directory is relocated', () => {
     const temp = mkdtempSync(path.join(os.tmpdir(), 'agent-core-relocated-'));
     try {
       const windowsDir = path.join(temp, 'scripts', 'windows');

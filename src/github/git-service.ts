@@ -57,7 +57,7 @@ function cleanOutput(result: SpawnResult, credentials: GitHubCredentialProvider,
 }
 
 export class GitHubGitService {
-  private readonly gitExecutable = 'git.exe';
+  private readonly gitExecutable = process.platform === 'win32' ? 'git.exe' : 'git';
   private readonly runtimeRoot: string;
 
   constructor(

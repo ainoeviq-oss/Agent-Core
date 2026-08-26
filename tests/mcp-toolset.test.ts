@@ -10,6 +10,7 @@ import { createHttpHandler } from '../src/http/app.js';
 import { FileAuditLogger } from '../src/logging/audit-log.js';
 import { createMcpHttpHandler } from '../src/mcp/handler.js';
 import { createRuntimeServices } from '../src/runtime/services.js';
+import { printCommand } from './helpers/platform-command.js';
 
 const roots: string[] = [];
 const servers: Server[] = [];
@@ -121,7 +122,7 @@ describe('Agent Core MCP V2 toolset', () => {
     expect(searched.json.result.content[0].text).toContain('hello.txt');
 
     const executed = await call(baseUrl, created.key, 'execute_command', {
-      command: "Write-Output 'mcp-command-ok'", cwd: root, timeoutMs: 5000, routeContextId,
+      command: printCommand('mcp-command-ok\n'), cwd: root, timeoutMs: 5000, routeContextId,
     });
     expect(executed.json.result.content[0].text).toContain('mcp-command-ok');
 

@@ -17,7 +17,10 @@
     "benchmark:execution": "npm run build && node scripts/benchmark-execution.mjs",
     "verify": "npm run check:brand && npm run build && npm test",
     "verify:release": "npm run verify && node scripts/release/check-release.mjs && node scripts/release/check-doc-links.mjs",
-    "package:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release/build-release.ps1"
+    "package:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release/build-release.ps1",
+    "codespace:bootstrap": "bash scripts/codespace/bootstrap.sh --phase manual",
+    "codespace:repair": "bash scripts/codespace/ensure-running.sh --repair --phase manual",
+    "codespace:connection": "bash scripts/codespace/show-connection.sh"
   },
   "engines": {
     "node": ">=24.15.0"

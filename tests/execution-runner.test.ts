@@ -7,6 +7,7 @@ import { validateExecutionDag, type ValidatedExecutionNode } from '../src/execut
 import { ExecutionLogStore } from '../src/execution/log-store.js';
 import { ExecutionCommandRunner } from '../src/execution/runner.js';
 import { WorkspacePolicy } from '../src/runtime/workspace.js';
+import { printCommand, sleepCommand } from './helpers/platform-command.js';
 
 const roots: string[] = [];
 
@@ -43,7 +44,7 @@ describe('durable execution log store and command runner', () => {
     const node = await validatedNode(
       f.workspace,
       f.work,
-      "Write-Output 'hello-out'; [Console]::Error.WriteLine('hello-err'); exit 7",
+      printCommand('hello-out\n', 'hello-err\n', 7),
     );
     const result = await f.runner.run('run-streams', node, 'attempt-streams', 1);
 
@@ -70,7 +71,7 @@ describe('durable execution log store and command runner', () => {
 
   it('reads logs by byte offset with a hard max-byte bound and stable continuation offsets', async () => {
     const f = await fixture('offset');
-    const node = await validatedNode(f.workspace, f.work, "[Console]::Out.Write('ABCDEFGHIJK')");
+    const node = await validatedNode(f.workspace, f.work, printCommand('ABCDEFGHIJK'));
     await f.runner.run('run-offset', node, 'attempt-offset', 1);
 
     const first = await f.logs.readLog('run-offset', 'A', 1, 'stdout', 0, 5);
@@ -87,7 +88,7 @@ describe('durable execution log store and command runner', () => {
     const node = await validatedNode(
       f.workspace,
       f.work,
-      "[Console]::Out.Write('OUT-123'); [Console]::Error.Write('ERR-456')",
+      printCommand('OUT-123', 'ERR-456'),
     );
     const result = await f.runner.run('run-hash', node, 'attempt-hash', 1);
     const paths = f.logs.paths('run-hash', 'A', 1);
@@ -109,7 +110,7 @@ describe('durable execution log store and command runner', () => {
     const node = await validatedNode(
       f.workspace,
       f.work,
-      "Write-Output 'started'; Start-Sleep -Seconds 30; Write-Output 'never'",
+      sleepCommand(30_000, 'started\n', 'never\n'),
     );
     const handle = await f.runner.start('run-interrupt', node, 'attempt-interrupt', 1);
 
@@ -123,7 +124,7 @@ describe('durable execution log store and command runner', () => {
 
   it('refuses to overwrite an existing attempt evidence directory', async () => {
     const f = await fixture('immutable');
-    const node = await validatedNode(f.workspace, f.work, "Write-Output 'once'");
+    const node = await validatedNode(f.workspace, f.work, printCommand('once\n'));
     await f.runner.run('run-immutable', node, 'attempt-immutable-1', 1);
     await expect(f.runner.run('run-immutable', node, 'attempt-immutable-2', 1)).rejects.toThrow(/exist|attempt/i);
   });

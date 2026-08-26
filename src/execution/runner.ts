@@ -3,6 +3,7 @@ import { createHash, type Hash } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { resolveShellInvocation } from '../runtime/platform-shell.js';
 import type { ValidatedExecutionNode } from './dag.js';
 import type { ExecutionLogStore, ExecutionResultMarker } from './log-store.js';
 
@@ -28,10 +29,11 @@ function createEvidenceTransform(evidence: StreamEvidence): Transform {
   });
 }
 
-function spawnPowerShell(command: string, cwd: string): ChildProcessWithoutNullStreams {
-  return spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command], {
+function spawnCommand(command: string, cwd: string): ChildProcessWithoutNullStreams {
+  const invocation = resolveShellInvocation(command);
+  return spawn(invocation.executable, invocation.args, {
     cwd,
-    windowsHide: true,
+    windowsHide: invocation.windowsHide,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 }
@@ -60,7 +62,7 @@ export class ExecutionCommandRunner {
     const startedAt = Date.now();
     const stdoutEvidence: StreamEvidence = { bytes: 0, hash: createHash('sha256') };
     const stderrEvidence: StreamEvidence = { bytes: 0, hash: createHash('sha256') };
-    const child = spawnPowerShell(node.command, node.cwd);
+    const child = spawnCommand(node.command, node.cwd);
     child.stdin.end();
 
     const stdoutPipeline = pipeline(

@@ -9,6 +9,7 @@ import { ExecutionStore } from '../src/execution/store.js';
 import { MemoryService } from '../src/memory/service.js';
 import type { MemoryCommitRequest, MemoryCommitResult, MemoryScope, MemoryStatus } from '../src/memory/types.js';
 import { WorkspacePolicy } from '../src/runtime/workspace.js';
+import { nodeShellCommand } from './helpers/platform-command.js';
 
 const roots: string[] = [];
 const executions: ExecutionService[] = [];
@@ -156,7 +157,7 @@ describe('Execution-to-DMF continuity bridge', () => {
       originRouteContextId: 'route-secret',
       nodes: [{
         id: 'A', purpose: 'emit synthetic secret and fail',
-        command: '[Console]::Error.Write($env:AGENT_CORE_BRIDGE_TEST_SECRET); exit 7',
+        command: nodeShellCommand("process.stderr.write(process.env.AGENT_CORE_BRIDGE_TEST_SECRET ?? ''); process.exitCode = 7;"),
         cwd: f.work,
       }],
     });

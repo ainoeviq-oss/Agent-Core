@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
+const windowsIt = process.platform === 'win32' ? it : it.skip;
 const repoRoot = path.resolve(import.meta.dirname, '..');
 const windowsDir = path.join(repoRoot, 'scripts', 'windows');
 const installPs1 = path.join(windowsDir, 'install-agent-core-autostart.ps1');
@@ -17,7 +18,7 @@ function runPowerShellFile(file: string, args: string[] = []) {
 }
 
 describe('Agent Core portable autostart contract', () => {
-  it('uses a stable LocalAppData shim instead of storing the project path in Scheduled Tasks', () => {
+  windowsIt('uses a stable LocalAppData shim instead of storing the project path in Scheduled Tasks', () => {
     expect(existsSync(installPs1)).toBe(true);
     const result = runPowerShellFile(installPs1, ['-ContractOnly']);
     expect(result.status).toBe(0);

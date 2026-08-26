@@ -13,6 +13,7 @@ import { createHttpHandler } from '../src/http/app.js';
 import { FileAuditLogger } from '../src/logging/audit-log.js';
 import { createMcpHttpHandler } from '../src/mcp/handler.js';
 import { createRuntimeServices } from '../src/runtime/services.js';
+import { sleepCommand } from './helpers/platform-command.js';
 
 const roots: string[] = [];
 const servers: Server[] = [];
@@ -179,7 +180,7 @@ describe('Agent Core route enforcement', () => {
   it('keeps stop_process available as a direct recovery tool without route context', async () => {
     const { root, runtime, principalA, baseUrl } = await setup();
     const started = await runtime.processes.start(
-      "Write-Output 'route-recovery-ready'; Start-Sleep -Seconds 30",
+      sleepCommand(30_000, 'route-recovery-ready\n'),
       {
         cwd: root,
         owner: { principalId: principalA.metadata.id, projectId: root },

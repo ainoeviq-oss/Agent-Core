@@ -16,6 +16,7 @@ import type { ExecutionScope } from '../src/execution/types.js';
 import { MemoryService } from '../src/memory/service.js';
 import type { MemoryCommitRequest, MemoryCommitResult, MemoryScope, MemoryStatus } from '../src/memory/types.js';
 import { WorkspacePolicy } from '../src/runtime/workspace.js';
+import { printCommand } from './helpers/platform-command.js';
 
 const roots: string[] = [];
 const services: ExecutionService[] = [];
@@ -177,7 +178,7 @@ async function seedMissingMarkerAttempt(f: Awaited<ReturnType<typeof rootFixture
   const graph = await validateExecutionDag([{
     id: 'A',
     purpose: 'restart recovery A',
-    command: "Write-Output 'retry-after-restart'",
+    command: printCommand('retry-after-restart\n'),
     cwd: f.work,
     timeoutMs: 5_000,
   }], { workspace: f.workspace });
@@ -231,7 +232,7 @@ describe('Task 19 end-to-end user workflow acceptance A-J', () => {
       objective: 'verified process completion must not complete task',
       continuityTaskId: mainTurn.taskId,
       originRouteContextId: 'route-main-agj',
-      nodes: [{ id: 'DONE', purpose: 'finish process only', command: "Write-Output 'process-complete'", cwd: f.work }],
+      nodes: [{ id: 'DONE', purpose: 'finish process only', command: printCommand('process-complete\n'), cwd: f.work }],
     });
     await execution.start(f.scope, completedRun.runId);
     const completed = await execution.wait(

@@ -11,6 +11,7 @@ import { ExecutionService } from '../src/execution/service.js';
 import { ExecutionStore } from '../src/execution/store.js';
 import type { ExecutionScope } from '../src/execution/types.js';
 import { WorkspacePolicy } from '../src/runtime/workspace.js';
+import { printCommand } from './helpers/platform-command.js';
 
 const roots: string[] = [];
 
@@ -42,7 +43,7 @@ async function seedRunningAttempt(f: Awaited<ReturnType<typeof fixture>>, nodeId
   const graph = await validateExecutionDag([{
     id: nodeId,
     purpose: `recover ${nodeId}`,
-    command: `Write-Output '${nodeId}-retry-ok'`,
+    command: printCommand(`${nodeId}-retry-ok\n`),
     cwd: f.work,
     timeoutMs: 5000,
   }], { workspace: f.workspace });

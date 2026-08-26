@@ -11,6 +11,7 @@ import type { ExecutionRunnerLike } from '../src/execution/scheduler.js';
 import type { ValidatedExecutionNode } from '../src/execution/dag.js';
 import type { ExecutionScope } from '../src/execution/types.js';
 import { WorkspacePolicy } from '../src/runtime/workspace.js';
+import { retryMarkerCommand } from './helpers/platform-command.js';
 
 const roots: string[] = [];
 
@@ -209,7 +210,7 @@ describe('concurrent dependency-aware execution scheduler', () => {
     const f = await fixture('retry');
     try {
       const markerPath = path.join(f.work, 'retry.marker');
-      const command = `if (Test-Path '${markerPath}') { Write-Output 'attempt-two'; exit 0 } else { Set-Content -Path '${markerPath}' -Value 'seen'; [Console]::Error.WriteLine('attempt-one-failed'); exit 9 }`;
+      const command = retryMarkerCommand(markerPath);
       const created = await f.service.create(f.scope, {
         objective: 'explicit retry fixture',
         nodes: [{ id: 'A', purpose: 'A retry', command, cwd: f.work }],

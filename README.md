@@ -153,6 +153,7 @@ Key documents:
 - [`docs/multi-command-wake-workflow.md`](docs/multi-command-wake-workflow.md)
 - [`docs/stability.md`](docs/stability.md)
 - [`docs/github.md`](docs/github.md) — Native GitHub Fabric operator/security guide and opt-in live acceptance
+- [`docs/codespaces.md`](docs/codespaces.md) — self-healing GitHub Codespaces deployment and verified MCP URL workflow
 - [`docs/roadmap/self-fork-integration.md`](docs/roadmap/self-fork-integration.md) - planning only; not implemented
 
 ## Development and verification

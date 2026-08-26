@@ -1,0 +1,14 @@
+{
+  "name": "Agent Core Codespace",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "forwardPorts": [8765],
+  "portsAttributes": {
+    "8765": {
+      "label": "Agent Core MCP",
+      "onAutoForward": "silent"
+    }
+  },
+  "postCreateCommand": "bash scripts/codespace/bootstrap.sh --phase create",
+  "postStartCommand": "bash scripts/codespace/bootstrap.sh --phase start",
+  "postAttachCommand": "bash scripts/codespace/ensure-running.sh --repair --phase attach"
+}

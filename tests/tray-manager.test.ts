@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
+const windowsDescribe = process.platform === 'win32' ? describe : describe.skip;
 const repoRoot = path.resolve(import.meta.dirname, '..');
 const trayScript = path.join(repoRoot, 'scripts', 'windows', 'agent-core-tray.ps1');
 const roots: string[] = [];
@@ -116,7 +117,7 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-describe('Agent Core tray lifecycle foundation', () => {
+windowsDescribe('Agent Core tray lifecycle foundation', () => {
   it('probes isolated config without touching production or leaking ignored fields', async () => {
     const root = await tempRoot();
     const { configPath, config } = await writeConfig(root, { secretSentinel: 'DO_NOT_LEAK_ME' });
@@ -264,7 +265,7 @@ function waitForExit(child: ChildProcess, timeoutMs = 5000) {
 
 const slowLifecycleIt = (name: string, fn: () => Promise<void>) => it(name, fn, 20_000);
 
-describe('Agent Core tray service lifecycle', () => {
+windowsDescribe('Agent Core tray service lifecycle', () => {
   slowLifecycleIt('starts and stops an isolated two-service bundle with owned state', async () => {
     const root = await tempRoot();
     const agentCorePort = await freePort();
@@ -410,7 +411,7 @@ async function startProbeServer(root: string, name: string, port: number, kind: 
 
 const slowWatchdogIt = (name: string, fn: () => Promise<void>) => it(name, fn, 60_000);
 
-describe('Agent Core tray watchdog', () => {  slowWatchdogIt('reports healthy local Agent Core and tunnel probes', async () => {
+windowsDescribe('Agent Core tray watchdog', () => {  slowWatchdogIt('reports healthy local Agent Core and tunnel probes', async () => {
     const root = await tempRoot();
     const agentCorePort = await freePort();
     const tunnelPort = await freePort();
@@ -547,7 +548,7 @@ describe('Agent Core tray watchdog', () => {  slowWatchdogIt('reports healthy lo
   });
 });
 // Health probes also need an explicit no-listener regression case.
-describe('Agent Core tray watchdog unavailable endpoints', () => {
+windowsDescribe('Agent Core tray watchdog unavailable endpoints', () => {
   slowWatchdogIt('reports unavailable Agent Core and tunnel endpoints as unhealthy', async () => {
     const root = await tempRoot();
     const agentCorePort = await freePort(); const tunnelPort = await freePort();
@@ -558,7 +559,7 @@ describe('Agent Core tray watchdog unavailable endpoints', () => {
   });
 });
 
-describe('Agent Core tray UI contract', () => {
+windowsDescribe('Agent Core tray UI contract', () => {
   it('declares the native tray menu, watchdog timer, and lifecycle-only callbacks', () => {
     const source = readFileSync(trayScript, 'utf8');
     for (const label of [
@@ -610,7 +611,7 @@ describe('Agent Core tray UI contract', () => {
 });
 
 
-describe('Agent Core tray deployment defaults', () => {
+windowsDescribe('Agent Core tray deployment defaults', () => {
   it('discovers the tunnel client independently from the Agent Core project drive', () => {
     const source = readFileSync(trayScript, 'utf8');
     expect(source).toContain('AGENT_CORE_TUNNEL_EXE');
@@ -623,7 +624,7 @@ describe('Agent Core tray deployment defaults', () => {
 });
 
 
-describe('Agent Core tray production command signatures', () => {
+windowsDescribe('Agent Core tray production command signatures', () => {
   slowLifecycleIt('adopts a healthy Agent Core listener started with the canonical entry path relative to the repo root', async () => {
     const root = await tempRoot();
     const agentCorePort = await freePort();
@@ -650,7 +651,7 @@ describe('Agent Core tray production command signatures', () => {
   });
 });
 
-describe('Agent Core tray OAuth re-auth action', () => {
+windowsDescribe('Agent Core tray OAuth re-auth action', () => {
   it('runs reset-oauth against canonical runtime data and restarts Agent Core', async () => {
     const root = await tempRoot();
     const agentCorePort = await freePort();

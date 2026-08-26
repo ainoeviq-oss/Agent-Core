@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { resolveShellInvocation } from './platform-shell.js';
 import type { WorkspacePolicy } from './workspace.js';
 
 const BLOCKED = new Set([
@@ -94,10 +95,11 @@ function appendBounded(current: string, chunk: Buffer, state: { truncated: boole
   return combined.subarray(combined.length - MAX_OUTPUT_BYTES).toString('utf8');
 }
 
-function spawnPowerShell(command: string, cwd: string): ChildProcessWithoutNullStreams {
-  return spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command], {
+function spawnCommand(command: string, cwd: string): ChildProcessWithoutNullStreams {
+  const invocation = resolveShellInvocation(command);
+  return spawn(invocation.executable, invocation.args, {
     cwd,
-    windowsHide: true,
+    windowsHide: invocation.windowsHide,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 }
@@ -123,7 +125,7 @@ export class ProcessManager {
   async execute(command: string, options: ExecuteOptions): Promise<ProcessResult> {
     assertCommandAllowed(command);
     const cwd = await this.workspace.resolveExisting(options.cwd);
-    const child = spawnPowerShell(command, cwd);
+    const child = spawnCommand(command, cwd);
     let stdout = '';
     let stderr = '';
     const outputState = { truncated: false };
@@ -151,7 +153,7 @@ export class ProcessManager {
     assertCommandAllowed(command);
     const cwd = await this.workspace.resolveExisting(options.cwd);
     const owner = normalizeOwner(options.owner);
-    const child = spawnPowerShell(command, cwd);
+    const child = spawnCommand(command, cwd);
     const sessionId = `proc_${randomUUID()}`;
     const session: Session = {
       sessionId,

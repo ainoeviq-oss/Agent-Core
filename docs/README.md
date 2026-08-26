@@ -9,6 +9,7 @@ The current documentation tree is intentionally compact. Historical implementati
 - [`deterministic-execution-fabric.md`](deterministic-execution-fabric.md) — DAG execution, logs, events, retries, recovery and operational boundaries.
 - [`multi-command-wake-workflow.md`](multi-command-wake-workflow.md) — agent-facing dependency-aware asynchronous execution behavior.
 - [`github.md`](github.md) — Native GitHub Fabric credentials, REST/Git/Packages transports, destructive gates, rotation, and live read-only acceptance.
+- [`codespaces.md`](codespaces.md) — self-healing GitHub Codespaces lifecycle, Linux command execution, port/OAuth verification, and the ChatGPT MCP URL workflow.
 
 ## Stability and operations
 
