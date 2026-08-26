@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.js';
+import { ExecutionLogStore } from '../src/execution/log-store.js';
 import { ExecutionMemoryBridge, type ExecutionMemoryWriter } from '../src/execution/memory-bridge.js';
 import { ExecutionService } from '../src/execution/service.js';
 import { ExecutionStore } from '../src/execution/store.js';
@@ -72,6 +73,139 @@ afterEach(async () => {
 describe('Execution-to-DMF continuity bridge', () => {
   it('exposes a bridge that can queue and replay bounded execution promotions', () => {
     expect(typeof ExecutionMemoryBridge).toBe('function');
+  });
+
+  it('promotes verified declared-artifact manifest with exact attempt provenance but never raw stdout content', async () => {
+    const f = await rootFixture('verified-manifest');
+    const defaults = loadConfig({}, f.root);
+    const config = {
+      ...defaults.execution,
+      enabled: true,
+      dbPath: path.join(f.root, 'runtime', 'execution', 'verified.sqlite'),
+      logRoot: path.join(f.root, 'runtime', 'execution', 'runs'),
+    };
+    const store = new ExecutionStore();
+    const writer = new SwitchableMemoryWriter();
+    writer.healthy = true;
+    const logs = new ExecutionLogStore(config.logRoot);
+    const bridge = new ExecutionMemoryBridge(store, writer, logs);
+    const service = new ExecutionService(config, new WorkspacePolicy([f.root]), { store, memoryBridge: bridge });
+    executions.push(service);
+    await service.open();
+    const scope: MemoryScope = { principalId: 'principal-verified', projectId: f.root };
+    const artifactPath = path.join(f.work, 'verified-artifact.json');
+    const rawSentinel = 'RAW-STDOUT-MUST-STAY-OUT-OF-DMF';
+
+    const created = await service.create(scope, {
+      objective: 'Promote verified declared artifact manifest',
+      continuityTaskId: 'continuity-task-verified-artifact',
+      originRouteContextId: 'route-verified-artifact',
+      nodes: [{
+        id: 'A',
+        purpose: 'create verified artifact',
+        command: nodeShellCommand(`
+          const fs = require('node:fs');
+          fs.writeFileSync(${JSON.stringify(artifactPath)}, JSON.stringify({ verified: true }));
+          process.stdout.write(${JSON.stringify(rawSentinel)});
+        `),
+        cwd: f.work,
+        expectedArtifacts: [{ path: artifactPath, kind: 'file', hash: 'sha256', required: true }],
+      }],
+    });
+    await service.start(scope, created.runId);
+    const completed = await service.wait(scope, created.runId, created.lastEventSequence, { eventTypes: ['run.completed'] }, 5_000);
+    expect(completed.event?.eventType).toBe('run.completed');
+    await bridge.drain();
+
+    const promoted = writer.commits.find((request) => request.canonicalKey === `execution.artifact.${created.runId}.A.1`);
+    expect(promoted).toBeTruthy();
+    expect(promoted).toMatchObject({
+      kind: 'artifact',
+      sourceType: 'execution_verified_evidence',
+      sourceRef: created.runId,
+      metadata: {
+        taskId: 'continuity-task-verified-artifact',
+        runId: created.runId,
+        nodeId: 'A',
+        attemptNo: 1,
+        resultRef: expect.stringMatching(/attempt-001\.result\.json$/),
+      },
+      value: {
+        runId: created.runId,
+        nodeId: 'A',
+        attemptNo: 1,
+        resultVersion: 2,
+        processState: 'succeeded',
+        evidenceState: 'verified',
+        artifacts: [expect.objectContaining({
+          path: artifactPath,
+          kind: 'file',
+          required: true,
+          exists: true,
+          verification: 'verified',
+          size: expect.any(Number),
+          sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        })],
+      },
+    });
+    expect(JSON.stringify(promoted)).not.toContain(rawSentinel);
+  }, 10_000);
+
+  it('fails closed instead of promoting declared-artifact success when its durable v2 marker is missing', async () => {
+    const f = await rootFixture('missing-marker');
+    const defaults = loadConfig({}, f.root);
+    const config = {
+      ...defaults.execution,
+      enabled: true,
+      dbPath: path.join(f.root, 'runtime', 'execution', 'missing-marker.sqlite'),
+      logRoot: path.join(f.root, 'runtime', 'execution', 'runs'),
+    };
+    const store = new ExecutionStore();
+    await store.open({ dbPath: config.dbPath });
+    const writer = new SwitchableMemoryWriter();
+    writer.healthy = true;
+    const bridge = new ExecutionMemoryBridge(store, writer, new ExecutionLogStore(config.logRoot));
+    const scope: MemoryScope = { principalId: 'principal-missing-marker', projectId: f.root };
+    const run = await store.createRun(scope, {
+      objective: 'Missing marker fail-closed fixture',
+      continuityTaskId: 'continuity-task-missing-marker',
+      originRouteContextId: 'route-missing-marker',
+      maxConcurrency: 1,
+    });
+    const artifactPath = path.join(f.work, 'expected.txt');
+    await store.persistGraph(scope, run.runId, [{
+      id: 'A', purpose: 'declared artifact', command: nodeShellCommand("process.stdout.write('ok')"), cwd: f.work,
+      dependsOn: [], timeoutMs: 10_000, continueOnFailure: false,
+      expectedArtifacts: [{ path: artifactPath, kind: 'file', required: true }],
+    }]);
+    const paths = new ExecutionLogStore(config.logRoot).paths(run.runId, 'A', 1);
+    await store.createAttempt(scope, run.runId, 'A', 'attempt-missing-marker', 1, paths);
+    await store.completeAttempt(scope, {
+      version: 2,
+      runId: run.runId,
+      nodeId: 'A',
+      attemptId: 'attempt-missing-marker',
+      attemptNo: 1,
+      state: 'succeeded',
+      processState: 'succeeded',
+      evidenceState: 'verified',
+      evidence: { verification: 'verified', artifacts: [] },
+      startedAt: 1,
+      finishedAt: 2,
+      exitCode: 0,
+      signal: null,
+      stdoutBytes: 2,
+      stderrBytes: 0,
+      stdoutSha256: 'a'.repeat(64),
+      stderrSha256: 'b'.repeat(64),
+    });
+    const event = await store.appendEvent(scope, run.runId, 'node.succeeded', {
+      nodeId: 'A', attemptId: 'attempt-missing-marker', payload: { attemptNo: 1, exitCode: 0 },
+    });
+
+    expect(await bridge.handlePersistedEvent(scope, event)).toEqual({ promoted: 0, queued: 0 });
+    expect(writer.commits).toHaveLength(0);
+    await store.close();
   });
 
   it('queues a failed-node promotion while DMF is degraded, then replays it idempotently when DMF recovers', async () => {

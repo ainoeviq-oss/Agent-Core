@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { ContinuityPromoter, type ContinuityMemoryWriter, type ExecutionProcessCheckpointInput } from '../continuity/promoter.js';
 import type { RecordMemoryEventRequest } from '../memory/store.js';
 import type { MemoryCommitRequest, MemoryCommitResult, MemoryScope, MemoryStatus } from '../memory/types.js';
+import type { ExecutionLogStore, ExecutionResultMarker } from './log-store.js';
 import type { ExecutionStore } from './store.js';
 import type { ExecutionEventRecord } from './wake.js';
 
@@ -70,6 +71,7 @@ export class ExecutionMemoryBridge {
   constructor(
     readonly store: ExecutionStore,
     readonly memory: ExecutionMemoryWriter,
+    readonly logs?: ExecutionLogStore,
   ) {
     this.promoter = new ContinuityPromoter(memory);
   }
@@ -162,6 +164,18 @@ export class ExecutionMemoryBridge {
         ? attempts.find((item) => item.attemptId === event.attemptId)
         : attempts.at(-1);
       if (!attempt) return [];
+      let marker: ExecutionResultMarker | null = null;
+      if (this.logs) {
+        try { marker = await this.logs.readResult(event.runId, event.nodeId, attempt.attemptNo); }
+        catch { marker = null; }
+      }
+      if (
+        event.eventType === 'node.succeeded'
+        && node.expectedArtifacts.length > 0
+        && (!marker || marker.version !== 2 || marker.evidenceState !== 'verified')
+      ) {
+        return [];
+      }
       const commandHash = digest(`${node.command}\n${node.cwd}`);
       const evidence = {
         taskId,
@@ -179,6 +193,23 @@ export class ExecutionMemoryBridge {
         stdoutSha256: attempt.stdoutSha256 ?? null,
         stderrSha256: attempt.stderrSha256 ?? null,
         eventSequence: event.sequence,
+        ...(marker ? { resultVersion: marker.version } : {}),
+        ...(marker?.version === 2 ? {
+          processState: marker.processState,
+          evidenceState: marker.evidenceState,
+          artifacts: marker.evidence.artifacts.map((artifact) => ({ ...artifact })),
+        } : {}),
+      };
+      const provenanceMetadata = {
+        taskId,
+        runId: event.runId,
+        nodeId: event.nodeId,
+        attemptId: attempt.attemptId,
+        attemptNo: attempt.attemptNo,
+        resultRef: attempt.resultPath,
+        commandHash,
+        eventSequence: event.sequence,
+        ...(marker ? { resultVersion: marker.version } : {}),
       };
       if (event.eventType === 'node.failed') {
         return [{
@@ -188,7 +219,7 @@ export class ExecutionMemoryBridge {
           eventSequence: event.sequence,
           canonicalKey: `failure.execution.${commandHash}.${event.runId}.${attempt.attemptNo}`,
           value: { ...evidence, failureType: 'execution_node_failure' },
-          metadata: { taskId, runId: event.runId, nodeId: event.nodeId, commandHash, eventSequence: event.sequence },
+          metadata: provenanceMetadata,
         }];
       }
       return [{
@@ -198,7 +229,7 @@ export class ExecutionMemoryBridge {
         eventSequence: event.sequence,
         canonicalKey: `execution.artifact.${event.runId}.${event.nodeId}.${attempt.attemptNo}`,
         value: { ...evidence, artifactType: 'execution_result_evidence' },
-        metadata: { taskId, runId: event.runId, nodeId: event.nodeId, eventSequence: event.sequence },
+        metadata: provenanceMetadata,
       }];
     }
 

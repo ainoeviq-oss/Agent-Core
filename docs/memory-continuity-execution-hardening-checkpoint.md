@@ -272,3 +272,76 @@ git diff --check                                               PASS
 ### Next task
 
 Task 19 — extend the existing `ExecutionMemoryBridge` to promote the verified artifact manifest and exact provenance into deterministic memory without copying raw logs, while preserving degraded-memory queue/replay behavior.
+
+## Checkpoint 019 — Task 19: Verified execution artifact manifest → DMF
+
+### Prior durable checkpoint resolved
+
+```text
+root/main HEAD   = a8ae93affc053c0fe953d52f676857a84845400a
+origin/main      = a8ae93affc053c0fe953d52f676857a84845400a
+worktree HEAD    = 4f3b93c4427aa45b6b53aad319af394a004c7c9c
+origin/feature   = 4f3b93c4427aa45b6b53aad319af394a004c7c9c
+```
+
+### Behavior implemented
+
+The existing `ExecutionMemoryBridge` is extended rather than replaced. Production runtime wiring now provides the bridge an `ExecutionLogStore`, allowing it to read the already-durable result marker for the exact run/node/attempt.
+
+For result marker v2, successful execution artifact promotion now includes bounded structured facts only:
+
+```text
+resultVersion
+processState
+evidenceState
+artifacts[].path
+artifacts[].kind
+artifacts[].required
+artifacts[].exists
+artifacts[].verification
+artifacts[].size (when applicable)
+artifacts[].sha256 (when requested)
+```
+
+Exact provenance is retained in value/metadata through taskId, runId, nodeId, attemptId, attemptNo, resultRef, commandHash and eventSequence. Raw stdout/stderr contents are never copied into semantic memory.
+
+Fail-closed behavior was also added: a `node.succeeded` with declared artifacts is not promoted as `execution_verified_evidence` when its durable v2 verified result marker cannot be read.
+
+Legacy behavior remains backward compatible when no log-store is injected or when an old v1 marker is involved. Existing degraded-DMF sync queue/replay remains unchanged and idempotent.
+
+### Changed files
+
+```text
+src/execution/memory-bridge.ts
+src/runtime/services.ts
+tests/execution-memory-bridge.test.ts
+```
+
+### RED evidence
+
+The real-runner promotion existed but lacked `resultVersion`, `processState`, `evidenceState`, declared artifact manifest, and exact result/attempt metadata.
+
+### GREEN verification
+
+```text
+npm run build                                                   PASS
+full tests/execution-memory-bridge.test.ts                      6/6 PASS
+verified artifact manifest promotion                            PASS
+missing-marker fail-closed regression                           PASS
+raw stderr synthetic-secret isolation                           PASS
+degraded queue + idempotent replay                              PASS
+git diff --check                                               PASS
+```
+
+### Repository comparison before Task 19 commit
+
+| Surface | Ref |
+| --- | --- |
+| Root `/workspaces/Agent-Core` HEAD | `a8ae93affc053c0fe953d52f676857a84845400a` |
+| `origin/main` | `a8ae93affc053c0fe953d52f676857a84845400a` |
+| Worktree parent HEAD | `4f3b93c4427aa45b6b53aad319af394a004c7c9c` |
+| `origin/feat/memory-continuity-execution-hardening` | `4f3b93c4427aa45b6b53aad319af394a004c7c9c` |
+
+### Next task
+
+Task 20 — add an execution-backed semantic completion evidence gate so `task_checkpoint(status=completed)` cannot contradict linked execution evidence, while non-execution semantic tasks remain unchanged.

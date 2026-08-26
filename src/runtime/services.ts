@@ -2,6 +2,7 @@ import path from 'node:path';
 import { CapabilityRegistry } from '../capabilities/registry-service.js';
 import { CapabilityRouter } from '../capabilities/router.js';
 import { loadConfig, type ExecutionConfig, type GitHubConfig, type MemoryConfig } from '../config.js';
+import { ExecutionLogStore } from '../execution/log-store.js';
 import { ExecutionMemoryBridge } from '../execution/memory-bridge.js';
 import { ExecutionService } from '../execution/service.js';
 import { ExecutionStore } from '../execution/store.js';
@@ -44,7 +45,11 @@ export function createRuntimeServices(
   const resolvedGitHubConfig = githubConfig ?? defaults.github;
   const memory = new MemoryService(resolvedMemoryConfig);
   const executionStore = new ExecutionStore();
-  const executionBridge = new ExecutionMemoryBridge(executionStore, memory);
+  const executionBridge = new ExecutionMemoryBridge(
+    executionStore,
+    memory,
+    new ExecutionLogStore(resolvedExecutionConfig.logRoot),
+  );
   const execution = new ExecutionService(resolvedExecutionConfig, workspace, {
     store: executionStore,
     memoryBridge: executionBridge,
