@@ -406,3 +406,64 @@ git diff --check                                               PASS
 ### Next task
 
 Task 21 — upgrade the native Agent Core capability-router skill to make memory, continuity, project identity, multi-command DAG, bounded wake, evidence inspection, retry/cancel, and factual terminal checkpoint behavior mandatory.
+
+## Checkpoint 021 — Task 21: Native Agent Core routing behavior contract
+
+### Prior durable checkpoint resolved
+
+```text
+root/main HEAD   = a8ae93affc053c0fe953d52f676857a84845400a
+origin/main      = a8ae93affc053c0fe953d52f676857a84845400a
+worktree HEAD    = 55db966b0a1019d8f57b513bc1211662f3be2211
+origin/feature   = 55db966b0a1019d8f57b513bc1211662f3be2211
+```
+
+### Behavior contract implemented
+
+The tracked native router skill now makes the factual execution loop explicit and mandatory while keeping routing jargon invisible to the user. It requires:
+
+- automatic `capability_route` preflight and routed `projectId` preservation;
+- inspection of `memoryDirective`, `memorySummary`, `blockingGuardrails`, `priorFailures`, `relatedDecisions`;
+- inspection of `continuityDirective`, `continuitySnapshot`, and `continuityResumeCandidates` before creating duplicate semantic work;
+- deterministic resume/reuse when one factual continuation candidate exists;
+- two-or-more independent commands to prefer one `execution_create` DAG with only true `dependsOn` edges;
+- `execution_start`, continued useful independent work while nodes run, and `expectedArtifacts` for semantic outputs that require verification;
+- bounded event-driven `execution_wait` only when needed, never busy polling;
+- wake -> `execution_status` -> verified evidence inspection;
+- re-arm the next wait with `afterSequence` from the latest observed `lastEventSequence`;
+- explicit `execution_retry` / `execution_cancel` rather than hidden attempt rewriting;
+- never infer success from elapsed time, PID disappearance, raw output prose, or exit code alone;
+- deterministic merged evidence synthesis using `evidence.verification`;
+- terminal `task_checkpoint` with factual evidence/frontier and explicit `execution:<runId>` for execution-backed completion.
+
+### Changed files
+
+```text
+plugin/agent-core/skills/agent-core-capability-router/SKILL.md
+tests/agent-core-router-skill.test.ts
+```
+
+### RED evidence
+
+The original tracked router skill had no `projectId`, memory/continuity inspection contract, execution DAG/wake primitives, merged evidence contract, or execution-backed checkpoint rule. All three new behavior-contract test groups failed.
+
+### GREEN verification
+
+```text
+tests/agent-core-router-skill.test.ts                           3/3 PASS
+npm run build                                                   PASS
+git diff --check                                               PASS
+```
+
+### Repository comparison before Task 21 commit
+
+| Surface | Ref |
+| --- | --- |
+| Root `/workspaces/Agent-Core` HEAD | `a8ae93affc053c0fe953d52f676857a84845400a` |
+| `origin/main` | `a8ae93affc053c0fe953d52f676857a84845400a` |
+| Worktree parent HEAD | `55db966b0a1019d8f57b513bc1211662f3be2211` |
+| `origin/feat/memory-continuity-execution-hardening` | `55db966b0a1019d8f57b513bc1211662f3be2211` |
+
+### Next task
+
+Task 22 — rebuild the generated Agent Core plugin package and prove exact tracked/generated core-skill parity plus secret/runtime exclusion.
