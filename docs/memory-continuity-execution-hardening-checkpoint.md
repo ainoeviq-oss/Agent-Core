@@ -689,3 +689,103 @@ No regression was found. Task 24 requires no source/test patch; only this durabl
 ### Next task
 
 Task 25 — run the final isolated acceptance matrix for secret leakage, restart/recovery/migration, deterministic continuity/project isolation, execution evidence/wake, plugin package safety, and restart persistence of schema-v2 declared execution artifacts.
+
+## Checkpoint 025 — Task 25: Isolated recovery, determinism, secret, and multi-project acceptance
+
+### Prior durable checkpoint resolved
+
+```text
+root/main HEAD   = a8ae93affc053c0fe953d52f676857a84845400a
+origin/main      = a8ae93affc053c0fe953d52f676857a84845400a
+worktree HEAD    = e020f373e254a3f65d0fa8968ab97c2fee0584d7
+origin/feature   = e020f373e254a3f65d0fa8968ab97c2fee0584d7
+```
+
+### New restart-durability acceptance
+
+Coverage audit found that schema-v2 migration tests proved the new column and legacy default behavior, but did not explicitly prove a newly declared `expectedArtifacts` contract survives a real `ExecutionService` close/reopen boundary and is still enforced when the persisted planned run is later started.
+
+New acceptance test:
+
+```text
+tests/execution-restart-artifact.acceptance.test.ts
+```
+
+It proves:
+
+1. a planned run persists a required SHA256 file declaration;
+2. the first ExecutionService closes cleanly;
+3. a fresh service reopens the same planned graph and returns the exact same `expectedArtifacts` declaration;
+4. the reopened service starts the already-persisted run;
+5. the produced file is verified through result-marker v2 with process success + evidence verification + SHA256;
+6. a third fresh service reopen still reads the same completed run, declared artifact contract, and verified evidence.
+
+Focused build + this acceptance: PASS (1/1).
+
+### Persisted Task 25 acceptance DAG
+
+```text
+runId             = fa6e5959-51f9-484c-86ee-c7f5e1f02656
+maxConcurrency    = 4
+terminal event    = run.completed
+lastEventSequence = 19
+```
+
+All four independent acceptance nodes started concurrently and completed `succeeded`:
+
+| Node | Test files | Tests | Covered acceptance |
+| --- | ---: | ---: | --- |
+| `persistence-recovery` | 6 | 27 | memory backup/restore, memory v1→v2 migration backup, WAL crash recovery, memory restart health, execution schema v2, execution crash/restart recovery, declared-artifact restart durability, continuity cross-session resume |
+| `isolation-determinism` | 5 | 30 | actual routed project identity, cross-project rejection, continuity store/snapshot/type determinism, principal isolation, deterministic merged execution evidence, MCP ownership/retry/cancel |
+| `wake-bridge-completion` | 4 | 24 | coalesced output wake, staged A/B wake/re-arm, verified Execution→DMF manifest, secret-free promotion, semantic execution completion gate, execution continuity resume |
+| `secret-plugin` | 4 | 14 | memory redaction, GitHub credential redaction across MCP/memory/audit, exact generated plugin parity, forbidden path safety, router behavior contract |
+
+Acceptance aggregate:
+
+```text
+19 test files PASS
+95 tests PASS
+0 failures
+run.completed
+```
+
+### Key fail-closed proofs
+
+- SQLite integrity/migration/restore never fabricates state.
+- Old open turns become interrupted rather than completed.
+- Missing terminal result marker never implies success.
+- Required declared artifact survives restart and remains authoritative.
+- Routed project B cannot operate on project A, including declared evidence paths.
+- Cross-principal continuity/execution remains hidden.
+- Raw stdout/stderr secret sentinels are not copied into DMF or merged evidence.
+- Execution-backed `task_checkpoint(completed)` cannot contradict active/failed/unverified execution.
+- Generated plugin package excludes secret/runtime/cache paths.
+
+### Changed files
+
+```text
+tests/execution-restart-artifact.acceptance.test.ts
+```
+
+### Verification
+
+```text
+npm run build                                                   PASS
+restart-artifact focused acceptance                             1/1 PASS
+Task 25 persisted acceptance run                                completed
+Task 25 acceptance matrix                                      19 files / 95 tests PASS
+git diff --check                                               PASS
+```
+
+### Repository comparison before Task 25 commit
+
+| Surface | Ref |
+| --- | --- |
+| Root `/workspaces/Agent-Core` HEAD | `a8ae93affc053c0fe953d52f676857a84845400a` |
+| `origin/main` | `a8ae93affc053c0fe953d52f676857a84845400a` |
+| Worktree parent HEAD | `e020f373e254a3f65d0fa8968ab97c2fee0584d7` |
+| `origin/feat/memory-continuity-execution-hardening` | `e020f373e254a3f65d0fa8968ab97c2fee0584d7` |
+
+### Next task
+
+Task 26 — produce the final pre-integration checkpoint: exact feature diff/commit inventory, acceptance evidence, known environment limitations, rollback/integration procedure, and final integration gates before fast-forwarding root `main`.
