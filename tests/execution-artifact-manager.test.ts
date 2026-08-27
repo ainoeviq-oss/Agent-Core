@@ -96,6 +96,25 @@ describe('verified execution artifact manager', () => {
     } finally { await f.service.close(); }
   }, 10_000);
 
+  it('reconciles a missed verified artifact index from durable terminal evidence after service restart', async () => {
+    const f = await fixture('reconcile');
+    const originalIndex = f.service.artifacts.indexAttempt.bind(f.service.artifacts);
+    f.service.artifacts.indexAttempt = (async () => { throw new Error('synthetic indexing interruption'); }) as typeof f.service.artifacts.indexAttempt;
+    const first = await runArtifact(f, 'reconcile.bin', 'durable-evidence');
+    const hash = (first.state.evidence.nodes[0].artifacts[0] as any).sha256;
+    expect(await f.artifacts.findByHash(f.scope, hash)).toEqual([]);
+    f.service.artifacts.indexAttempt = originalIndex;
+    await f.service.close();
+
+    const reopenedStore = new ExecutionStore();
+    const reopened = new ExecutionService(f.config, f.workspace, { store: reopenedStore });
+    await reopened.open();
+    try {
+      const indexed = await reopened.artifacts.findByHash(f.scope, hash);
+      expect(indexed).toEqual([expect.objectContaining({ runId: first.runId, nodeId: 'A', path: first.target, sha256: hash })]);
+    } finally { await reopened.close(); }
+  }, 10_000);
+
   it('isolates lookup by principal/project and only suggests purge candidates without deleting files', async () => {
     const f = await fixture('scope');
     try {

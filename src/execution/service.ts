@@ -162,6 +162,12 @@ export class ExecutionService {
       await this.store.open({ dbPath: this.config.dbPath, busyTimeoutMs: this.config.busyTimeoutMs });
       const recovery = new ExecutionRecovery(this.store, this.logs);
       await recovery.reconcile();
+      try {
+        const reconciled = await this.artifacts.reconcile();
+        if (reconciled.failed > 0) this.metrics?.failure('execution.artifact_index.duration_ms', 'EXECUTION_ARTIFACT_RECONCILE_PARTIAL');
+      } catch {
+        this.metrics?.failure('execution.artifact_index.duration_ms', 'EXECUTION_ARTIFACT_RECONCILE_FAILED');
+      }
       this.opened = true;
       this.state = 'healthy';
       this.degradedReason = undefined;

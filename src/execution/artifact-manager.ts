@@ -123,6 +123,28 @@ export class ExecutionArtifactManager {
     }
   }
 
+  async reconcile(limit = 1000): Promise<{ candidates: number; indexed: number; failed: number }> {
+    const candidates = await this.store.listArtifactIndexCandidates(limit);
+    let indexed = 0;
+    let failed = 0;
+    for (const candidate of candidates) {
+      try {
+        const before = await this.findByRun(
+          { principalId: candidate.principalId, ...(candidate.projectId ? { projectId: candidate.projectId } : {}) },
+          candidate.runId, candidate.nodeId, candidate.attemptNo,
+        );
+        const after = await this.indexAttempt(
+          { principalId: candidate.principalId, ...(candidate.projectId ? { projectId: candidate.projectId } : {}) },
+          candidate.runId, candidate.nodeId, candidate.attemptNo,
+        );
+        if (before.length === 0 && after.length > 0) indexed += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    return { candidates: candidates.length, indexed, failed };
+  }
+
   async findByHash(scope: ExecutionScope, hash: string): Promise<IndexedExecutionArtifact[]> {
     const normalized = hash.toLowerCase().trim();
     if (!/^[a-f0-9]{64}$/.test(normalized)) return [];

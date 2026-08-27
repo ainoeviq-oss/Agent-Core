@@ -884,6 +884,40 @@ export class ExecutionStore {
     };
   }
 
+  async listArtifactIndexCandidates(limit = 1000): Promise<Array<{
+    principalId: string;
+    projectId?: string;
+    runId: string;
+    nodeId: string;
+    attemptNo: number;
+  }>> {
+    this.assertReady();
+    if (!Number.isInteger(limit) || limit < 1 || limit > 5000) {
+      fail('EXECUTION_ARTIFACT_RECONCILE_LIMIT_INVALID', 'artifact reconcile limit must be between 1 and 5000');
+    }
+    const rows = await this.client.query<Record<string, unknown>>(
+      `SELECT run.principal_id, run.project_id, attempt.run_id, attempt.node_id, attempt.attempt_no
+         FROM execution_attempts AS attempt
+         JOIN execution_runs AS run ON run.id = attempt.run_id
+         JOIN execution_nodes AS node ON node.run_id = attempt.run_id AND node.node_id = attempt.node_id
+         LEFT JOIN execution_artifacts AS artifact
+           ON artifact.run_id = attempt.run_id AND artifact.node_id = attempt.node_id AND artifact.attempt_no = attempt.attempt_no
+        WHERE attempt.state = 'succeeded'
+          AND node.expected_artifacts_json <> '[]'
+          AND artifact.artifact_id IS NULL
+        ORDER BY attempt.run_id COLLATE BINARY, attempt.node_id COLLATE BINARY, attempt.attempt_no
+        LIMIT ?`,
+      [limit],
+    );
+    return rows.map((row) => ({
+      principalId: String(row.principal_id),
+      ...(row.project_id == null ? {} : { projectId: String(row.project_id) }),
+      runId: String(row.run_id),
+      nodeId: String(row.node_id),
+      attemptNo: Number(row.attempt_no),
+    }));
+  }
+
   async listRecoverableAttempts(): Promise<ExecutionRecoverableAttempt[]> {
     this.assertReady();
     const rows = await this.client.query<Record<string, unknown>>(
