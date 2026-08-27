@@ -2,8 +2,9 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERSION="v0.0.13"
-BASE_URL="https://github.com/openai/tunnel-client/releases/download/${VERSION}"
+RELEASE_TAG="v0.0.13"
+EXPECTED_SEMVER="0.0.13"
+BASE_URL="https://github.com/openai/tunnel-client/releases/download/${RELEASE_TAG}"
 BIN_DIR="$ROOT/runtime/bin"
 BIN="$BIN_DIR/tunnel-client"
 
@@ -19,10 +20,15 @@ for command_name in curl unzip sha256sum awk find install mktemp; do
   fi
 done
 
+matches_expected_version() {
+  local output="$1"
+  [[ "$output" =~ ^${EXPECTED_SEMVER//./\.}($|[+\ \(]) ]]
+}
+
 if [[ -x "$BIN" ]]; then
-  installed_version="$($BIN version 2>&1 || true)"
-  if grep -Fq "$VERSION" <<<"$installed_version"; then
-    printf '%s\n' "[codespace] tunnel-client $VERSION already installed."
+  installed_version="$($BIN --version 2>&1 || true)"
+  if matches_expected_version "$installed_version"; then
+    printf '%s\n' "[codespace] tunnel-client $RELEASE_TAG already installed."
     exit 0
   fi
 fi
@@ -72,7 +78,7 @@ if [[ -z "$manifest_sha256" ]]; then
 fi
 
 if [[ "$manifest_sha256" != "$PINNED_SHA256" ]]; then
-  printf '%s\n' "[codespace] ERROR: official manifest hash does not match the pinned $VERSION hash." >&2
+  printf '%s\n' "[codespace] ERROR: official manifest hash does not match the pinned $RELEASE_TAG hash." >&2
   exit 1
 fi
 
@@ -95,11 +101,12 @@ staged_bin="$BIN_DIR/.tunnel-client.$$.new"
 install -m 0755 "$extracted_binary" "$staged_bin"
 mv -f "$staged_bin" "$BIN"
 
-version_output="$($BIN version 2>&1)"
-if ! grep -Fq "$VERSION" <<<"$version_output"; then
+version_output="$($BIN --version 2>&1 || true)"
+if ! matches_expected_version "$version_output"; then
   rm -f "$BIN"
-  printf '%s\n' "[codespace] ERROR: installed tunnel-client did not report $VERSION." >&2
+  printf '%s\n' "[codespace] ERROR: installed tunnel-client did not report semantic version $EXPECTED_SEMVER." >&2
+  printf '%s\n' "$version_output" >&2
   exit 1
 fi
 
-printf '%s\n' "[codespace] installed tunnel-client $VERSION from verified official release asset."
+printf '%s\n' "[codespace] installed tunnel-client $RELEASE_TAG from verified official release asset."
