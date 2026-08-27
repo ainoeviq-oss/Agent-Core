@@ -136,12 +136,12 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 describe('Agent Core MCP automatic capability routing', () => {
-  it('replaces capability_recommend with capability_route while exposing 53 routed, github, memory, continuity, execution, and observability tools', async () => {
+  it('replaces capability_recommend with capability_route while exposing 54 routed, github, memory, continuity, execution, artifact, and observability tools', async () => {
     const { baseUrl, created } = await setup();
     const tools = await listTools(baseUrl, created.key);
     const names = tools.map((tool) => tool.name);
 
-    expect(names).toHaveLength(53);
+    expect(names).toHaveLength(54);
     expect(names).toEqual(expect.arrayContaining(['task_checkpoint', 'continuity_status', 'continuity_get_task', 'continuity_frontier']));
     expect(names).toContain('capability_route');
     expect(names).not.toContain('capability_recommend');

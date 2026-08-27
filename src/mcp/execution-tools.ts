@@ -16,6 +16,7 @@ export const EXECUTION_TOOL_NAMES = [
   'execution_add_nodes',
   'execution_retry',
   'execution_cancel',
+  'execution_artifact_find',
 ] as const;
 
 export const EXECUTION_MUTATION_TOOL_NAMES = [
@@ -173,6 +174,7 @@ const nodeSchema = z.object({
     kind: z.enum(['file', 'directory']).optional(),
     hash: z.literal('sha256').optional(),
     required: z.boolean().optional(),
+    artifactType: z.enum(['build', 'test_report', 'log', 'data', 'other']).optional(),
   })).max(32).optional(),
 });
 
@@ -278,6 +280,35 @@ export function registerExecutionTools(
   }, async ({ runId, routeContextId, nodeId, attemptNo, stream, offset, maxBytes }) => guarded(() => runtime.execution.readLog(
     scope(runtime, key, routeContextId), runId, nodeId, attemptNo, stream, offset, maxBytes,
   )));
+
+  server.registerTool('execution_artifact_find', {
+    title: 'Execution Artifact Find',
+    description: 'Find compact verified execution artifact metadata or review-only purge suggestions within the authenticated principal/project scope.',
+    inputSchema: {
+      mode: z.enum(['hash', 'type', 'run', 'purge_suggestions']),
+      hash: z.string().regex(/^[a-fA-F0-9]{64}$/).optional(),
+      artifactType: z.enum(['build', 'test_report', 'log', 'data', 'other']).optional(),
+      runId: z.string().uuid().optional(),
+      olderThanMs: z.number().int().min(0).max(10 * 365 * 24 * 60 * 60 * 1000).optional(),
+      routeContextId: z.string().uuid().optional(),
+    },
+    annotations: readOnlyAnnotations,
+  }, async ({ mode, hash, artifactType, runId, olderThanMs, routeContextId }) => guarded(async () => {
+    const currentScope = scope(runtime, key, routeContextId);
+    if (mode === 'hash') {
+      if (!hash) throw new ExecutionStoreError('EXECUTION_ARTIFACT_HASH_REQUIRED', 'hash is required for hash mode');
+      return { mode, artifacts: await runtime.execution.artifacts.findByHash(currentScope, hash) };
+    }
+    if (mode === 'type') {
+      if (!artifactType) throw new ExecutionStoreError('EXECUTION_ARTIFACT_TYPE_REQUIRED', 'artifactType is required for type mode');
+      return { mode, artifacts: await runtime.execution.artifacts.findByType(currentScope, artifactType) };
+    }
+    if (mode === 'run') {
+      if (!runId) throw new ExecutionStoreError('EXECUTION_ARTIFACT_RUN_REQUIRED', 'runId is required for run mode');
+      return { mode, artifacts: await runtime.execution.artifacts.findByRun(currentScope, runId) };
+    }
+    return { mode, suggestions: await runtime.execution.artifacts.suggestPurge(currentScope, { olderThanMs }) };
+  }));
 
   server.registerTool('execution_add_nodes', {
     title: 'Execution Add Nodes',

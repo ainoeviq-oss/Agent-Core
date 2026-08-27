@@ -5,12 +5,14 @@ import type { ExecutionNodeState } from './types.js';
 
 export type ExecutionArtifactKind = 'file' | 'directory';
 export type ExecutionArtifactHash = 'sha256';
+export type ExecutionArtifactType = 'build' | 'test_report' | 'log' | 'data' | 'other';
 
 export interface ExecutionExpectedArtifactSpec {
   path: string;
   kind?: ExecutionArtifactKind;
   hash?: ExecutionArtifactHash;
   required?: boolean;
+  artifactType?: ExecutionArtifactType;
 }
 
 export interface ValidatedExecutionArtifact {
@@ -18,6 +20,7 @@ export interface ValidatedExecutionArtifact {
   kind: ExecutionArtifactKind;
   hash?: ExecutionArtifactHash;
   required: boolean;
+  artifactType: ExecutionArtifactType;
 }
 
 export interface ExecutionNodeSpec {
@@ -139,6 +142,10 @@ async function normalizeExpectedArtifacts(
     if (item.required !== undefined && typeof item.required !== 'boolean') {
       fail('EXECUTION_ARTIFACT_REQUIRED_INVALID', `expectedArtifacts[${index}].required for ${nodeId} must be boolean`);
     }
+    const artifactType = item.artifactType === undefined ? 'other' : item.artifactType;
+    if (!['build', 'test_report', 'log', 'data', 'other'].includes(String(artifactType))) {
+      fail('EXECUTION_ARTIFACT_TYPE_INVALID', `expectedArtifacts[${index}].artifactType for ${nodeId} is invalid`);
+    }
     const candidate = path.isAbsolute(rawPath) ? path.resolve(rawPath) : path.resolve(cwd, rawPath);
     let resolved: string;
     try {
@@ -154,6 +161,7 @@ async function normalizeExpectedArtifacts(
       kind,
       ...(hash === 'sha256' ? { hash } : {}),
       required: item.required ?? true,
+      artifactType: artifactType as ExecutionArtifactType,
     });
   }
   return result.sort((left, right) => left.path.localeCompare(right.path));

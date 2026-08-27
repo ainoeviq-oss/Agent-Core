@@ -4,6 +4,7 @@ import type { ExecutionContinuitySummary } from '../continuity/snapshot.js';
 import type { WorkspacePolicy } from '../runtime/workspace.js';
 import type { RuntimeMetricRegistry } from '../runtime/metric-window.js';
 import { validateExecutionDag, type ExecutionNodeSpec } from './dag.js';
+import { ExecutionArtifactManager } from './artifact-manager.js';
 import type { ExecutionArtifactEvidence } from './evidence.js';
 import { ExecutionLogStore, type ExecutionResultMarker } from './log-store.js';
 import type { ExecutionMemoryBridge } from './memory-bridge.js';
@@ -83,6 +84,7 @@ export interface ExecutionServiceDependencies {
   memorySearch?: ExecutionMemoryPreSearch;
   metrics?: RuntimeMetricRegistry;
   outputParser?: ExecutionOutputParserLike;
+  artifactManager?: ExecutionArtifactManager;
 }
 
 export type ExecutionServiceState = 'disabled' | 'idle' | 'healthy' | 'degraded' | 'closing' | 'closed';
@@ -109,6 +111,7 @@ export class ExecutionService {
   readonly memorySearch?: ExecutionMemoryPreSearch;
   readonly metrics?: RuntimeMetricRegistry;
   readonly outputParser: ExecutionOutputParserLike;
+  readonly artifacts: ExecutionArtifactManager;
   private unsubscribeBridge?: () => void;
   private opened = false;
   private closed = false;
@@ -125,6 +128,7 @@ export class ExecutionService {
     this.metrics = dependencies.metrics;
     this.logs = new ExecutionLogStore(config.logRoot);
     this.outputParser = dependencies.outputParser ?? new ExecutionOutputParserService(this.store, this.logs, this.metrics);
+    this.artifacts = dependencies.artifactManager ?? new ExecutionArtifactManager(this.store, workspace, this.logs, this.metrics);
     this.wake = dependencies.wake ?? new ExecutionWakeCoordinator(this.store, this.metrics);
     this.journal = dependencies.journal ?? new ExecutionEventJournal(this.store, this.wake);
     this.memoryBridge = dependencies.memoryBridge;
@@ -138,7 +142,7 @@ export class ExecutionService {
     this.scheduler = new ExecutionScheduler(this.store, runner, {
       logRoot: config.logRoot,
       journal: this.journal,
-      onAttemptCompleted: (scope, marker) => this.captureParsedOutput(scope, marker),
+      onAttemptCompleted: (scope, marker) => this.captureDerivedEvidence(scope, marker),
     });
   }
 
@@ -574,7 +578,7 @@ export class ExecutionService {
     this.state = 'closed';
   }
 
-  private async captureParsedOutput(scope: ExecutionScope, marker: ExecutionResultMarker): Promise<void> {
+  private async captureDerivedEvidence(scope: ExecutionScope, marker: ExecutionResultMarker): Promise<void> {
     try {
       await this.outputParser.parseAttempt(scope, marker);
     } catch (error) {
@@ -585,6 +589,11 @@ export class ExecutionService {
       await this.store.persistParsedOutputFailure(
         scope, marker, this.outputParser.parserVersion ?? EXECUTION_OUTPUT_PARSER_VERSION, code,
       ).catch(() => undefined);
+    }
+    try {
+      await this.artifacts.indexAttempt(scope, marker.runId, marker.nodeId, marker.attemptNo);
+    } catch (error) {
+      this.metrics?.failure('execution.artifact_index.duration_ms', error instanceof Error ? error.name : 'EXECUTION_ARTIFACT_INDEX_FAILED');
     }
   }
 

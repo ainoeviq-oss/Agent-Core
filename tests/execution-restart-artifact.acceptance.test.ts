@@ -15,7 +15,7 @@ afterEach(async () => {
 });
 
 describe('execution declared-artifact durability across service restart', () => {
-  it('reopens a planned v2 graph with expectedArtifacts intact and verifies them when the persisted run is started', async () => {
+  it('reopens a planned graph with expectedArtifacts intact and verifies them when the persisted run is started', async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'agent-core-execution-restart-artifact-'));
     roots.push(root);
     const work = path.join(root, 'work');
@@ -35,6 +35,7 @@ describe('execution declared-artifact durability across service restart', () => 
       kind: 'file' as const,
       hash: 'sha256' as const,
       required: true,
+      artifactType: 'other' as const,
     }];
 
     const first = new ExecutionService(config, workspace);

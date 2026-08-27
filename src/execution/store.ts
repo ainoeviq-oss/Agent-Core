@@ -6,6 +6,7 @@ import type { ValidatedExecutionArtifact, ValidatedExecutionNode } from './dag.j
 import type { ExecutionAttemptPaths, ExecutionResultMarker } from './log-store.js';
 import type { ParsedExecutionOutput } from './output-parser.js';
 import {
+  ARTIFACT_INDEX_EXECUTION_MIGRATION,
   EVIDENCE_EXECUTION_MIGRATION,
   EXECUTION_SCHEMA_SQL,
   EXECUTION_SCHEMA_VERSION,
@@ -247,8 +248,9 @@ function parseArtifacts(value: string): ValidatedExecutionArtifact[] {
       && typeof (item as Record<string, unknown>).path === 'string'
       && ['file', 'directory'].includes(String((item as Record<string, unknown>).kind))
       && typeof (item as Record<string, unknown>).required === 'boolean'
-      && ((item as Record<string, unknown>).hash === undefined || (item as Record<string, unknown>).hash === 'sha256'),
-    ));
+      && ((item as Record<string, unknown>).hash === undefined || (item as Record<string, unknown>).hash === 'sha256')
+      && ((item as Record<string, unknown>).artifactType === undefined || ['build','test_report','log','data','other'].includes(String((item as Record<string, unknown>).artifactType))),
+    )).map((item) => ({ ...item, artifactType: item.artifactType ?? 'other' }));
   } catch {
     return [];
   }
@@ -398,6 +400,11 @@ export class ExecutionStore {
         kind: 'run',
         sql: 'INSERT OR IGNORE INTO execution_schema_migrations(version, name, applied_at) VALUES (?, ?, ?)',
         params: [3, PARSED_OUTPUT_EXECUTION_MIGRATION, Date.now()],
+      },
+      {
+        kind: 'run',
+        sql: 'INSERT OR IGNORE INTO execution_schema_migrations(version, name, applied_at) VALUES (?, ?, ?)',
+        params: [4, ARTIFACT_INDEX_EXECUTION_MIGRATION, Date.now()],
       },
       { kind: 'exec', sql: `PRAGMA user_version = ${EXECUTION_SCHEMA_VERSION}` },
     );

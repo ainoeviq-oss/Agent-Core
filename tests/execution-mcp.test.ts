@@ -124,17 +124,17 @@ afterEach(async () => {
 });
 
 describe('first-class execution MCP surface', () => {
-  it('registers eight bounded execution tools and route-requires only the five mutation tools', async () => {
+  it('registers nine bounded execution tools and route-requires only the five mutation tools', async () => {
     const f = await fixture('surface');
     const listed = await request(f.baseUrl, f.principalA.key, {
       jsonrpc: '2.0', id: 302, method: 'tools/list', params: {},
     });
     const tools = listed.result.tools as Array<Record<string, any>>;
     const names = tools.map((tool) => tool.name);
-    expect(names).toHaveLength(53);
+    expect(names).toHaveLength(54);
     const execution = [
       'execution_create', 'execution_start', 'execution_status', 'execution_wait',
-      'execution_logs', 'execution_add_nodes', 'execution_retry', 'execution_cancel',
+      'execution_logs', 'execution_add_nodes', 'execution_retry', 'execution_cancel', 'execution_artifact_find',
     ];
     for (const name of execution) expect(names).toContain(name);
 
@@ -143,7 +143,7 @@ describe('first-class execution MCP surface', () => {
       expect(tool.inputSchema.required).toContain('routeContextId');
       expect(tool.description).toContain('capability_route');
     }
-    for (const name of ['execution_status', 'execution_wait', 'execution_logs']) {
+    for (const name of ['execution_status', 'execution_wait', 'execution_logs', 'execution_artifact_find']) {
       const tool = tools.find((entry) => entry.name === name)!;
       expect(tool.inputSchema?.required ?? []).not.toContain('routeContextId');
     }
@@ -353,6 +353,33 @@ describe('first-class execution MCP surface', () => {
     const serialized = JSON.stringify(first.evidence);
     expect(serialized).not.toContain('RAW-A-SENTINEL');
     expect(serialized).not.toContain('RAW-B-SENTINEL');
+  }, 10_000);
+
+  it('execution_artifact_find exposes compact verified artifact metadata without raw content or mutation', async () => {
+    const f = await fixture('artifact-find');
+    const routed = await route(f);
+    const artifactPath = path.join(f.work, 'artifact-find.json');
+    const created = expectOk(await call(f.baseUrl, f.principalA.key, 'execution_create', {
+      routeContextId: routed.routeContextId,
+      objective: 'artifact lookup fixture',
+      nodes: [{
+        id: 'A', purpose: 'write artifact lookup proof',
+        command: nodeShellCommand(`require('node:fs').writeFileSync(${JSON.stringify(artifactPath)}, '{"safe":true}')`),
+        cwd: f.work,
+        expectedArtifacts: [{ path: artifactPath, kind: 'file', hash: 'sha256', required: true, artifactType: 'data' }],
+      }],
+    }));
+    expectOk(await call(f.baseUrl, f.principalA.key, 'execution_start', { routeContextId: routed.routeContextId, runId: created.runId }));
+    const done = expectOk(await call(f.baseUrl, f.principalA.key, 'execution_wait', {
+      runId: created.runId, routeContextId: routed.routeContextId, afterSequence: created.lastEventSequence,
+      eventTypes: ['run.completed'], timeoutMs: 5_000,
+    }));
+    const hash = done.state.evidence.nodes[0].artifacts[0].sha256;
+    const found = expectOk(await call(f.baseUrl, f.principalA.key, 'execution_artifact_find', {
+      routeContextId: routed.routeContextId, mode: 'hash', hash,
+    }));
+    expect(found.artifacts).toEqual([expect.objectContaining({ runId: created.runId, path: artifactPath, artifactType: 'data', sha256: hash })]);
+    expect(JSON.stringify(found)).not.toContain('{"safe":true}');
   }, 10_000);
 
   it('a fresh same-principal route can mutate an older owned run while another principal/project cannot observe it', async () => {

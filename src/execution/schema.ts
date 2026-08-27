@@ -1,7 +1,8 @@
-export const EXECUTION_SCHEMA_VERSION = 3;
+export const EXECUTION_SCHEMA_VERSION = 4;
 export const INITIAL_EXECUTION_MIGRATION = '001_initial_execution_fabric';
 export const EVIDENCE_EXECUTION_MIGRATION = '002_declared_artifact_evidence';
 export const PARSED_OUTPUT_EXECUTION_MIGRATION = '003_structured_output_evidence';
+export const ARTIFACT_INDEX_EXECUTION_MIGRATION = '004_execution_artifact_index';
 
 export const EXECUTION_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS execution_schema_migrations (
@@ -123,6 +124,24 @@ CREATE TABLE IF NOT EXISTS execution_parsed_outputs (
   FOREIGN KEY(run_id, node_id) REFERENCES execution_nodes(run_id, node_id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS execution_artifacts (
+  artifact_id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  node_id TEXT NOT NULL,
+  attempt_no INTEGER NOT NULL CHECK (attempt_no >= 1),
+  path TEXT NOT NULL,
+  artifact_type TEXT NOT NULL CHECK (artifact_type IN ('build','test_report','log','data','other')),
+  verification TEXT NOT NULL CHECK (verification = 'verified'),
+  sha256 TEXT,
+  size INTEGER,
+  modified_at REAL,
+  source_result_ref TEXT NOT NULL,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL,
+  UNIQUE(run_id, node_id, attempt_no, path),
+  FOREIGN KEY(run_id, node_id) REFERENCES execution_nodes(run_id, node_id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_execution_runs_scope_state
   ON execution_runs(principal_id, project_id, state, updated_at DESC, id);
 CREATE INDEX IF NOT EXISTS idx_execution_runs_continuity_task
@@ -139,4 +158,10 @@ CREATE INDEX IF NOT EXISTS idx_execution_sync_state
   ON execution_memory_sync_queue(state, updated_at, id);
 CREATE INDEX IF NOT EXISTS idx_execution_parsed_run_node
   ON execution_parsed_outputs(run_id, node_id, attempt_no DESC, parser_version);
+CREATE INDEX IF NOT EXISTS idx_execution_artifacts_hash
+  ON execution_artifacts(sha256, created_at DESC, artifact_id);
+CREATE INDEX IF NOT EXISTS idx_execution_artifacts_type
+  ON execution_artifacts(artifact_type, created_at DESC, artifact_id);
+CREATE INDEX IF NOT EXISTS idx_execution_artifacts_run_node
+  ON execution_artifacts(run_id, node_id, attempt_no DESC, artifact_id);
 `;

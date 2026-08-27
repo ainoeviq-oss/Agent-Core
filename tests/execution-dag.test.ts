@@ -149,6 +149,7 @@ describe('deterministic execution DAG validation', () => {
       kind: 'file',
       hash: 'sha256',
       required: true,
+      artifactType: 'other',
     }]);
 
     await expectDagCode(validateExecutionDag([

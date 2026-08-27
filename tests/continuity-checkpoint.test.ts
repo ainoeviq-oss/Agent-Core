@@ -102,11 +102,11 @@ afterEach(async () => {
 });
 
 describe('continuity checkpoint MCP tools', () => {
-  it('registers four first-class continuity tools inside the 53-tool surface with execution fabric', async () => {
+  it('registers four first-class continuity tools inside the 54-tool surface with execution fabric', async () => {
     const f = await fixture('surface');
     const listed = await listTools(f.baseUrl, f.principalA.key);
     const names = listed.result.tools.map((tool: any) => tool.name);
-    expect(names).toHaveLength(53);
+    expect(names).toHaveLength(54);
     for (const name of ['task_checkpoint', 'continuity_status', 'continuity_get_task', 'continuity_frontier']) {
       expect(names).toContain(name);
     }

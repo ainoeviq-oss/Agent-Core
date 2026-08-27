@@ -82,7 +82,7 @@ afterEach(async () => {
 });
 
 describe('Agent Core MCP integration', () => {
-  it('initializes v0.5.3 with exactly 53 routing, github, memory, continuity, and execution tools and schemas', async () => {
+  it('initializes v0.5.3 with exactly 54 routing, github, memory, continuity, and execution tools and schemas', async () => {
     const { baseUrl, created } = await setup();
     const initialize = await mcpRequest(baseUrl, created.key, {
       jsonrpc: '2.0', id: 1, method: 'initialize',
@@ -100,7 +100,7 @@ describe('Agent Core MCP integration', () => {
     });
     const tools = listed.json.result.tools as Array<Record<string, any>>;
     const names = tools.map((tool) => tool.name);
-    expect(names).toHaveLength(53);
+    expect(names).toHaveLength(54);
     for (const name of ['task_checkpoint', 'continuity_status', 'continuity_get_task', 'continuity_frontier']) {
       expect(names).toContain(name);
     }

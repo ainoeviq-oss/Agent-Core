@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import type { WorkspacePolicy } from '../runtime/workspace.js';
-import type { ExecutionArtifactKind, ValidatedExecutionArtifact } from './dag.js';
+import type { ExecutionArtifactKind, ExecutionArtifactType, ValidatedExecutionArtifact } from './dag.js';
 
 export type ExecutionEvidenceState = 'not_declared' | 'verified' | 'failed';
 export type ExecutionArtifactVerification = 'verified' | 'missing' | 'type_mismatch';
@@ -11,6 +11,7 @@ export interface ExecutionArtifactEvidence {
   path: string;
   kind: ExecutionArtifactKind;
   required: boolean;
+  artifactType: ExecutionArtifactType;
   exists: boolean;
   verification: ExecutionArtifactVerification;
   actualKind?: ExecutionArtifactKind | 'other';
@@ -55,6 +56,7 @@ export async function verifyExecutionArtifacts(
         path: declaration.path,
         kind: declaration.kind,
         required: declaration.required,
+        artifactType: declaration.artifactType ?? 'other',
         exists: false,
         verification: 'missing',
       };
@@ -70,6 +72,7 @@ export async function verifyExecutionArtifacts(
         path: declaration.path,
         kind: declaration.kind,
         required: declaration.required,
+        artifactType: declaration.artifactType ?? 'other',
         exists: true,
         verification: 'type_mismatch',
         actualKind: observedKind,
@@ -83,6 +86,7 @@ export async function verifyExecutionArtifacts(
       path: declaration.path,
       kind: declaration.kind,
       required: declaration.required,
+      artifactType: declaration.artifactType ?? 'other',
       exists: true,
       verification: 'verified',
       actualKind: observedKind,
