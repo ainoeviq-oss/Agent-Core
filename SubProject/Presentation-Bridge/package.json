@@ -1,0 +1,31 @@
+{
+  "name": "presentation-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fresh standalone PPTX to native Google Slides and Keynote conversion kernel with fidelity evidence.",
+  "type": "module",
+  "bin": {
+    "presentation-bridge": "dist/src/cli/index.js"
+  },
+  "scripts": {
+    "clean": "node ./scripts/clean.mjs",
+    "build": "npm run clean && tsc -p tsconfig.json && node ./scripts/copy-assets.mjs",
+    "start": "node dist/src/cli/index.js",
+    "test": "node dist/scripts/generate-fixtures.js && node --test dist/tests/*/*.test.js",
+    "fixtures": "node dist/scripts/generate-fixtures.js",
+    "doctor": "node dist/src/cli/index.js doctor",
+    "check": "npm run build && npm test",
+    "verify": "npm run check && npm run doctor"
+  },
+  "engines": {
+    "node": ">=20.12"
+  },
+  "dependencies": {
+    "sharp": "0.34.1"
+  },
+  "devDependencies": {
+    "@types/node": "25.1.0",
+    "pptxgenjs": "4.0.0",
+    "typescript": "5.8.3"
+  }
+}
