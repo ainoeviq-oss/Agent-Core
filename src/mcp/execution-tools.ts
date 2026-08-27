@@ -6,6 +6,7 @@ import type { ExecutionRunView } from '../execution/service.js';
 import { ExecutionStoreError } from '../execution/store.js';
 import type { RuntimeServices } from '../runtime/services.js';
 import { resolvedProjectScope, resolveRouteExistingPath, resolveRouteTargetPath } from './project-scope.js';
+import { WorkflowAdvisor, type WorkflowGuidance } from './workflow-advisor.js';
 
 export const EXECUTION_TOOL_NAMES = [
   'execution_create',
@@ -17,6 +18,7 @@ export const EXECUTION_TOOL_NAMES = [
   'execution_retry',
   'execution_cancel',
   'execution_artifact_find',
+  'execution_workflow_advice',
 ] as const;
 
 export const EXECUTION_MUTATION_TOOL_NAMES = [
@@ -147,6 +149,44 @@ function compact(view: ExecutionRunView) {
   };
 }
 
+const ADVISOR_READ_ONLY_TOOLS = [
+  'execution_status', 'execution_wait', 'execution_logs', 'execution_artifact_find', 'execution_workflow_advice',
+] as const;
+
+function advisorAvailableTools(
+  runtime: RuntimeServices,
+  key: VerifiedKey,
+  routeContextId?: string,
+): string[] {
+  const available = new Set<string>(ADVISOR_READ_ONLY_TOOLS);
+  if (routeContextId) {
+    const route = runtime.routes.getOwned(routeContextId, key.id);
+    for (const toolName of route.allowedTools) available.add(toolName);
+  }
+  return [...available].sort((left, right) => left.localeCompare(right));
+}
+
+async function workflowAdvice(
+  advisor: WorkflowAdvisor,
+  runtime: RuntimeServices,
+  key: VerifiedKey,
+  view: ExecutionRunView,
+  routeContextId?: string,
+  includeCacheValidation = true,
+): Promise<{ adviceStatus: 'healthy' | 'degraded'; guidance: WorkflowGuidance[] }> {
+  try {
+    const guidance = await advisor.analyzeRun(view, {
+      scope: scope(runtime, key, routeContextId),
+      routeContextId,
+      availableTools: advisorAvailableTools(runtime, key, routeContextId),
+      includeCacheValidation,
+    });
+    return { adviceStatus: 'healthy', guidance };
+  } catch {
+    return { adviceStatus: 'degraded', guidance: [] };
+  }
+}
+
 const mutationAnnotations = {
   readOnlyHint: false,
   destructiveHint: true,
@@ -190,6 +230,7 @@ export function registerExecutionTools(
   runtime: RuntimeServices,
   key: VerifiedKey,
 ): void {
+  const advisor = new WorkflowAdvisor(runtime);
   server.registerTool('execution_create', {
     title: 'Execution Create',
     description: routedDescription('Validate and persist a planned deterministic multi-command DAG without starting any process.'),
@@ -234,9 +275,12 @@ export function registerExecutionTools(
     description: 'Return compact persisted graph/run state for a run owned by the authenticated principal in the current project.',
     inputSchema: { runId: z.string().uuid(), routeContextId: z.string().uuid().optional() },
     annotations: readOnlyAnnotations,
-  }, async ({ runId, routeContextId }) => guarded(async () => compact(requireOwnedView(
-    await runtime.execution.status(scope(runtime, key, routeContextId), runId),
-  ))));
+  }, async ({ runId, routeContextId }) => guarded(async () => {
+    const view = requireOwnedView(await runtime.execution.status(scope(runtime, key, routeContextId), runId));
+    const compacted = compact(view);
+    const advice = await workflowAdvice(advisor, runtime, key, view, routeContextId, false);
+    return { ...compacted, workflowAdviceStatus: advice.adviceStatus, workflowAdvice: advice.guidance };
+  }));
 
   server.registerTool('execution_wait', {
     title: 'Execution Wait',
@@ -280,6 +324,26 @@ export function registerExecutionTools(
   }, async ({ runId, routeContextId, nodeId, attemptNo, stream, offset, maxBytes }) => guarded(() => runtime.execution.readLog(
     scope(runtime, key, routeContextId), runId, nodeId, attemptNo, stream, offset, maxBytes,
   )));
+
+  server.registerTool('execution_workflow_advice', {
+    title: 'Execution Workflow Advice',
+    description: 'Return deterministic read-only workflow guidance for an owned execution run. Suggestions never execute tools or change run state.',
+    inputSchema: {
+      runId: z.string().uuid(),
+      routeContextId: z.string().uuid().optional(),
+    },
+    annotations: readOnlyAnnotations,
+  }, async ({ runId, routeContextId }) => guarded(async () => {
+    const view = requireOwnedView(await runtime.execution.status(scope(runtime, key, routeContextId), runId));
+    const advice = await workflowAdvice(advisor, runtime, key, view, routeContextId);
+    return {
+      runId: view.runId,
+      state: view.state,
+      lastEventSequence: view.lastEventSequence,
+      adviceStatus: advice.adviceStatus,
+      guidance: advice.guidance,
+    };
+  }));
 
   server.registerTool('execution_artifact_find', {
     title: 'Execution Artifact Find',

@@ -124,17 +124,17 @@ afterEach(async () => {
 });
 
 describe('first-class execution MCP surface', () => {
-  it('registers nine bounded execution tools and route-requires only the five mutation tools', async () => {
+  it('registers ten bounded execution tools and route-requires only the five mutation tools', async () => {
     const f = await fixture('surface');
     const listed = await request(f.baseUrl, f.principalA.key, {
       jsonrpc: '2.0', id: 302, method: 'tools/list', params: {},
     });
     const tools = listed.result.tools as Array<Record<string, any>>;
     const names = tools.map((tool) => tool.name);
-    expect(names).toHaveLength(54);
+    expect(names).toHaveLength(55);
     const execution = [
       'execution_create', 'execution_start', 'execution_status', 'execution_wait',
-      'execution_logs', 'execution_add_nodes', 'execution_retry', 'execution_cancel', 'execution_artifact_find',
+      'execution_logs', 'execution_add_nodes', 'execution_retry', 'execution_cancel', 'execution_artifact_find', 'execution_workflow_advice',
     ];
     for (const name of execution) expect(names).toContain(name);
 
@@ -143,7 +143,7 @@ describe('first-class execution MCP surface', () => {
       expect(tool.inputSchema.required).toContain('routeContextId');
       expect(tool.description).toContain('capability_route');
     }
-    for (const name of ['execution_status', 'execution_wait', 'execution_logs', 'execution_artifact_find']) {
+    for (const name of ['execution_status', 'execution_wait', 'execution_logs', 'execution_artifact_find', 'execution_workflow_advice']) {
       const tool = tools.find((entry) => entry.name === name)!;
       expect(tool.inputSchema?.required ?? []).not.toContain('routeContextId');
     }
@@ -354,6 +354,67 @@ describe('first-class execution MCP surface', () => {
     expect(serialized).not.toContain('RAW-A-SENTINEL');
     expect(serialized).not.toContain('RAW-B-SENTINEL');
   }, 10_000);
+
+  it('execution_workflow_advice is read-only, does not mutate a planned run, and only proposes start with a valid route context', async () => {
+    const f = await fixture('workflow-advice');
+    const routed = await route(f);
+    const created = expectOk(await call(f.baseUrl, f.principalA.key, 'execution_create', {
+      routeContextId: routed.routeContextId,
+      objective: 'workflow advice planned fixture',
+      nodes: [
+        { id: 'B', purpose: 'independent B', command: printCommand('B\\n'), cwd: f.work },
+        { id: 'A', purpose: 'independent A', command: printCommand('A\\n'), cwd: f.work },
+      ],
+    }));
+    expect(created.state).toBe('planned');
+
+    const withoutRoute = expectOk(await call(f.baseUrl, f.principalA.key, 'execution_workflow_advice', {
+      runId: created.runId,
+    }));
+    expect(withoutRoute.lastEventSequence).toBe(created.lastEventSequence);
+    expect(withoutRoute.guidance.some((item: any) => item.proposedNext?.tool === 'execution_start')).toBe(false);
+    expect(expectOk(await call(f.baseUrl, f.principalA.key, 'execution_status', { runId: created.runId })).state).toBe('planned');
+
+    const withRoute = expectOk(await call(f.baseUrl, f.principalA.key, 'execution_workflow_advice', {
+      runId: created.runId,
+      routeContextId: routed.routeContextId,
+    }));
+    expect(withRoute.adviceStatus).toBe('healthy');
+    expect(withRoute.guidance[0]).toMatchObject({
+      category: 'parallelization',
+      proposedNext: { tool: 'execution_start', args: { routeContextId: routed.routeContextId, runId: created.runId } },
+      sourceNodeIds: ['A', 'B'],
+    });
+    expect(expectOk(await call(f.baseUrl, f.principalA.key, 'execution_status', { runId: created.runId })).state).toBe('planned');
+  });
+
+  it('execution_status surfaces the same deterministic workflow advice without recursively mutating execution state', async () => {
+    const f = await fixture('status-advice');
+    const routed = await route(f);
+    const created = expectOk(await call(f.baseUrl, f.principalA.key, 'execution_create', {
+      routeContextId: routed.routeContextId,
+      objective: 'status advice fixture',
+      nodes: [
+        { id: 'A', purpose: 'A', command: printCommand('A\\n'), cwd: f.work },
+        { id: 'B', purpose: 'B', command: printCommand('B\\n'), cwd: f.work },
+      ],
+    }));
+    const status = expectOk(await call(f.baseUrl, f.principalA.key, 'execution_status', {
+      runId: created.runId,
+      routeContextId: routed.routeContextId,
+    }));
+    expect(status.state).toBe('planned');
+    expect(status.workflowAdvice).toEqual([expect.objectContaining({
+      category: 'parallelization',
+      proposedNext: { tool: 'execution_start', args: { routeContextId: routed.routeContextId, runId: created.runId } },
+    })]);
+    const second = expectOk(await call(f.baseUrl, f.principalA.key, 'execution_status', {
+      runId: created.runId,
+      routeContextId: routed.routeContextId,
+    }));
+    expect(second.workflowAdvice).toEqual(status.workflowAdvice);
+    expect(second.state).toBe('planned');
+  });
 
   it('execution_artifact_find exposes compact verified artifact metadata without raw content or mutation', async () => {
     const f = await fixture('artifact-find');
