@@ -1,9 +1,13 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+
+const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const serverEntry = path.join(pluginRoot, 'dist', 'server.js');
 
 let base: string;
 let root: string;
@@ -36,7 +40,7 @@ describe('codespace MCP stdio server', () => {
   it('initializes, exposes the bounded tool surface, and executes real workspace operations', async () => {
     const transport = new StdioClientTransport({
       command: process.execPath,
-      args: ['plugin/codespace/dist/server.js'],
+      args: [serverEntry],
       env: transportEnvironment(),
       stderr: 'pipe',
     });

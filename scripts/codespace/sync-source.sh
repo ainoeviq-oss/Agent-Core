@@ -33,8 +33,8 @@ if [[ "$current_branch" != "$branch" ]]; then
 fi
 
 if [[ -n "$(git -C "$AGENT_CORE_REPO_ROOT" status --porcelain=v1 --untracked-files=no)" ]]; then
-  log_error 'Source sync found tracked local changes; refusing to overwrite or merge them.'
-  exit 13
+  log_info 'Source sync found tracked local changes; preserving local work and skipping automatic synchronization.'
+  exit 0
 fi
 
 git -C "$AGENT_CORE_REPO_ROOT" remote get-url "$remote" >/dev/null 2>&1 || {

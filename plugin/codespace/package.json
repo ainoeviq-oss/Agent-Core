@@ -3,9 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.15.0"
+  },
   "scripts": {
-    "build": "npx --no-install tsc -p tsconfig.json",
-    "test": "npx --no-install vitest run tests",
+    "build": "./node_modules/.bin/tsc -p tsconfig.json",
+    "test": "./node_modules/.bin/vitest run tests",
     "verify": "npm run build && npm test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11"
   }
 }
