@@ -8,7 +8,16 @@
       "onAutoForward": "silent"
     }
   },
-  "postCreateCommand": "bash scripts/codespace/bootstrap.sh --phase create",
-  "postStartCommand": "bash scripts/codespace/bootstrap.sh --phase start",
-  "postAttachCommand": "bash scripts/codespace/ensure-running.sh --repair --phase attach"
+  "postCreateCommand": {
+    "existing": "bash scripts/codespace/bootstrap.sh --phase create",
+    "codespace": "bash plugin/codespace/scripts/ensure-running.sh --phase create"
+  },
+  "postStartCommand": {
+    "existing": "bash scripts/codespace/bootstrap.sh --phase start",
+    "codespace": "bash plugin/codespace/scripts/ensure-running.sh --phase start"
+  },
+  "postAttachCommand": {
+    "existing": "bash scripts/codespace/ensure-running.sh --repair --phase attach",
+    "codespace": "bash plugin/codespace/scripts/ensure-running.sh --phase attach"
+  }
 }
