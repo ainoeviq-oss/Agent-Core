@@ -49,6 +49,8 @@ Files / processes        GitHub / evidence
 
 **Core rule:** the model interprets and decides; Agent Core persists, constrains, executes, and records reality.
 
+Execution-derived intelligence follows a strict authority order: **process truth > verified artifact truth > parsed structured interpretation > artifact/cache suggestion > workflow advice**. Lower layers are deterministic aids only; they cannot override higher-authority evidence, and cache awareness never skips current command execution.
+
 ## Quick start
 
 Requirements:
@@ -69,8 +71,9 @@ The launcher resolves the current project location, installs missing dependencie
 Default local endpoints:
 
 ```text
-MCP     http://127.0.0.1:8765/mcp
-Health  http://127.0.0.1:8765/health
+MCP      http://127.0.0.1:8765/mcp
+Health   http://127.0.0.1:8765/health
+Metrics  http://127.0.0.1:8765/health/metrics
 ```
 
 The service remains loopback-bound. Remote ChatGPT access is provided through the configured Secure MCP Tunnel rather than by exposing the local MCP listener directly.
@@ -90,14 +93,14 @@ Exit:           tray menu -> Exit Agent Core
 
 Agent Core groups its MCP tools by responsibility:
 
-- **Identity & status** - runtime identity, health, workspace roots, capability stage.
+- **Identity & status** - runtime identity, lightweight readiness, detailed bounded `agent_core_health_metrics`, workspace roots, capability stage.
 - **Filesystem & search** - bounded read/write/edit/move/info and recursive filename/content search.
 - **Processes** - guarded PowerShell execution plus owned background-process lifecycle tools.
 - **Capability routing** - route, search, inspect dependencies, load audited native-ready skills, registry coverage.
 - **GitHub** - route-aware repository, Git, issue, pull-request, release, Packages/npm, and bounded generic REST operations with lazy local credentials. GitHub Actions/CI is intentionally forbidden for this repository.
 - **Memory** - status, search, inspect, commit, revise, forget, explain, export.
 - **Continuity** - checkpoint, status, task inspection, actionable frontier.
-- **Execution** - create/start/status/wait/log/add/retry/cancel dependency-aware command runs.
+- **Execution** - create/start/status/wait/log/add/retry/cancel dependency-aware command runs, plus verified artifact lookup and deterministic read-only workflow advice.
 
 Route-bound mutations require a current principal/project routing context. High-risk system, storage, privilege, and escape-path operations are rejected before execution.
 

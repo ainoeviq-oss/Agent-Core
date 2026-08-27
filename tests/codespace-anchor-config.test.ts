@@ -11,6 +11,7 @@ import {
 
 const root = process.cwd();
 const common = path.join(root, 'scripts/codespace/common.sh');
+const posixIt = process.platform === 'win32' ? it.skip : it;
 
 describe('Codespace anchor config', () => {
   it('pins the approved old Codespace as the Phase 1 anchor', () => {
@@ -26,7 +27,7 @@ describe('Codespace anchor config', () => {
     expect(resolveCodespaceAnchorRole('')).toBe('backend');
   });
 
-  it('exposes the same role and service-port contract to lifecycle bash', () => {
+  posixIt('exposes the same role and service-port contract to lifecycle bash', () => {
     const run = (name: string) => spawnSync('bash', ['-lc', `source "${common}"; printf '%s|%s|%s' "$(codespace_anchor_role)" "$(agent_core_service_port)" "$(anchor_public_base_url)"`], {
       cwd: root,
       encoding: 'utf8',

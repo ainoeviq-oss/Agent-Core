@@ -104,6 +104,30 @@ function spawnCommand(command: string, cwd: string): ChildProcessWithoutNullStre
   });
 }
 
+async function terminateOwnedProcessTree(child: ChildProcessWithoutNullStreams, force = false): Promise<void> {
+  if (process.platform === 'win32' && child.pid) {
+    await new Promise<void>((resolve) => {
+      const killer = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', ...(force ? ['/F'] : [])], {
+        windowsHide: true,
+        stdio: 'ignore',
+      });
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      killer.once('error', () => {
+        try { child.kill(force ? 'SIGKILL' : undefined); } catch { /* best effort fallback */ }
+        done();
+      });
+      killer.once('close', done);
+    });
+    return;
+  }
+  child.kill(force ? 'SIGKILL' : undefined);
+}
+
 function normalizeOwner(owner: ProcessSessionOwner | undefined): ProcessSessionOwner | undefined {
   if (!owner) return undefined;
   const principalId = owner.principalId?.trim();
@@ -247,10 +271,10 @@ export class ProcessManager {
     const session = this.requireSession(sessionId, owner);
     if (session.exited) return { sessionId, stopped: true };
 
-    session.child.kill();
+    await terminateOwnedProcessTree(session.child);
     await this.waitForExit(session, 750);
     if (!session.exited) {
-      session.child.kill('SIGKILL');
+      await terminateOwnedProcessTree(session.child, true);
       await this.waitForExit(session, 750);
     }
     if (session.terminalEvidence) await session.terminalEvidence;

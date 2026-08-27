@@ -77,4 +77,24 @@ describe('tracked Agent Core capability-router behavior contract', () => {
     expect(skill).toMatch(/terminal[^\n.]*task_checkpoint|task_checkpoint[^\n.]*terminal/i);
     expect(skill).toMatch(/frontier|nextCandidates/i);
   });
+
+  it('preserves execution truth hierarchy and treats cache/advice as read-only derived guidance', async () => {
+    const skill = await readFile(skillPath, 'utf8');
+    hasAll(skill, [
+      'PROCESS TRUTH',
+      'VERIFIED ARTIFACT TRUTH',
+      'PARSED STRUCTURED INTERPRETATION',
+      'ARTIFACT/CACHE SUGGESTION',
+      'WORKFLOW ADVICE',
+      'execution_artifact_find',
+      'execution_workflow_advice',
+      'proposedNext',
+      'agent_core_health_metrics',
+      '/health/metrics',
+    ]);
+    expect(skill).toMatch(/cache[^\n.]*MUST NEVER[^\n.]*skip|MUST NEVER[^\n.]*skip[^\n.]*execution/i);
+    expect(skill).toMatch(/proposedNext[^\n.]*optional|optional[^\n.]*proposedNext/i);
+    expect(skill).toMatch(/read-only/i);
+    expect(skill).toMatch(/principal\/project/i);
+  });
 });

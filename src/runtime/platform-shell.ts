@@ -9,9 +9,16 @@ export function resolveShellInvocation(
   platform: NodeJS.Platform = process.platform,
 ): ShellInvocation {
   if (platform === 'win32') {
+    const wrapped = [
+      '$global:LASTEXITCODE = $null',
+      command,
+      '$agentCoreCommandSucceeded = $?',
+      'if ($null -ne $global:LASTEXITCODE) { exit $global:LASTEXITCODE }',
+      'if ($agentCoreCommandSucceeded) { exit 0 } else { exit 1 }',
+    ].join('; ');
     return {
       executable: 'powershell.exe',
-      args: ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command],
+      args: ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', wrapped],
       windowsHide: true,
     };
   }

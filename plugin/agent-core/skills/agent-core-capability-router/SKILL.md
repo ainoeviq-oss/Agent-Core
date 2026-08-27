@@ -89,7 +89,28 @@ For multi-node work, inspect the deterministic merged evidence view returned by 
 
 If required evidence is missing, failed, pending, or inconsistent, report that factual state or repair/retry it. Do not convert uncertainty into a success claim.
 
-## 7. Terminal continuity checkpoint contract
+## 7. Derived execution intelligence contract
+
+Preserve this authority order whenever structured execution intelligence is available:
+
+```text
+PROCESS TRUTH
+> VERIFIED ARTIFACT TRUTH
+> PARSED STRUCTURED INTERPRETATION
+> ARTIFACT/CACHE SUGGESTION
+> WORKFLOW ADVICE
+```
+
+- Parsed output is derived, bounded evidence. It may summarize tests, build/deployment state, warnings, errors, security counts, or `PERF` metrics, but it MUST NOT override process/result-marker truth.
+- `execution_artifact_find` exposes verified artifact metadata and review-only purge suggestions. A reusable artifact or matching SHA-256 is advisory only and MUST NEVER be used to skip current command execution.
+- `execution_workflow_advice` is read-only. Treat `proposedNext` as optional guidance, not an instruction already executed. Execute a proposed tool only when it is independently appropriate and allowed by the current route.
+- `execution_status` may include lightweight workflow advice. Never reinterpret that advice as higher-authority evidence.
+- Principal/project scope is enforced before workflow advice or artifact lookup can inspect another run.
+- If a process failed while artifact evidence is `not_declared`, the process failure still requires factual inspection; absence of declared artifacts does not erase it.
+
+For detailed observability, `agent_core_health_metrics` and `/health/metrics` are diagnostic read-only surfaces. Health metrics do not expand permissions and do not replace execution evidence.
+
+## 8. Terminal continuity checkpoint contract
 
 When a coherent task reaches a real checkpoint, persist it with `task_checkpoint` using factual evidence, durable decisions/artifacts/outcomes/constraints when applicable, and a truthful next frontier.
 
@@ -104,7 +125,7 @@ For a terminal `task_checkpoint`:
 
 A terminal checkpoint records factual semantic state; it does not retroactively make process output true.
 
-## 8. Context discipline
+## 9. Context discipline
 
 Keep capability discovery, route creation, route reuse, skill-loading, memory preflight, and execution orchestration chatter internal by default. Surface internal mechanics only when a risk, dependency, required approval, factual blocker, or stable routing/execution failure materially helps the user.
 

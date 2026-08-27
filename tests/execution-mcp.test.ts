@@ -388,6 +388,47 @@ describe('first-class execution MCP surface', () => {
     expect(expectOk(await call(f.baseUrl, f.principalA.key, 'execution_status', { runId: created.runId })).state).toBe('planned');
   });
 
+  it('keeps workflow advice principal/project scoped before the advisor can inspect a run', async () => {
+    const f = await fixture('workflow-advice-scope');
+    const routed = await route(f);
+    const created = expectOk(await call(f.baseUrl, f.principalA.key, 'execution_create', {
+      routeContextId: routed.routeContextId,
+      objective: 'workflow advice scope fixture',
+      nodes: [{ id: 'A', purpose: 'A', command: printCommand('A\\n'), cwd: f.work }],
+    }));
+
+    const deniedPrincipal = await call(f.baseUrl, f.principalB.key, 'execution_workflow_advice', {
+      runId: created.runId,
+    });
+    expectErrorCode(deniedPrincipal, 'EXECUTION_RUN_NOT_FOUND');
+
+    const otherProject = path.join(f.root, 'project-b');
+    await mkdir(otherProject, { recursive: true });
+    const projectBRoute = f.runtime.routes.create(f.principalA.metadata.id, {
+      tier: 'atomic',
+      mode: 'atomic_direct',
+      domain: 'general',
+      confidence: 1,
+      risk: 'low',
+      recommendedCapabilities: [],
+      requiredSkillLoads: [],
+      allowedTools: ['execution_workflow_advice'],
+      verification: { required: false, suggestedTools: [] },
+      reasonCodes: ['workflow_advice_scope_test'],
+    }, { projectId: otherProject });
+    const deniedProject = await call(f.baseUrl, f.principalA.key, 'execution_workflow_advice', {
+      runId: created.runId,
+      routeContextId: projectBRoute.routeContextId,
+    });
+    expectErrorCode(deniedProject, 'EXECUTION_RUN_NOT_FOUND');
+
+    const owner = expectOk(await call(f.baseUrl, f.principalA.key, 'execution_workflow_advice', {
+      runId: created.runId,
+      routeContextId: routed.routeContextId,
+    }));
+    expect(owner.runId).toBe(created.runId);
+  });
+
   it('execution_status surfaces the same deterministic workflow advice without recursively mutating execution state', async () => {
     const f = await fixture('status-advice');
     const routed = await route(f);

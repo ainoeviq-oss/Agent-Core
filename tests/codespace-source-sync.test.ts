@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 const projectRoot = process.cwd();
 const syncScript = path.join(projectRoot, 'scripts/codespace/sync-source.sh');
 const tempRoots: string[] = [];
+const posixIt = process.platform === 'win32' ? it.skip : it;
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
@@ -67,7 +68,7 @@ afterEach(async () => {
 });
 
 describe('Codespace source synchronization', () => {
-  it('fast-forwards a clean main checkout and preserves untracked editor state', async () => {
+  posixIt('fast-forwards a clean main checkout and preserves untracked editor state', async () => {
     const { publisher, checkout } = await makeFixture();
     const before = git(checkout, 'rev-parse', 'HEAD');
     const expected = await publishNext(publisher);
@@ -83,7 +84,7 @@ describe('Codespace source synchronization', () => {
     expect(result.stdout).toContain('fast-forwarded main');
   });
 
-  it('refuses to modify a checkout with tracked local changes', async () => {
+  posixIt('refuses to modify a checkout with tracked local changes', async () => {
     const { publisher, checkout } = await makeFixture();
     const before = git(checkout, 'rev-parse', 'HEAD');
     await publishNext(publisher);
@@ -97,7 +98,7 @@ describe('Codespace source synchronization', () => {
     expect(result.stderr).toContain('tracked local changes');
   });
 
-  it('fails closed on a non-main checkout', async () => {
+  posixIt('fails closed on a non-main checkout', async () => {
     const { publisher, checkout } = await makeFixture();
     await publishNext(publisher);
     git(checkout, 'switch', '-c', 'feature/test');
@@ -110,7 +111,7 @@ describe('Codespace source synchronization', () => {
     expect(result.stderr).toContain('expected branch main');
   });
 
-  it('fails closed when local main diverges from origin/main', async () => {
+  posixIt('fails closed when local main diverges from origin/main', async () => {
     const { publisher, checkout } = await makeFixture();
     await writeFile(path.join(checkout, 'local.txt'), 'local\n');
     git(checkout, 'add', 'local.txt');
@@ -125,7 +126,7 @@ describe('Codespace source synchronization', () => {
     expect(result.stderr).toContain('diverged');
   });
 
-  it('fails closed when local main is ahead of origin/main', async () => {
+  posixIt('fails closed when local main is ahead of origin/main', async () => {
     const { checkout } = await makeFixture();
     await writeFile(path.join(checkout, 'local.txt'), 'local\n');
     git(checkout, 'add', 'local.txt');
@@ -139,7 +140,7 @@ describe('Codespace source synchronization', () => {
     expect(result.stderr).toContain('ahead of origin/main');
   });
 
-  it('is idempotent when local main already equals origin/main', async () => {
+  posixIt('is idempotent when local main already equals origin/main', async () => {
     const { checkout } = await makeFixture();
     const before = git(checkout, 'rev-parse', 'HEAD');
 
@@ -170,7 +171,7 @@ describe('Codespace source synchronization', () => {
     expect(ensure).toContain('Restarting Agent Core supervisor to activate the synchronized build.');
   });
 
-  it('rejects a healthy process whose reported version does not match the synchronized source version', async () => {
+  posixIt('rejects a healthy process whose reported version does not match the synchronized source version', async () => {
     const common = path.join(projectRoot, 'scripts/codespace/common.sh');
     const payload = JSON.stringify({
       status: 'ok',
@@ -189,7 +190,7 @@ describe('Codespace source synchronization', () => {
     expect(result.status).toBe(1);
   });
 
-  it('records the exact source commit and package version in verified connection metadata', async () => {
+  posixIt('records the exact source commit and package version in verified connection metadata', async () => {
     const { checkout } = await makeFixture();
     const home = path.join(path.dirname(checkout), 'runtime-home');
     const common = path.join(projectRoot, 'scripts/codespace/common.sh');

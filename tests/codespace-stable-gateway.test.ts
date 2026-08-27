@@ -12,6 +12,7 @@ const workerFile = 'cloudflare/agent-core-gateway/worker.mjs';
 const adminFile = 'scripts/codespace/stable-gateway-admin.mjs';
 const updateScript = 'scripts/codespace/update-stable-gateway.sh';
 const deployScript = 'scripts/codespace/deploy-stable-gateway.sh';
+const posixIt = process.platform === 'win32' ? it.skip : it;
 
 describe('stable Cloudflare Worker gateway contract', () => {
   it('tracks a stable Worker source and Codespace update/deploy automation without the old backend hostname', async () => {
@@ -252,7 +253,7 @@ describe('stable Cloudflare Worker gateway contract', () => {
     expect(sleepCalls).toBe(2);
   });
 
-  it('materializes Wrangler OAuth from an encrypted Codespaces secret and treats it as a stable-gateway credential', () => {
+  posixIt('materializes Wrangler OAuth from an encrypted Codespaces secret and treats it as a stable-gateway credential', () => {
     const shell = String.raw`
       set -euo pipefail
       export HOME="$(mktemp -d)"

@@ -54,12 +54,14 @@ describe('Codespace anchor target state', () => {
     expect(await readAnchorTarget(statePath)).toEqual(localAnchorTarget());
   });
 
-  it('writes target state atomically with private file permissions', async () => {
+  it('writes target state atomically and enforces private file permissions on POSIX hosts', async () => {
     const statePath = await tempStatePath();
     const target = { ...localAnchorTarget(), verifiedAt: '2026-08-27T00:00:00.000Z' };
     await writeAnchorTargetAtomic(target, statePath);
     expect(JSON.parse(await readFile(statePath, 'utf8'))).toEqual(target);
-    expect((await stat(statePath)).mode & 0o777).toBe(0o600);
+    if (process.platform !== 'win32') {
+      expect((await stat(statePath)).mode & 0o777).toBe(0o600);
+    }
   });
 
   it('rejects non-HTTPS and non-Codespaces remote backends before network access', async () => {

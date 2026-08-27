@@ -52,6 +52,36 @@ The execution SQLite database contains durable records for:
 
 The execution database is intentionally separate from the DMF database because execution events/log metadata are high-frequency operational state. Only selected verified execution evidence is promoted into DMF.
 
+Execution schema evolution is additive and evidence-focused:
+
+- schema v3 adds `execution_parsed_outputs` for bounded deterministic interpretation of persisted stdout/stderr evidence;
+- schema v4 adds `execution_artifacts` for verified-only artifact indexing, lookup, and advisory reuse discovery;
+- startup recovery also reconciles a missed artifact index from durable verified terminal result markers, so an interrupted observer cannot silently erase reusable evidence metadata.
+
+## Structured execution intelligence and truth hierarchy
+
+Agent Core applies a strict authority order when multiple execution-intelligence layers are present:
+
+```text
+PROCESS TRUTH
+>
+VERIFIED ARTIFACT TRUTH
+>
+PARSED STRUCTURED INTERPRETATION
+>
+ARTIFACT/CACHE SUGGESTION
+>
+WORKFLOW ADVICE
+```
+
+A lower layer may add bounded context but MUST NOT override a higher layer. In particular, parsed summaries cannot convert a failed process into success, a cache match cannot replace current execution truth, and workflow advice cannot promote a suggestion into a fact. A factual process failure remains inspectable evidence even when no artifact was declared.
+
+Structured output parsing is deterministic parser v1. It reads at most the bounded execution-log window, records source stdout/stderr SHA-256 identity, and can derive bounded test summaries, build/deployment state, performance metrics, warning counts, error-pattern counts, and security-issue counts. Parsing is fail-open: parser failure is recorded as degraded derived evidence and never changes factual process success/failure.
+
+Verified artifact indexing accepts only artifacts proven by the durable terminal evidence contract. Supported artifact types are `build`, `test_report`, `log`, `data`, and `other`. Lookups are principal/project scoped and support hash, type, and run identity. `findReusable` is explicitly advisory-only: an existing matching SHA-256 may be suggested for operator/agent consideration, but cache awareness MUST NEVER skip command execution or prove that current inputs and side effects are unchanged. Purge results are suggestions for review only; the artifact manager does not delete files.
+
+The deterministic workflow advisor is read-only. It can surface parallelization, bounded wait, evidence-inspection, parsed-test, and verified-reuse guidance without mutating a run. `proposedNext` is optional and is emitted only when the currently authenticated/routed tool surface actually permits the proposed action. `execution_status` uses lightweight advice without expensive cache validation; explicit `execution_workflow_advice` may perform bounded reusable-artifact validation. Advice is principal/project scoped before the advisor can inspect a run.
+
 ## MCP execution surface
 
 Agent Core exposes:
@@ -65,9 +95,11 @@ execution_logs
 execution_add_nodes
 execution_retry
 execution_cancel
+execution_artifact_find
+execution_workflow_advice
 ```
 
-Mutation tools require a current principal-bound route context. Read operations are authenticated and principal/project scoped, so a fresh same-principal route can inspect an older owned run without requiring the original route to remain alive.
+Mutation tools require a current principal-bound route context. Read operations are authenticated and principal/project scoped, so a fresh same-principal route can inspect an older owned run without requiring the original route to remain alive. `execution_artifact_find` returns compact verified artifact metadata or review-only purge suggestions; it never returns artifact contents or deletes files. `execution_workflow_advice` returns deterministic read-only guidance and never executes its optional `proposedNext` suggestion.
 
 `execution_create` persists a validated DAG but starts no process. `execution_start` dispatches ready nodes up to the run's concurrency bound. Dynamic nodes can be added atomically while a run is planned/running; invalid cycles or missing dependencies are rejected without partial insertion.
 
@@ -221,6 +253,16 @@ Remove-Item Env:AGENT_CORE_EXECUTION_ENABLED -ErrorAction SilentlyContinue
 
 Then start through the normal launcher/configuration. Normal operation now defaults execution on; set `AGENT_CORE_EXECUTION_ENABLED=false` only as an explicit diagnostic or rollback override.
 
+## Runtime observability
+
+`GET /health` remains a lightweight readiness endpoint. Detailed bounded runtime metrics are deliberately separated at:
+
+```text
+GET /health/metrics
+```
+
+The same detailed snapshot is available through the read-only MCP tool `agent_core_health_metrics`. The metrics registry keeps a bounded rolling sample window while preserving total observation counts and deterministic p50/p95/p99/max summaries. Memory, execution DAG/dispatch/wake, routing, and optional GitHub health are aggregated without exposing credential material. GitHub API health probing is TTL-cached and single-flighted so concurrent health reads do not multiply external probes. Disabling GitHub leaves local readiness independent of optional GitHub connectivity.
+
 ## Performance gates
 
 Task 20 measured the production-ready execution path in isolated benchmark runs:
@@ -233,3 +275,15 @@ max observed concurrency      4 / 4
 ```
 
 These numbers are evidence for the validated Task 20 worktree and are not a promise that every host/storage configuration will produce identical timings.
+
+The improvisation acceptance suite adds explicit local-only gates for the derived-intelligence layers:
+
+```text
+health metrics snapshot p95            < 50 ms
+128 KiB structured-output parse p95    < 25 ms
+1000-row artifact hash lookup p95      < 50 ms
+128-node workflow advisor p95          < 50 ms
+100000 metric observations             < 500 ms, rolling window = 128
+```
+
+These gates are enabled with `AGENT_CORE_PERFORMANCE_GATES=1`; they are skipped by the normal regression suite so routine tests remain stable across hosts. They must be exercised locally before declaring the improvisation integration accepted. GitHub Actions/CI is not a substitute for these local gates.

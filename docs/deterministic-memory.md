@@ -134,6 +134,22 @@ The raw Agent Core API key itself is not required by the memory database. Authen
 
 For identical database state, scope, query, and configuration, recall ordering and snapshot hash are deterministic. Retrieval combines SQLite FTS5/BM25, exact structured anchors, bounded graph expansion, weighted Personalized PageRank, state/importance/recency scoring, and explicit provenance. No hidden AI performs extraction, embeddings, reranking, contradiction resolution, or cleanup.
 
+When DMF consumes execution-derived evidence, the execution truth hierarchy remains authoritative:
+
+```text
+PROCESS TRUTH
+>
+VERIFIED ARTIFACT TRUTH
+>
+PARSED STRUCTURED INTERPRETATION
+>
+ARTIFACT/CACHE SUGGESTION
+>
+WORKFLOW ADVICE
+```
+
+DMF may persist selected redacted process failures, verified artifact metadata, and bounded parsed facts for later recall, but it must not promote raw stdout/stderr wholesale or allow a derived/cache/advice layer to rewrite higher-authority process or artifact truth. A workflow-advisor suggestion is context, not durable proof of completion. A reusable-artifact match is advisory only and cannot justify skipping a current command.
+
 ## Autonomous memory adoption in routing
 
 `capability_route` no longer treats relevant memory as sideband metadata only. After the normal deterministic preflight, Agent Core builds a bounded routing projection from recalled decisions, prior failures, and other non-guardrail memory and passes that projection into `CapabilityRouter` together with the user's original context.

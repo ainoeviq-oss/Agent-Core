@@ -76,6 +76,10 @@ describe('Agent Core plugin package builder', () => {
     expect(router).toContain('capability_route');
     expect(router).toContain('routeContextId');
     expect(router).toContain('skill_load(id, routeContextId)');
+    expect(router).toContain('execution_artifact_find');
+    expect(router).toContain('execution_workflow_advice');
+    expect(router).toContain('PROCESS TRUTH');
+    expect(router).toContain('proposedNext');
     expect(router).not.toMatch(/\b(?:ask|tell|require|instruct)\s+(?:the\s+)?user\b[^.\n]{0,120}\b(?:mention|name|invoke|call)\b[^.\n]{0,120}\b(?:capability_route|routeContextId|skill_load)\b/i);
     const github = await readFile(path.join(outputDir, 'skills', 'agent-core-github', 'SKILL.md'), 'utf8');
     expect(github).toBe(await readFile(githubSkillPath, 'utf8'));

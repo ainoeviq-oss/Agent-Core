@@ -8,10 +8,17 @@ All notable stable Agent Core changes are recorded here. The project follows sem
 
 - Autonomous execution memory pre-search now recalls bounded relevant failures, decisions, conflicts, and hard guardrails from the execution objective/node purposes before create/start/dynamic-add/retry paths, without indexing raw command text; degraded memory search fails open while enforced hard guardrails fail closed before process launch.
 - Execution memory pre-search has a dedicated local performance gate requiring real p95 latency below 500 ms.
+- Bounded runtime observability with `/health/metrics` and read-only `agent_core_health_metrics`, deterministic rolling p50/p95/p99/max summaries, and TTL/single-flight optional GitHub health probes.
+- Deterministic structured execution-output parser v1 with persisted source hashes and bounded test/build/deployment/performance/warning/error/security evidence.
+- Execution schema v4 verified-artifact index with hash/type/run lookup, startup reconciliation, advisory-only reuse discovery, and review-only purge suggestions.
+- Read-only `execution_workflow_advice` with optional route-valid `proposedNext` guidance and principal/project isolation.
+- Local improvisation performance gates for health metrics, bounded parsing, 1000-row artifact lookup, 128-node advisor analysis, and 100000 bounded metric observations.
 
 ### Changed
 
 - `capability_route` now injects a bounded deterministic projection of recalled non-guardrail memory into capability ranking and reports `memoryInjection` evidence, closing the gap between available DMF infrastructure and autonomous routing adoption.
+- Execution-derived intelligence now documents and enforces the authority order `PROCESS TRUTH > VERIFIED ARTIFACT TRUTH > PARSED STRUCTURED INTERPRETATION > ARTIFACT/CACHE SUGGESTION > WORKFLOW ADVICE`; cache awareness never skips current command execution.
+- Windows owned-process stop now terminates the spawned process tree so a stopped background command cannot leave descendants holding the routed working directory.
 
 ## [0.5.3] - 2026-08-27 — Stable
 
