@@ -13,6 +13,8 @@ coverage/
 !/tunnel-client/agent-core.example.yaml
 /capabilities/
 /plugin/agent-core/generated/
+/plugin/codespace/runtime/
+/plugin/codespace/dist/
 /Set-Tunnel-Key.bat
 /Set-Tunnel-Key.ps1
 /release/
