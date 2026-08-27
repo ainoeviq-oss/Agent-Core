@@ -1,0 +1,11 @@
+{
+  "name": "codespace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npx --no-install tsc -p tsconfig.json",
+    "test": "npx --no-install vitest run tests",
+    "verify": "npm run build && npm test"
+  }
+}
