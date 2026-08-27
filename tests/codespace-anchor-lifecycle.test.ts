@@ -67,9 +67,18 @@ describe('Codespace anchor lifecycle integration', () => {
     const devcontainer = JSON.parse(await read('.devcontainer/devcontainer.json')) as Record<string, any>;
     expect(devcontainer.forwardPorts).toContain(8765);
     expect(devcontainer.forwardPorts).not.toContain(8766);
-    expect(devcontainer.postCreateCommand).toBe('bash scripts/codespace/bootstrap.sh --phase create');
-    expect(devcontainer.postStartCommand).toBe('bash scripts/codespace/bootstrap.sh --phase start');
-    expect(devcontainer.postAttachCommand).toBe('bash scripts/codespace/ensure-running.sh --repair --phase attach');
+    expect(devcontainer.postCreateCommand).toEqual({
+      existing: 'bash scripts/codespace/bootstrap.sh --phase create',
+      codespace: 'bash plugin/codespace/scripts/ensure-running.sh --phase create',
+    });
+    expect(devcontainer.postStartCommand).toEqual({
+      existing: 'bash scripts/codespace/bootstrap.sh --phase start',
+      codespace: 'bash plugin/codespace/scripts/ensure-running.sh --phase start',
+    });
+    expect(devcontainer.postAttachCommand).toEqual({
+      existing: 'bash scripts/codespace/ensure-running.sh --repair --phase attach',
+      codespace: 'bash plugin/codespace/scripts/ensure-running.sh --phase attach',
+    });
   });
 
   it('exposes a proxy server that resolves the active target at request time', async () => {
