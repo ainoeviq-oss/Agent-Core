@@ -3,7 +3,7 @@ import { ContinuityPromoter, type ContinuityMemoryWriter, type ExecutionProcessC
 import type { RecordMemoryEventRequest } from '../memory/store.js';
 import type { MemoryCommitRequest, MemoryCommitResult, MemoryScope, MemoryStatus } from '../memory/types.js';
 import type { ExecutionLogStore, ExecutionResultMarker } from './log-store.js';
-import type { ExecutionStore } from './store.js';
+import type { ExecutionParsedOutputView, ExecutionStore } from './store.js';
 import type { ExecutionEventRecord } from './wake.js';
 
 export interface ExecutionMemoryWriter extends ContinuityMemoryWriter {
@@ -58,6 +58,29 @@ function digest(value: string): string {
 
 function safeError(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).slice(0, 2_000);
+}
+
+
+function parsedEvidenceProjection(parsed: ExecutionParsedOutputView | null): Record<string, unknown> | undefined {
+  if (!parsed?.available) return undefined;
+  const structured = parsed.structured;
+  const errorPatterns = structured.errorPatterns?.slice(0, 16).map((item) => ({ type: item.type, count: item.count }));
+  const performanceEntries = Object.entries(structured.performanceMetrics ?? {})
+    .filter(([, value]) => Number.isFinite(value))
+    .sort(([left], [right]) => left.localeCompare(right))
+    .slice(0, 32);
+  const projection: Record<string, unknown> = {
+    parserVersion: parsed.parserVersion,
+    confidence: parsed.confidence,
+    ...(structured.testResults ? { testResults: { ...structured.testResults } } : {}),
+    ...(structured.buildStatus ? { buildStatus: structured.buildStatus } : {}),
+    ...(structured.deploymentStatus ? { deploymentStatus: structured.deploymentStatus } : {}),
+    ...(performanceEntries.length ? { performanceMetrics: Object.fromEntries(performanceEntries) } : {}),
+    ...(structured.warningCount !== undefined ? { warningCount: structured.warningCount } : {}),
+    ...(structured.securityIssueCount !== undefined ? { securityIssueCount: structured.securityIssueCount } : {}),
+    ...(errorPatterns?.length ? { errorPatterns } : {}),
+  };
+  return Object.keys(projection).length > 2 ? projection : undefined;
 }
 
 function terminalRunEvent(eventType: string): boolean {
@@ -177,6 +200,9 @@ export class ExecutionMemoryBridge {
         return [];
       }
       const commandHash = digest(`${node.command}\n${node.cwd}`);
+      const parsedEvidence = parsedEvidenceProjection(
+        await this.store.getParsedOutput(scope, event.runId, event.nodeId, attempt.attemptNo),
+      );
       const evidence = {
         taskId,
         runId: event.runId,
@@ -199,6 +225,7 @@ export class ExecutionMemoryBridge {
           evidenceState: marker.evidenceState,
           artifacts: marker.evidence.artifacts.map((artifact) => ({ ...artifact })),
         } : {}),
+        ...(parsedEvidence ? { parsedEvidence } : {}),
       };
       const provenanceMetadata = {
         taskId,

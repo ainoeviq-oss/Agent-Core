@@ -208,6 +208,57 @@ describe('Execution-to-DMF continuity bridge', () => {
     await store.close();
   });
 
+  it('promotes only bounded parsed facts and never parsed error samples or raw secret text', async () => {
+    const f = await rootFixture('parsed-evidence');
+    const defaults = loadConfig({}, f.root);
+    const config = {
+      ...defaults.execution,
+      enabled: true,
+      dbPath: path.join(f.root, 'runtime', 'execution', 'parsed.sqlite'),
+      logRoot: path.join(f.root, 'runtime', 'execution', 'runs'),
+    };
+    const store = new ExecutionStore();
+    const writer = new SwitchableMemoryWriter();
+    writer.healthy = true;
+    const bridge = new ExecutionMemoryBridge(store, writer, new ExecutionLogStore(config.logRoot));
+    const service = new ExecutionService(config, new WorkspacePolicy([f.root]), { store, memoryBridge: bridge });
+    executions.push(service);
+    await service.open();
+    const scope: MemoryScope = { principalId: 'principal-parsed', projectId: f.root };
+    const secret = 'PARSED-BRIDGE-SECRET-123456789';
+    const created = await service.create(scope, {
+      objective: 'promote safe parsed test evidence',
+      continuityTaskId: 'continuity-task-parsed',
+      originRouteContextId: 'route-parsed',
+      nodes: [{
+        id: 'A', purpose: 'emit test summary',
+        command: nodeShellCommand(`
+          process.stdout.write('Test Files  1 passed (1)\\nTests  8 passed | 1 skipped (9)\\nPERF wake_ms=4.25\\n');
+          process.stderr.write('error: token=${secret} diagnostic sample\\n');
+        `),
+        cwd: f.work,
+      }],
+    });
+    await service.start(scope, created.runId);
+    await service.wait(scope, created.runId, created.lastEventSequence, { eventTypes: ['run.completed'] }, 5_000);
+    await bridge.drain();
+
+    const promoted = writer.commits.find((request) => request.canonicalKey === `execution.artifact.${created.runId}.A.1`);
+    expect(promoted).toBeTruthy();
+    expect(promoted?.value).toMatchObject({
+      parsedEvidence: {
+        parserVersion: '1.0.0',
+        testResults: { passed: 8, failed: 0, skipped: 1 },
+        performanceMetrics: { wake_ms: 4.25 },
+        errorPatterns: [{ type: 'generic', count: 1 }],
+      },
+    });
+    const serialized = JSON.stringify(promoted);
+    expect(serialized).not.toContain(secret);
+    expect(serialized).not.toContain('diagnostic sample');
+    expect(serialized).not.toContain('"sample"');
+  }, 10_000);
+
   it('queues a failed-node promotion while DMF is degraded, then replays it idempotently when DMF recovers', async () => {
     const f = await rootFixture('queue');
     const executionConfig = { ...loadConfig({}, f.root).execution, enabled: true, dbPath: path.join(f.root, 'runtime', 'execution', 'queue.sqlite') };

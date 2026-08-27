@@ -5,13 +5,14 @@ import type { WorkspacePolicy } from '../runtime/workspace.js';
 import type { RuntimeMetricRegistry } from '../runtime/metric-window.js';
 import { validateExecutionDag, type ExecutionNodeSpec } from './dag.js';
 import type { ExecutionArtifactEvidence } from './evidence.js';
-import { ExecutionLogStore } from './log-store.js';
+import { ExecutionLogStore, type ExecutionResultMarker } from './log-store.js';
 import type { ExecutionMemoryBridge } from './memory-bridge.js';
 import {
   type ExecutionMemoryPreSearchResult,
   type ExecutionMemorySearchNode,
   ExecutionMemoryPreSearch,
 } from './memory-search.js';
+import { ExecutionOutputParserService, EXECUTION_OUTPUT_PARSER_VERSION, type ExecutionOutputParserLike } from './output-parser.js';
 import { ExecutionRecovery } from './recovery.js';
 import { ExecutionCommandRunner } from './runner.js';
 import { ExecutionScheduler, type ExecutionRunnerLike } from './scheduler.js';
@@ -52,6 +53,7 @@ export interface ExecutionNodeEvidenceSummary {
   stdoutSha256: string | null;
   stderrSha256: string | null;
   artifacts: ExecutionArtifactEvidence[];
+  parsedOutput?: import('./store.js').ExecutionParsedOutputView | { available: false; status: 'unavailable'; parserVersion: string };
 }
 
 export interface ExecutionRunEvidenceSummary {
@@ -80,6 +82,7 @@ export interface ExecutionServiceDependencies {
   memoryBridge?: ExecutionMemoryBridge;
   memorySearch?: ExecutionMemoryPreSearch;
   metrics?: RuntimeMetricRegistry;
+  outputParser?: ExecutionOutputParserLike;
 }
 
 export type ExecutionServiceState = 'disabled' | 'idle' | 'healthy' | 'degraded' | 'closing' | 'closed';
@@ -105,6 +108,7 @@ export class ExecutionService {
   readonly memoryBridge?: ExecutionMemoryBridge;
   readonly memorySearch?: ExecutionMemoryPreSearch;
   readonly metrics?: RuntimeMetricRegistry;
+  readonly outputParser: ExecutionOutputParserLike;
   private unsubscribeBridge?: () => void;
   private opened = false;
   private closed = false;
@@ -119,9 +123,10 @@ export class ExecutionService {
     this.state = config.enabled ? 'idle' : 'disabled';
     this.store = dependencies.store ?? new ExecutionStore();
     this.metrics = dependencies.metrics;
+    this.logs = new ExecutionLogStore(config.logRoot);
+    this.outputParser = dependencies.outputParser ?? new ExecutionOutputParserService(this.store, this.logs, this.metrics);
     this.wake = dependencies.wake ?? new ExecutionWakeCoordinator(this.store, this.metrics);
     this.journal = dependencies.journal ?? new ExecutionEventJournal(this.store, this.wake);
-    this.logs = new ExecutionLogStore(config.logRoot);
     this.memoryBridge = dependencies.memoryBridge;
     this.memorySearch = dependencies.memorySearch;
     if (this.memoryBridge) {
@@ -130,7 +135,11 @@ export class ExecutionService {
       });
     }
     const runner = dependencies.runner ?? new ExecutionCommandRunner(this.logs, workspace);
-    this.scheduler = new ExecutionScheduler(this.store, runner, { logRoot: config.logRoot, journal: this.journal });
+    this.scheduler = new ExecutionScheduler(this.store, runner, {
+      logRoot: config.logRoot,
+      journal: this.journal,
+      onAttemptCompleted: (scope, marker) => this.captureParsedOutput(scope, marker),
+    });
   }
 
   get currentState(): ExecutionServiceState {
@@ -305,6 +314,8 @@ export class ExecutionService {
         continue;
       }
 
+      const parsedOutput = await this.store.getParsedOutput(scope, runId, node.nodeId, attempt.attemptNo)
+        ?? { available: false as const, status: 'unavailable' as const, parserVersion: EXECUTION_OUTPUT_PARSER_VERSION };
       const marker = await this.logs.readResult(runId, node.nodeId, attempt.attemptNo);
       if (!marker) {
         const terminal = ['succeeded', 'failed', 'interrupted', 'cancelled'].includes(attempt.state);
@@ -319,6 +330,7 @@ export class ExecutionService {
           stdoutSha256: attempt.stdoutSha256 ?? null,
           stderrSha256: attempt.stderrSha256 ?? null,
           artifacts: [],
+          parsedOutput,
         });
         continue;
       }
@@ -335,6 +347,7 @@ export class ExecutionService {
           stdoutSha256: marker.stdoutSha256,
           stderrSha256: marker.stderrSha256,
           artifacts: marker.evidence.artifacts.map((artifact) => ({ ...artifact })),
+          parsedOutput,
         });
       } else {
         evidenceNodes.push({
@@ -348,6 +361,7 @@ export class ExecutionService {
           stdoutSha256: marker.stdoutSha256,
           stderrSha256: marker.stderrSha256,
           artifacts: [],
+          parsedOutput,
         });
       }
     }
@@ -558,6 +572,20 @@ export class ExecutionService {
     try { await this.store.close(); } catch {}
     this.opened = false;
     this.state = 'closed';
+  }
+
+  private async captureParsedOutput(scope: ExecutionScope, marker: ExecutionResultMarker): Promise<void> {
+    try {
+      await this.outputParser.parseAttempt(scope, marker);
+    } catch (error) {
+      const code = error instanceof Error && 'code' in error && typeof (error as { code?: unknown }).code === 'string'
+        ? String((error as { code: string }).code)
+        : error instanceof Error ? error.name : 'EXECUTION_OUTPUT_PARSE_FAILED';
+      this.metrics?.failure('execution.output_parse.duration_ms', code);
+      await this.store.persistParsedOutputFailure(
+        scope, marker, this.outputParser.parserVersion ?? EXECUTION_OUTPUT_PARSER_VERSION, code,
+      ).catch(() => undefined);
+    }
   }
 
   private async preSearch(

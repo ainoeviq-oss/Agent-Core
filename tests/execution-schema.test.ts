@@ -46,15 +46,15 @@ afterEach(async () => {
 });
 
 describe('execution fabric SQLite schema and worker lifecycle', () => {
-  it('opens schema v2 with all execution tables, foreign keys, WAL, integrity, evidence column, and idempotent reopen', async () => {
+  it('opens schema v3 with parsed-output evidence, foreign keys, WAL, integrity, and idempotent reopen', async () => {
     const f = await fixture('open');
     const store = new ExecutionStore();
     stores.push(store);
     const opened = await store.open({ dbPath: f.dbPath, busyTimeoutMs: 1_500 }) as any;
-    expect(opened).toMatchObject({ priorUserVersion: 0, schemaVersion: 2, quickCheck: 'ok', integrity: 'ok' });
-    expect(EXECUTION_SCHEMA_VERSION).toBe(2);
+    expect(opened).toMatchObject({ priorUserVersion: 0, schemaVersion: 3, quickCheck: 'ok', integrity: 'ok' });
+    expect(EXECUTION_SCHEMA_VERSION).toBe(3);
     const status = await store.status();
-    expect(status).toMatchObject({ healthy: true, schemaVersion: 2, integrity: 'ok', dbPath: f.dbPath });
+    expect(status).toMatchObject({ healthy: true, schemaVersion: 3, integrity: 'ok', dbPath: f.dbPath });
     expect(Number((await store.client.query<{ foreign_keys: number }>('PRAGMA foreign_keys'))[0]?.foreign_keys)).toBe(1);
     expect(String((await store.client.query<{ journal_mode: string }>('PRAGMA journal_mode'))[0]?.journal_mode).toLowerCase()).toBe('wal');
     expect(Number((await store.client.query<{ wal_autocheckpoint: number }>('PRAGMA wal_autocheckpoint'))[0]?.wal_autocheckpoint)).toBe(0);
@@ -63,7 +63,7 @@ describe('execution fabric SQLite schema and worker lifecycle', () => {
 
     const db = new DatabaseSync(f.dbPath);
     try {
-      expect(Number(db.prepare('PRAGMA user_version').get()!.user_version)).toBe(2);
+      expect(Number(db.prepare('PRAGMA user_version').get()!.user_version)).toBe(3);
       const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'execution_%' ORDER BY name").all() as Array<{ name: string }>).map((row) => row.name);
       expect(tables).toEqual([
         'execution_attempts',
@@ -71,12 +71,14 @@ describe('execution fabric SQLite schema and worker lifecycle', () => {
         'execution_events',
         'execution_memory_sync_queue',
         'execution_nodes',
+        'execution_parsed_outputs',
         'execution_runs',
         'execution_schema_migrations',
       ]);
       expect(db.prepare('SELECT version, name FROM execution_schema_migrations ORDER BY version').all()).toEqual([
         { version: 1, name: '001_initial_execution_fabric' },
         { version: 2, name: '002_declared_artifact_evidence' },
+        { version: 3, name: '003_structured_output_evidence' },
       ]);
       const nodeColumns = (db.prepare('PRAGMA table_info(execution_nodes)').all() as Array<{ name: string }>).map((row) => row.name);
       expect(nodeColumns).toContain('expected_artifacts_json');
@@ -88,10 +90,10 @@ describe('execution fabric SQLite schema and worker lifecycle', () => {
     const reopened = new ExecutionStore();
     stores.push(reopened);
     const reopenedStatus = await reopened.open({ dbPath: f.dbPath, busyTimeoutMs: 1_500 }) as any;
-    expect(reopenedStatus).toMatchObject({ priorUserVersion: 2, schemaVersion: 2, quickCheck: 'ok', integrity: 'ok' });
+    expect(reopenedStatus).toMatchObject({ priorUserVersion: 3, schemaVersion: 3, quickCheck: 'ok', integrity: 'ok' });
   });
 
-  it('backs up and migrates an existing schema v1 database to v2 without losing existing runs or nodes', async () => {
+  it('backs up and migrates an existing schema v1 database to v3 without losing existing runs or nodes', async () => {
     const f = await fixture('migrate-v1');
     await mkdir(path.dirname(f.dbPath), { recursive: true });
     const v1Sql = EXECUTION_SCHEMA_SQL.replace("  expected_artifacts_json TEXT NOT NULL DEFAULT '[]',\n", '');
@@ -120,7 +122,7 @@ describe('execution fabric SQLite schema and worker lifecycle', () => {
     const store = new ExecutionStore();
     stores.push(store);
     const opened = await store.open({ dbPath: f.dbPath, busyTimeoutMs: 1_500 });
-    expect(opened).toMatchObject({ priorUserVersion: 1, schemaVersion: 2, integrity: 'ok' });
+    expect(opened).toMatchObject({ priorUserVersion: 1, schemaVersion: 3, integrity: 'ok' });
     expect(opened.migrationBackupPath).toBeTruthy();
     await expect(access(opened.migrationBackupPath!)).resolves.toBeUndefined();
     expect((await store.getRun({ principalId: 'principal-v1', projectId: 'project-v1' }, 'legacy-run'))?.objective)
@@ -137,6 +139,41 @@ describe('execution fabric SQLite schema and worker lifecycle', () => {
     } finally {
       backup.close();
     }
+  });
+
+  it('backs up schema v2 before adding parsed-output persistence in v3', async () => {
+    const f = await fixture('migrate-v2');
+    await mkdir(path.dirname(f.dbPath), { recursive: true });
+    const v2Sql = EXECUTION_SCHEMA_SQL
+      .replace(/CREATE TABLE IF NOT EXISTS execution_parsed_outputs \([\s\S]*?\n\);\n\n/, '')
+      .replace(/CREATE INDEX IF NOT EXISTS idx_execution_parsed_run_node[\s\S]*?;\n/, '');
+    const db = new DatabaseSync(f.dbPath);
+    try {
+      db.exec(v2Sql);
+      db.prepare('INSERT OR IGNORE INTO execution_schema_migrations(version, name, applied_at) VALUES (1, ?, ?)')
+        .run('001_initial_execution_fabric', Date.now());
+      db.prepare('INSERT OR IGNORE INTO execution_schema_migrations(version, name, applied_at) VALUES (2, ?, ?)')
+        .run('002_declared_artifact_evidence', Date.now());
+      db.exec('PRAGMA user_version = 2');
+    } finally { db.close(); }
+
+    const store = new ExecutionStore();
+    stores.push(store);
+    const opened = await store.open({ dbPath: f.dbPath, busyTimeoutMs: 1_500 });
+    expect(opened).toMatchObject({ priorUserVersion: 2, schemaVersion: 3, integrity: 'ok' });
+    expect(opened.migrationBackupPath).toBeTruthy();
+    await expect(access(opened.migrationBackupPath!)).resolves.toBeUndefined();
+
+    const backup = new DatabaseSync(opened.migrationBackupPath!, { readOnly: true });
+    try {
+      expect(Number(backup.prepare('PRAGMA user_version').get()!.user_version)).toBe(2);
+      const oldTables = (backup.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as Array<{ name: string }>).map((row) => row.name);
+      expect(oldTables).not.toContain('execution_parsed_outputs');
+      expect(String(backup.prepare('PRAGMA quick_check').get()!.quick_check)).toBe('ok');
+    } finally { backup.close(); }
+
+    const rows = await store.client.query<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' AND name='execution_parsed_outputs'");
+    expect(rows.map((row) => row.name)).toEqual(['execution_parsed_outputs']);
   });
 
   it('recovers committed runs after an uncommitted WAL writer is terminated and never invents the uncommitted run', async () => {

@@ -4,11 +4,13 @@ import path from 'node:path';
 import type { ExecutionWorkerSqlOperation } from './db-worker.js';
 import type { ValidatedExecutionArtifact, ValidatedExecutionNode } from './dag.js';
 import type { ExecutionAttemptPaths, ExecutionResultMarker } from './log-store.js';
+import type { ParsedExecutionOutput } from './output-parser.js';
 import {
   EVIDENCE_EXECUTION_MIGRATION,
   EXECUTION_SCHEMA_SQL,
   EXECUTION_SCHEMA_VERSION,
   INITIAL_EXECUTION_MIGRATION,
+  PARSED_OUTPUT_EXECUTION_MIGRATION,
 } from './schema.js';
 import type { ExecutionAttemptState, ExecutionNodeState, ExecutionRunState, ExecutionScope } from './types.js';
 import type { ExecutionEventFilter, ExecutionEventRecord, ExecutionEventType } from './wake.js';
@@ -90,6 +92,20 @@ export interface ExecutionAttemptRecord {
   stderrSha256?: string;
   error?: Record<string, unknown>;
 }
+
+export type ExecutionParsedOutputView = {
+  available: true;
+  status: 'available';
+  parserVersion: string;
+  confidence: number;
+  source: { stdoutSha256: string; stderrSha256: string };
+  structured: ParsedExecutionOutput['structured'];
+} | {
+  available: false;
+  status: 'degraded';
+  parserVersion: string;
+  failureCode: string;
+};
 
 export interface CreateExecutionRunInput {
   objective: string;
@@ -377,6 +393,11 @@ export class ExecutionStore {
         kind: 'run',
         sql: 'INSERT OR IGNORE INTO execution_schema_migrations(version, name, applied_at) VALUES (?, ?, ?)',
         params: [2, EVIDENCE_EXECUTION_MIGRATION, Date.now()],
+      },
+      {
+        kind: 'run',
+        sql: 'INSERT OR IGNORE INTO execution_schema_migrations(version, name, applied_at) VALUES (?, ?, ?)',
+        params: [3, PARSED_OUTPUT_EXECUTION_MIGRATION, Date.now()],
       },
       { kind: 'exec', sql: `PRAGMA user_version = ${EXECUTION_SCHEMA_VERSION}` },
     );
@@ -766,6 +787,94 @@ export class ExecutionStore {
       nodeId ? [runId, nodeId] : [runId],
     );
     return rows.map(mapAttempt);
+  }
+
+  async persistParsedOutput(
+    scope: ExecutionScope,
+    marker: ExecutionResultMarker,
+    parsed: ParsedExecutionOutput,
+  ): Promise<void> {
+    const run = await this.requireRun(scope, marker.runId);
+    void run;
+    const attempts = await this.listAttempts(scope, marker.runId, marker.nodeId);
+    const attempt = attempts.find((item) => item.attemptId === marker.attemptId && item.attemptNo === marker.attemptNo);
+    if (!attempt) fail('EXECUTION_ATTEMPT_NOT_FOUND', 'Execution attempt was not found for parsed output');
+    if (parsed.nodeId !== marker.nodeId || parsed.attemptNo !== marker.attemptNo) {
+      fail('EXECUTION_PARSED_OUTPUT_IDENTITY_MISMATCH', 'Parsed output identity does not match terminal attempt');
+    }
+    const parsedJson = stableExecutionJson(parsed);
+    if (parsedJson.length > 100_000) fail('EXECUTION_PARSED_OUTPUT_TOO_LARGE', 'Parsed execution output exceeds 100000 characters');
+    await this.client.transaction([{
+      kind: 'run',
+      sql: `INSERT OR IGNORE INTO execution_parsed_outputs(
+        attempt_id,run_id,node_id,attempt_no,parser_version,status,source_stdout_sha256,source_stderr_sha256,
+        parsed_json,confidence,failure_code,created_at
+      ) VALUES (?,?,?,?,?,'available',?,?,?,?,NULL,?)`,
+      params: [
+        marker.attemptId, marker.runId, marker.nodeId, marker.attemptNo, parsed.parserVersion,
+        parsed.source.stdoutSha256, parsed.source.stderrSha256, parsedJson, parsed.confidence, Date.now(),
+      ],
+    }]);
+  }
+
+  async persistParsedOutputFailure(
+    scope: ExecutionScope,
+    marker: ExecutionResultMarker,
+    parserVersion: string,
+    failureCode: string,
+  ): Promise<void> {
+    await this.requireRun(scope, marker.runId);
+    const safeVersion = boundedText(parserVersion || 'unknown', 'parserVersion', 128);
+    const safeCode = boundedText(failureCode || 'EXECUTION_OUTPUT_PARSE_FAILED', 'failureCode', 256)
+      .replace(/[^A-Za-z0-9_.:-]/g, '_');
+    await this.client.transaction([{
+      kind: 'run',
+      sql: `INSERT OR IGNORE INTO execution_parsed_outputs(
+        attempt_id,run_id,node_id,attempt_no,parser_version,status,source_stdout_sha256,source_stderr_sha256,
+        parsed_json,confidence,failure_code,created_at
+      ) VALUES (?,?,?,?,?,'degraded',?,?,NULL,NULL,?,?)`,
+      params: [
+        marker.attemptId, marker.runId, marker.nodeId, marker.attemptNo, safeVersion,
+        marker.stdoutSha256, marker.stderrSha256, safeCode, Date.now(),
+      ],
+    }]);
+  }
+
+  async getParsedOutput(
+    scope: ExecutionScope,
+    runId: string,
+    nodeId: string,
+    attemptNo: number,
+  ): Promise<ExecutionParsedOutputView | null> {
+    await this.requireRun(scope, runId);
+    const rows = await this.client.query<Record<string, unknown>>(
+      `SELECT parsed.parser_version, parsed.status, parsed.source_stdout_sha256, parsed.source_stderr_sha256,
+              parsed.parsed_json, parsed.confidence, parsed.failure_code
+         FROM execution_parsed_outputs AS parsed
+         JOIN execution_attempts AS attempt ON attempt.id = parsed.attempt_id
+         JOIN execution_runs AS run ON run.id = parsed.run_id
+        WHERE parsed.run_id = ? AND parsed.node_id = ? AND parsed.attempt_no = ?
+          AND run.principal_id = ? AND IFNULL(run.project_id, '') = ?
+        ORDER BY parsed.created_at DESC, parsed.parser_version DESC
+        LIMIT 1`,
+      [runId, nodeId, attemptNo, scope.principalId, scopeProject(scope)],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    const parserVersion = String(row.parser_version);
+    if (String(row.status) === 'degraded') {
+      return { available: false, status: 'degraded', parserVersion, failureCode: String(row.failure_code ?? 'EXECUTION_OUTPUT_PARSE_FAILED') };
+    }
+    const parsed = parseObject(row.parsed_json == null ? null : String(row.parsed_json)) as unknown as ParsedExecutionOutput | undefined;
+    if (!parsed) return null;
+    return {
+      available: true,
+      status: 'available',
+      parserVersion,
+      confidence: Number(row.confidence ?? parsed.confidence),
+      source: { stdoutSha256: String(row.source_stdout_sha256 ?? parsed.source.stdoutSha256), stderrSha256: String(row.source_stderr_sha256 ?? parsed.source.stderrSha256) },
+      structured: parsed.structured ?? {},
+    };
   }
 
   async listRecoverableAttempts(): Promise<ExecutionRecoverableAttempt[]> {

@@ -24,6 +24,7 @@ export interface ExecutionSchedulerStatus {
 export interface ExecutionSchedulerOptions {
   logRoot: string;
   journal?: ExecutionEventJournal;
+  onAttemptCompleted?: (scope: ExecutionScope, marker: ExecutionResultMarker) => Promise<void>;
 }
 
 interface ActiveExecution {
@@ -67,6 +68,7 @@ export class ExecutionScheduler {
   private readonly active = new Map<string, ActiveExecution>();
   private readonly paths: ExecutionLogStore;
   private readonly journal?: ExecutionEventJournal;
+  private readonly onAttemptCompleted?: (scope: ExecutionScope, marker: ExecutionResultMarker) => Promise<void>;
   private closing = false;
 
   constructor(
@@ -76,6 +78,7 @@ export class ExecutionScheduler {
   ) {
     this.paths = new ExecutionLogStore(options.logRoot);
     this.journal = options.journal;
+    this.onAttemptCompleted = options.onAttemptCompleted;
   }
 
   async startRun(scope: ExecutionScope, runId: string): Promise<ExecutionSchedulerStatus> {
@@ -256,6 +259,9 @@ export class ExecutionScheduler {
       (marker) => this.withRunLock(runId, async () => {
         this.active.delete(key);
         await this.store.completeAttempt(scope, marker);
+        if (this.onAttemptCompleted) {
+          try { await this.onAttemptCompleted(scope, marker); } catch { /* derived observers never override process truth */ }
+        }
         await this.emit(scope, runId, nodeTerminalEvent(marker), {
           nodeId: marker.nodeId,
           attemptId: marker.attemptId,

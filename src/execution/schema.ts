@@ -1,6 +1,7 @@
-export const EXECUTION_SCHEMA_VERSION = 2;
+export const EXECUTION_SCHEMA_VERSION = 3;
 export const INITIAL_EXECUTION_MIGRATION = '001_initial_execution_fabric';
 export const EVIDENCE_EXECUTION_MIGRATION = '002_declared_artifact_evidence';
+export const PARSED_OUTPUT_EXECUTION_MIGRATION = '003_structured_output_evidence';
 
 export const EXECUTION_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS execution_schema_migrations (
@@ -105,6 +106,23 @@ CREATE TABLE IF NOT EXISTS execution_memory_sync_queue (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS execution_parsed_outputs (
+  attempt_id TEXT NOT NULL REFERENCES execution_attempts(id) ON DELETE CASCADE,
+  run_id TEXT NOT NULL,
+  node_id TEXT NOT NULL,
+  attempt_no INTEGER NOT NULL CHECK (attempt_no >= 1),
+  parser_version TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('available','degraded')),
+  source_stdout_sha256 TEXT,
+  source_stderr_sha256 TEXT,
+  parsed_json TEXT,
+  confidence REAL,
+  failure_code TEXT,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY(attempt_id, parser_version),
+  FOREIGN KEY(run_id, node_id) REFERENCES execution_nodes(run_id, node_id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_execution_runs_scope_state
   ON execution_runs(principal_id, project_id, state, updated_at DESC, id);
 CREATE INDEX IF NOT EXISTS idx_execution_runs_continuity_task
@@ -119,4 +137,6 @@ CREATE INDEX IF NOT EXISTS idx_execution_events_type
   ON execution_events(run_id, event_type, sequence);
 CREATE INDEX IF NOT EXISTS idx_execution_sync_state
   ON execution_memory_sync_queue(state, updated_at, id);
+CREATE INDEX IF NOT EXISTS idx_execution_parsed_run_node
+  ON execution_parsed_outputs(run_id, node_id, attempt_no DESC, parser_version);
 `;
