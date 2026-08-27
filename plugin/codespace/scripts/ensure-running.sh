@@ -83,14 +83,23 @@ if [[ -f "$PROFILE_FILE" ]]; then
 fi
 
 connect_rc=0
-"$BIN" runtimes connect \
-  --alias "$ALIAS" \
-  --tunnel-id "$TUNNEL_ID" \
-  --profile "$PROFILE_NAME" \
-  --profile-dir "$PROFILE_DIR" \
-  --runtime-api-key env:CONTROL_PLANE_API_KEY \
-  --mcp-command "bash $ROOT/scripts/start-mcp.sh" \
-  >/dev/null || connect_rc=$?
+(
+  # tunnel-client v0.0.13 prefers tmux when it is installed. The Codespaces
+  # universal image currently ships tmux 3.0a, whose `source-file -` behavior
+  # is incompatible with that managed launch path. Make tmux unavailable only
+  # to this connect subprocess so tunnel-client uses its own managed process
+  # fallback. start-mcp.sh restores the original PATH before MCP starts.
+  source "$ROOT/scripts/runtime-environment.sh"
+  codespace_prepare_process_runtime "$ROOT"
+
+  "$BIN" runtimes connect \
+    --alias "$ALIAS" \
+    --tunnel-id "$TUNNEL_ID" \
+    --profile "$PROFILE_NAME" \
+    --profile-dir "$PROFILE_DIR" \
+    --runtime-api-key env:CONTROL_PLANE_API_KEY \
+    --mcp-command "bash $ROOT/scripts/start-mcp.sh"
+) >/dev/null || connect_rc=$?
 
 if [[ "$connect_rc" -ne 0 && "$connect_rc" -ne 2 ]]; then
   printf '%s\n' "[codespace] ERROR: managed runtime connect failed." >&2
