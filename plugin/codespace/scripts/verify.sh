@@ -62,6 +62,42 @@ NODE
     printf '%s\n' "[codespace] RED: managed runtime startup script is missing." >&2
     exit 1
   fi
+
+  node - "$STARTUP" <<'NODE'
+const fs = require('node:fs');
+const startup = fs.readFileSync(process.argv[2], 'utf8');
+
+const required = [
+  'TUNNEL_ID="${CODESPACE_TUNNEL_ID:-}"',
+  'TUNNEL_SOURCE="runtime/tunnel.json"',
+  'env:CONTROL_PLANE_TUNNEL_ID (legacy fallback)',
+  'actualTunnelId === expectedTunnelId',
+  "payload.runtime_state === 'ready'",
+  'payload.stale === false',
+];
+for (const needle of required) {
+  if (!startup.includes(needle)) {
+    console.error(`[codespace] RED: startup hardening check missing: ${needle}`);
+    process.exit(1);
+  }
+}
+
+const canonicalFallback = startup.indexOf('elif [[ -n "$CANONICAL_TUNNEL_ID" ]]');
+const legacyFallback = startup.indexOf('elif [[ -n "${CONTROL_PLANE_TUNNEL_ID:-}" ]]');
+if (canonicalFallback < 0 || legacyFallback < 0 || canonicalFallback >= legacyFallback) {
+  console.error('[codespace] RED: canonical codespace tunnel must precede the legacy tunnel fallback.');
+  process.exit(1);
+}
+
+const connectIndex = startup.indexOf('runtimes connect');
+const statusIndex = startup.indexOf('runtimes status');
+const doctorIndex = startup.indexOf('"$BIN" doctor');
+if (connectIndex < 0 || statusIndex < 0 || doctorIndex < 0 || !(connectIndex < statusIndex && statusIndex < doctorIndex)) {
+  console.error('[codespace] RED: lifecycle order must be connect -> status gate -> doctor.');
+  process.exit(1);
+}
+NODE
+
   if ! grep -Fq -- '--mcp-command' "$STARTUP"; then
     printf '%s\n' "[codespace] RED: managed runtime startup does not use --mcp-command." >&2
     exit 1
