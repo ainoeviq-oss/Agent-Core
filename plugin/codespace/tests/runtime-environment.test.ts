@@ -21,21 +21,21 @@ describe('managed runtime environment fallback', () => {
   it('makes tmux unavailable only for the managed launch and restores the original PATH', () => {
     const helper = path.resolve('plugin/codespace/scripts/runtime-environment.sh');
     const originalPath = '/usr/local/bin:/usr/bin:/bin';
-    const script = String.raw`
-set -u
-source "$1"
-codespace_prepare_process_runtime "$2"
-printf 'ORIGINAL=%s\n' "$CODESPACE_ORIGINAL_PATH"
-printf 'TMUX=%s\n' "$(command -v tmux)"
-set +e
-tmux -V >/dev/null 2>&1
-rc=$?
-set -e
-printf 'TMUX_RC=%s\n' "$rc"
-codespace_restore_original_path
-printf 'RESTORED=%s\n' "$PATH"
-printf 'MARKER=%s\n' "${CODESPACE_ORIGINAL_PATH-unset}"
-`;
+    const script = [
+      'set -u',
+      'source "$1"',
+      'codespace_prepare_process_runtime "$2"',
+      'printf \'ORIGINAL=%s\\n\' "$CODESPACE_ORIGINAL_PATH"',
+      'printf \'TMUX=%s\\n\' "$(command -v tmux)"',
+      'set +e',
+      'tmux -V >/dev/null 2>&1',
+      'rc=$?',
+      'set -e',
+      'printf \'TMUX_RC=%s\\n\' "$rc"',
+      'codespace_restore_original_path',
+      'printf \'RESTORED=%s\\n\' "$PATH"',
+      'printf \'MARKER=%s\\n\' "${CODESPACE_ORIGINAL_PATH-unset}"',
+    ].join('\n');
 
     const result = spawnSync('/bin/bash', ['-c', script, 'bash', helper, packageRoot], {
       env: { ...process.env, PATH: originalPath },
