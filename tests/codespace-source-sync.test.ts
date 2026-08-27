@@ -84,7 +84,7 @@ describe('Codespace source synchronization', () => {
     expect(result.stdout).toContain('fast-forwarded main');
   });
 
-  posixIt('refuses to modify a checkout with tracked local changes', async () => {
+  posixIt('preserves tracked local work and skips source synchronization without failing lifecycle startup', async () => {
     const { publisher, checkout } = await makeFixture();
     const before = git(checkout, 'rev-parse', 'HEAD');
     await publishNext(publisher);
@@ -92,10 +92,11 @@ describe('Codespace source synchronization', () => {
 
     const result = runSync(checkout);
 
-    expect(result.status).toBe(13);
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
     expect(git(checkout, 'rev-parse', 'HEAD')).toBe(before);
     expect(await readFile(path.join(checkout, 'version.txt'), 'utf8')).toBe('local-dirty\n');
-    expect(result.stderr).toContain('tracked local changes');
+    expect(result.stdout).toContain('tracked local changes');
+    expect(result.stdout).toContain('preserving local work');
   });
 
   posixIt('fails closed on a non-main checkout', async () => {

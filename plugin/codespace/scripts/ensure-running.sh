@@ -24,10 +24,38 @@ case "$PHASE" in
     ;;
 esac
 
-if [[ -z "${CONTROL_PLANE_API_KEY:-}" ]]; then
-  printf '%s\n' "CONTROL_PLANE_API_KEY" >&2
+# postStart and postAttach can run close together. Serialize lifecycle recovery so
+# one invocation cannot stop a runtime another invocation has just registered.
+LOCK_FILE="${TMPDIR:-/tmp}/codespace-ensure-running.lock"
+exec 9>"$LOCK_FILE"
+if ! flock -w 120 9; then
+  printf '%s\n' "[codespace] ERROR: timed out waiting for lifecycle recovery lock." >&2
   exit 1
 fi
+
+RUNTIME_API_KEY_FILE="$REPO_ROOT/secrets/github/CONTROL_PLANE_API_KEY"
+
+# Codespaces lifecycle secrets may be available during create/start but absent
+# from later tool children. Persist an injected credential only into ignored
+# workspace state with owner-only permissions, then always reference it by file.
+# The value is never printed and is removed from the remaining startup env.
+if [[ -n "${CONTROL_PLANE_API_KEY:-}" ]]; then
+  mkdir -p "$(dirname "$RUNTIME_API_KEY_FILE")"
+  umask 077
+  runtime_api_key_tmp="$RUNTIME_API_KEY_FILE.tmp.$$"
+  printf '%s\n' "$CONTROL_PLANE_API_KEY" > "$runtime_api_key_tmp"
+  chmod 600 "$runtime_api_key_tmp"
+  mv -f "$runtime_api_key_tmp" "$RUNTIME_API_KEY_FILE"
+fi
+
+if [[ -s "$RUNTIME_API_KEY_FILE" ]]; then
+  chmod 600 "$RUNTIME_API_KEY_FILE"
+  RUNTIME_API_KEY_REF="file:$RUNTIME_API_KEY_FILE"
+else
+  printf '%s\n' "[codespace] ERROR: runtime credential is unavailable." >&2
+  exit 1
+fi
+unset CONTROL_PLANE_API_KEY
 
 CANONICAL_TUNNEL_ID=""
 if [[ -f "$ROOT/runtime/tunnel.json" ]]; then
@@ -41,17 +69,29 @@ try {
 ' "$ROOT/runtime/tunnel.json")"
 fi
 
-# The codespace bridge owns its tunnel identity. Prefer its dedicated secret,
-# then its canonical runtime file. CONTROL_PLANE_TUNNEL_ID is retained only as
-# a legacy migration fallback so the older Agent Core tunnel cannot override a
-# configured codespace tunnel after restart.
+TRACKED_TUNNEL_ID="$(node -e '
+const fs = require("node:fs");
+const file = process.argv[1];
+try {
+  const value = JSON.parse(fs.readFileSync(file, "utf8"));
+  if (typeof value.tunnelId === "string") process.stdout.write(value.tunnelId);
+} catch {}
+' "$ROOT/config/tunnel.defaults.json")"
+
+# The codespace bridge owns a fixed, tracked non-secret tunnel identity. An
+# explicit codespace override wins, then the tracked default rebuilds runtime
+# state from scratch. Existing runtime state and the legacy Agent Core variable
+# remain migration fallbacks only.
 TUNNEL_SOURCE=""
 TUNNEL_ID="${CODESPACE_TUNNEL_ID:-}"
 if [[ -n "$TUNNEL_ID" ]]; then
   TUNNEL_SOURCE="env:CODESPACE_TUNNEL_ID"
+elif [[ -n "$TRACKED_TUNNEL_ID" ]]; then
+  TUNNEL_ID="$TRACKED_TUNNEL_ID"
+  TUNNEL_SOURCE="config/tunnel.defaults.json"
 elif [[ -n "$CANONICAL_TUNNEL_ID" ]]; then
   TUNNEL_ID="$CANONICAL_TUNNEL_ID"
-  TUNNEL_SOURCE="runtime/tunnel.json"
+  TUNNEL_SOURCE="runtime/tunnel.json (migration fallback)"
 elif [[ -n "${CONTROL_PLANE_TUNNEL_ID:-}" ]]; then
   TUNNEL_ID="$CONTROL_PLANE_TUNNEL_ID"
   TUNNEL_SOURCE="env:CONTROL_PLANE_TUNNEL_ID (legacy fallback)"
@@ -76,27 +116,65 @@ printf '%s\n' "[codespace] tunnel source=$TUNNEL_SOURCE tunnel_id=$TUNNEL_ID"
 
 bash "$ROOT/scripts/install-tunnel-client.sh"
 
+mkdir -p "$PROFILE_DIR" "$STATE_DIR"
+export TUNNEL_CLIENT_STATE_DIR="$STATE_DIR"
+
+# A locally healthy process can still have stale platform registration after a
+# Codespace restart. Lifecycle start/attach therefore performs one controlled
+# stop before reconnecting the same alias+tunnel. This is intentionally skipped
+# for manual invocations so diagnostics do not flap a healthy tunnel.
+case "$PHASE" in
+  start|attach)
+    "$BIN" runtimes stop "$ALIAS" >/dev/null 2>&1 || true
+    ;;
+esac
+
+command -v node >/dev/null 2>&1 || {
+  printf '%s\n' "[codespace] ERROR: node is unavailable." >&2
+  exit 1
+}
+command -v npm >/dev/null 2>&1 || {
+  printf '%s\n' "[codespace] ERROR: npm is unavailable." >&2
+  exit 1
+}
+
+needs_dependencies=false
+if [[ ! -x "$ROOT/node_modules/.bin/tsc" || ! -x "$ROOT/node_modules/.bin/vitest" ]]; then
+  needs_dependencies=true
+elif [[ ! -f "$ROOT/node_modules/@modelcontextprotocol/sdk/package.json" || ! -f "$ROOT/node_modules/zod/package.json" ]]; then
+  needs_dependencies=true
+elif ! (cd "$ROOT" && npm ls --depth=0 >/dev/null 2>&1); then
+  needs_dependencies=true
+fi
+
+if [[ "$needs_dependencies" == true ]]; then
+  printf '%s\n' "[codespace] restoring standalone plugin dependencies."
+  (
+    cd "$ROOT"
+    npm ci --ignore-scripts
+  )
+fi
+
 needs_build=false
 if [[ ! -f "$ROOT/dist/server.js" ]]; then
   needs_build=true
 elif find "$ROOT/src" -type f -name '*.ts' -newer "$ROOT/dist/server.js" -print -quit | grep -q .; then
   needs_build=true
+elif [[ "$ROOT/package.json" -nt "$ROOT/dist/server.js" || "$ROOT/package-lock.json" -nt "$ROOT/dist/server.js" ]]; then
+  needs_build=true
 fi
 
 if [[ "$needs_build" == true ]]; then
   (
-    cd "$REPO_ROOT"
-    npx tsc -p plugin/codespace/tsconfig.json
+    cd "$ROOT"
+    "$ROOT/node_modules/.bin/tsc" -p tsconfig.json
   )
 fi
 
 (
   cd "$REPO_ROOT"
-  NODE_ENV=test npx vitest run plugin/codespace/tests/mcp.integration.test.ts
+  NODE_ENV=test "$ROOT/node_modules/.bin/vitest" run plugin/codespace/tests/mcp.integration.test.ts
 )
-
-mkdir -p "$PROFILE_DIR" "$STATE_DIR"
-export TUNNEL_CLIENT_STATE_DIR="$STATE_DIR"
 
 connect_rc=0
 (
@@ -113,7 +191,7 @@ connect_rc=0
     --tunnel-id "$TUNNEL_ID" \
     --profile "$PROFILE_NAME" \
     --profile-dir "$PROFILE_DIR" \
-    --runtime-api-key env:CONTROL_PLANE_API_KEY \
+    --runtime-api-key "$RUNTIME_API_KEY_REF" \
     --mcp-command "bash $ROOT/scripts/start-mcp.sh"
 ) >/dev/null || connect_rc=$?
 
@@ -122,27 +200,55 @@ if [[ "$connect_rc" -ne 0 && "$connect_rc" -ne 2 ]]; then
   exit "$connect_rc"
 fi
 
-status_json="$($BIN runtimes status "$ALIAS" --json)"
-EXPECTED_TUNNEL_ID="$TUNNEL_ID" STATUS_JSON="$status_json" node <<'NODE'
-const payload = JSON.parse(process.env.STATUS_JSON || '{}');
-const expectedTunnelId = process.env.EXPECTED_TUNNEL_ID;
-const actualTunnelId = payload.tunnel_id;
-const running = payload.process_running === true;
-const healthy = payload.healthy === true;
-const ready = payload.ready === true;
-const runtimeReady = payload.runtime_state === 'ready';
-const fresh = payload.stale === false;
-const tunnelMatches = actualTunnelId === expectedTunnelId;
-if (!running || !healthy || !ready || !runtimeReady || !fresh || !tunnelMatches) {
-  console.error(
-    `[codespace] ERROR: managed runtime gate failed (` +
-    `tunnel_id=${actualTunnelId ?? '<missing>'} expected_tunnel_id=${expectedTunnelId ?? '<missing>'} ` +
-    `process_running=${running} healthy=${healthy} ready=${ready} ` +
-    `runtime_state=${payload.runtime_state ?? '<missing>'} stale=${payload.stale ?? '<missing>'}).`,
-  );
+status_json=""
+status_gate_passed=false
+for _ in $(seq 1 10); do
+  status_json="$($BIN runtimes status "$ALIAS" --json 2>/dev/null || true)"
+  if EXPECTED_TUNNEL_ID="$TUNNEL_ID" STATUS_JSON="$status_json" node <<'NODE'
+try {
+  const payload = JSON.parse(process.env.STATUS_JSON || '{}');
+  const expectedTunnelId = process.env.EXPECTED_TUNNEL_ID;
+  const localReady =
+    payload.process_running === true &&
+    payload.healthy === true &&
+    payload.ready === true &&
+    payload.runtime_state === 'ready' &&
+    payload.stale === false &&
+    payload.tunnel_id === expectedTunnelId;
+  const remoteReady =
+    payload.remote_lookup_attempted === true &&
+    payload.remote_error === '' &&
+    payload.remote?.id === expectedTunnelId &&
+    typeof payload.remote_lookup_auth_ref === 'string' &&
+    payload.remote_lookup_auth_ref.startsWith('file:');
+  process.exit(localReady && remoteReady ? 0 : 1);
+} catch {
   process.exit(1);
 }
 NODE
+  then
+    status_gate_passed=true
+    break
+  fi
+  sleep 1
+done
+
+if [[ "$status_gate_passed" != true ]]; then
+  EXPECTED_TUNNEL_ID="$TUNNEL_ID" STATUS_JSON="$status_json" node <<'NODE'
+let payload = {};
+try { payload = JSON.parse(process.env.STATUS_JSON || '{}'); } catch {}
+const expectedTunnelId = process.env.EXPECTED_TUNNEL_ID;
+console.error(
+  `[codespace] ERROR: managed runtime/platform gate failed (` +
+  `tunnel_id=${payload.tunnel_id ?? '<missing>'} expected_tunnel_id=${expectedTunnelId ?? '<missing>'} ` +
+  `process_running=${payload.process_running === true} healthy=${payload.healthy === true} ` +
+  `ready=${payload.ready === true} runtime_state=${payload.runtime_state ?? '<missing>'} ` +
+  `stale=${payload.stale ?? '<missing>'} remote_lookup_attempted=${payload.remote_lookup_attempted === true} ` +
+  `remote_error=${payload.remote_error || '<none>'} remote_id=${payload.remote?.id ?? '<missing>'}).`,
+);
+NODE
+  exit 1
+fi
 
 # Run diagnostics only after connect + status reconciliation. This prevents a
 # stale generated profile from being reported as the active tunnel during

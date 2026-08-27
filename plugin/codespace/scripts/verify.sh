@@ -68,10 +68,20 @@ const fs = require('node:fs');
 const startup = fs.readFileSync(process.argv[2], 'utf8');
 
 const required = [
+  'RUNTIME_API_KEY_FILE="$REPO_ROOT/secrets/github/CONTROL_PLANE_API_KEY"',
+  'RUNTIME_API_KEY_REF="file:$RUNTIME_API_KEY_FILE"',
+  '--runtime-api-key "$RUNTIME_API_KEY_REF"',
+  'TRACKED_TUNNEL_ID',
+  'config/tunnel.defaults.json',
   'TUNNEL_ID="${CODESPACE_TUNNEL_ID:-}"',
-  'TUNNEL_SOURCE="runtime/tunnel.json"',
+  'TUNNEL_SOURCE="config/tunnel.defaults.json"',
   'env:CONTROL_PLANE_TUNNEL_ID (legacy fallback)',
-  'actualTunnelId === expectedTunnelId',
+  'flock -w 120 9',
+  'runtimes stop "$ALIAS"',
+  'remote_lookup_attempted === true',
+  "payload.remote_lookup_auth_ref.startsWith('file:')",
+  'payload.remote?.id === expectedTunnelId',
+  'payload.tunnel_id === expectedTunnelId',
   "payload.runtime_state === 'ready'",
   'payload.stale === false',
 ];
@@ -82,10 +92,14 @@ for (const needle of required) {
   }
 }
 
+const trackedFallback = startup.indexOf('elif [[ -n "$TRACKED_TUNNEL_ID" ]]');
 const canonicalFallback = startup.indexOf('elif [[ -n "$CANONICAL_TUNNEL_ID" ]]');
 const legacyFallback = startup.indexOf('elif [[ -n "${CONTROL_PLANE_TUNNEL_ID:-}" ]]');
-if (canonicalFallback < 0 || legacyFallback < 0 || canonicalFallback >= legacyFallback) {
-  console.error('[codespace] RED: canonical codespace tunnel must precede the legacy tunnel fallback.');
+if (
+  trackedFallback < 0 || canonicalFallback < 0 || legacyFallback < 0 ||
+  !(trackedFallback < canonicalFallback && canonicalFallback < legacyFallback)
+) {
+  console.error('[codespace] RED: tracked tunnel default must precede runtime and legacy fallbacks.');
   process.exit(1);
 }
 

@@ -1,8 +1,11 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 let base: string;
 let packageRoot: string;
@@ -19,7 +22,7 @@ afterEach(async () => {
 
 describe('managed runtime environment fallback', () => {
   it('makes tmux unavailable only for the managed launch and restores the original PATH', () => {
-    const helper = path.resolve('plugin/codespace/scripts/runtime-environment.sh');
+    const helper = path.join(pluginRoot, 'scripts', 'runtime-environment.sh');
     const originalPath = '/usr/local/bin:/usr/bin:/bin';
     const script = [
       'set -u',
