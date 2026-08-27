@@ -4,6 +4,10 @@ All notable stable Agent Core changes are recorded here. The project follows sem
 
 ## Unreleased
 
+### Documentation
+
+- Recorded the Windows installation cutover procedure and the defects found while moving the authoritative installation to a fresh canonical clone: empty `runtime/data` authentication stores on a clone, deletion of an ignored-path secret file that the tracked tunnel template and `tests/unified-launcher.test.ts` require, a machine-level root locator left pointing at the previous installation, leaked tray-test processes, and a stale cutover marker asserting a success that had rolled back.
+
 ### Added
 
 - Autonomous execution memory pre-search now recalls bounded relevant failures, decisions, conflicts, and hard guardrails from the execution objective/node purposes before create/start/dynamic-add/retry paths, without indexing raw command text; degraded memory search fails open while enforced hard guardrails fail closed before process launch.

@@ -14,6 +14,7 @@ The current documentation tree is intentionally compact. Historical implementati
 ## Stability and operations
 
 - [`stability.md`](stability.md) — maintained stability baseline and release gates.
+- [`windows-installation-cutover.md`](windows-installation-cutover.md) — moving a Windows installation to a fresh canonical clone while preserving connector authentication identity.
 - [`../SECURITY.md`](../SECURITY.md) — repository/runtime security model and secret boundaries.
 
 ## Roadmap
