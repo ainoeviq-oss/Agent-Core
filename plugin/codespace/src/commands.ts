@@ -81,6 +81,7 @@ export async function executeCommand(
 
     let timedOut = false;
     let settled = false;
+    let timeoutTimer: NodeJS.Timeout | undefined;
     let forceTimer: NodeJS.Timeout | undefined;
 
     child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
@@ -89,7 +90,7 @@ export async function executeCommand(
     child.once('error', (error) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timeoutTimer);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
       if (forceTimer) clearTimeout(forceTimer);
       reject(error);
     });
@@ -97,7 +98,7 @@ export async function executeCommand(
     child.once('close', (exitCode) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timeoutTimer);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
       if (forceTimer) clearTimeout(forceTimer);
       resolve({
         exitCode,
@@ -108,7 +109,7 @@ export async function executeCommand(
       });
     });
 
-    const timeoutTimer = setTimeout(() => {
+    timeoutTimer = setTimeout(() => {
       timedOut = true;
       terminateProcess(child.pid, 'SIGTERM');
       forceTimer = setTimeout(() => terminateProcess(child.pid, 'SIGKILL'), 250);
