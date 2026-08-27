@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { ExecutionConfig } from '../config.js';
 import type { ExecutionContinuitySummary } from '../continuity/snapshot.js';
 import type { WorkspacePolicy } from '../runtime/workspace.js';
+import type { RuntimeMetricRegistry } from '../runtime/metric-window.js';
 import { validateExecutionDag, type ExecutionNodeSpec } from './dag.js';
 import type { ExecutionArtifactEvidence } from './evidence.js';
 import { ExecutionLogStore } from './log-store.js';
@@ -78,6 +79,7 @@ export interface ExecutionServiceDependencies {
   journal?: ExecutionEventJournal;
   memoryBridge?: ExecutionMemoryBridge;
   memorySearch?: ExecutionMemoryPreSearch;
+  metrics?: RuntimeMetricRegistry;
 }
 
 export type ExecutionServiceState = 'disabled' | 'idle' | 'healthy' | 'degraded' | 'closing' | 'closed';
@@ -102,6 +104,7 @@ export class ExecutionService {
   readonly scheduler: ExecutionScheduler;
   readonly memoryBridge?: ExecutionMemoryBridge;
   readonly memorySearch?: ExecutionMemoryPreSearch;
+  readonly metrics?: RuntimeMetricRegistry;
   private unsubscribeBridge?: () => void;
   private opened = false;
   private closed = false;
@@ -115,7 +118,8 @@ export class ExecutionService {
   ) {
     this.state = config.enabled ? 'idle' : 'disabled';
     this.store = dependencies.store ?? new ExecutionStore();
-    this.wake = dependencies.wake ?? new ExecutionWakeCoordinator(this.store);
+    this.metrics = dependencies.metrics;
+    this.wake = dependencies.wake ?? new ExecutionWakeCoordinator(this.store, this.metrics);
     this.journal = dependencies.journal ?? new ExecutionEventJournal(this.store, this.wake);
     this.logs = new ExecutionLogStore(config.logRoot);
     this.memoryBridge = dependencies.memoryBridge;
@@ -210,7 +214,16 @@ export class ExecutionService {
         `maxConcurrency must be between 1 and configured maximum ${this.config.maxConcurrency}`,
       );
     }
-    const graph = await validateExecutionDag(input.nodes, { workspace: this.workspace, maxNodes: this.config.maxNodes });
+    const validationStarted = performance.now();
+    let graph;
+    try {
+      graph = await validateExecutionDag(input.nodes, { workspace: this.workspace, maxNodes: this.config.maxNodes });
+    } catch (error) {
+      this.metrics?.failure('execution.dag_validation.duration_ms', error instanceof Error ? error.name : 'EXECUTION_DAG_ERROR');
+      throw error;
+    } finally {
+      this.metrics?.observe('execution.dag_validation.duration_ms', Math.max(0, performance.now() - validationStarted));
+    }
     const memoryPreSearch = await this.preSearch(scope, input.objective, graph.nodes);
     this.assertMemoryPreSearchAllowed(memoryPreSearch);
     const run = await this.store.createRun(scope, {
@@ -250,7 +263,15 @@ export class ExecutionService {
       nodes.map((node) => ({ id: node.nodeId, purpose: node.purpose })),
     );
     this.assertMemoryPreSearchAllowed(memoryPreSearch);
-    await this.scheduler.startRun(scope, runId);
+    const dispatchStarted = performance.now();
+    try {
+      await this.scheduler.startRun(scope, runId);
+    } catch (error) {
+      this.metrics?.failure('execution.dispatch.duration_ms', error instanceof Error ? error.name : 'EXECUTION_DISPATCH_ERROR');
+      throw error;
+    } finally {
+      this.metrics?.observe('execution.dispatch.duration_ms', Math.max(0, performance.now() - dispatchStarted));
+    }
     const view = await this.status(scope, runId);
     if (!view) throw new ExecutionStoreError('EXECUTION_RUN_NOT_FOUND', 'Execution run was not found in authenticated scope');
     return memoryPreSearch ? { ...view, memoryPreSearch } : view;
@@ -357,10 +378,19 @@ export class ExecutionService {
       continueOnFailure: node.continueOnFailure,
       expectedArtifacts: node.expectedArtifacts.map((artifact) => ({ ...artifact })),
     }));
-    const graph = await validateExecutionDag([...existingSpecs, ...nodes], {
-      workspace: this.workspace,
-      maxNodes: this.config.maxNodes,
-    });
+    const validationStarted = performance.now();
+    let graph;
+    try {
+      graph = await validateExecutionDag([...existingSpecs, ...nodes], {
+        workspace: this.workspace,
+        maxNodes: this.config.maxNodes,
+      });
+    } catch (error) {
+      this.metrics?.failure('execution.dag_validation.duration_ms', error instanceof Error ? error.name : 'EXECUTION_DAG_ERROR');
+      throw error;
+    } finally {
+      this.metrics?.observe('execution.dag_validation.duration_ms', Math.max(0, performance.now() - validationStarted));
+    }
     const requestedIds = new Set(nodes.map((node) => node.id.trim()));
     const validatedNew = graph.nodes.filter((node) => requestedIds.has(node.id));
     if (validatedNew.length !== nodes.length) {
@@ -376,7 +406,11 @@ export class ExecutionService {
         payload: { dependsOn: node.dependsOn, timeoutMs: node.timeoutMs, dynamic: true },
       });
     }
-    if (current.state === 'running') await this.scheduler.startRun(scope, runId);
+    if (current.state === 'running') {
+      const dispatchStarted = performance.now();
+      try { await this.scheduler.startRun(scope, runId); }
+      finally { this.metrics?.observe('execution.dispatch.duration_ms', Math.max(0, performance.now() - dispatchStarted)); }
+    }
     const view = await this.status(scope, runId);
     if (!view) throw new ExecutionStoreError('EXECUTION_RUN_NOT_FOUND', 'Execution run was not found in authenticated scope');
     return memoryPreSearch ? { ...view, memoryPreSearch } : view;
@@ -390,7 +424,9 @@ export class ExecutionService {
     if (!node) throw new ExecutionStoreError('EXECUTION_NODE_NOT_FOUND', 'Execution node was not found');
     const memoryPreSearch = await this.preSearch(scope, run.objective, [{ id: node.nodeId, purpose: node.purpose }]);
     this.assertMemoryPreSearchAllowed(memoryPreSearch);
-    await this.scheduler.retryNode(scope, runId, nodeId);
+    const dispatchStarted = performance.now();
+    try { await this.scheduler.retryNode(scope, runId, nodeId); }
+    finally { this.metrics?.observe('execution.dispatch.duration_ms', Math.max(0, performance.now() - dispatchStarted)); }
     const view = await this.status(scope, runId);
     if (!view) throw new ExecutionStoreError('EXECUTION_RUN_NOT_FOUND', 'Execution run was not found in authenticated scope');
     return memoryPreSearch ? { ...view, memoryPreSearch } : view;

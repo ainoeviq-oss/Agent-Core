@@ -131,7 +131,7 @@ describe('first-class execution MCP surface', () => {
     });
     const tools = listed.result.tools as Array<Record<string, any>>;
     const names = tools.map((tool) => tool.name);
-    expect(names).toHaveLength(52);
+    expect(names).toHaveLength(53);
     const execution = [
       'execution_create', 'execution_start', 'execution_status', 'execution_wait',
       'execution_logs', 'execution_add_nodes', 'execution_retry', 'execution_cancel',

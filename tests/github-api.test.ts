@@ -5,11 +5,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.js';
 import { GitHubApiService } from '../src/github/api-service.js';
 import { GitHubCredentialProvider } from '../src/github/credentials.js';
+import { RuntimeMetricRegistry } from '../src/runtime/metric-window.js';
 
 const roots: string[] = [];
 const TOKEN = 'SENTINEL_GITHUB_API_TOKEN_DO_NOT_LEAK';
 
-async function setup(fetchImpl: typeof fetch) {
+async function setup(fetchImpl: typeof fetch, metrics?: RuntimeMetricRegistry) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'agent-core-github-api-'));
   roots.push(root);
   const config = loadConfig({}, root).github;
@@ -17,7 +18,7 @@ async function setup(fetchImpl: typeof fetch) {
   await writeFile(config.tokenFile, TOKEN, 'utf8');
   await writeFile(config.packagesTokenFile, 'PACKAGES_SENTINEL', 'utf8');
   const credentials = new GitHubCredentialProvider(config);
-  return { config, credentials, api: new GitHubApiService(config, credentials, fetchImpl) };
+  return { config, credentials, api: new GitHubApiService(config, credentials, fetchImpl, metrics) };
 }
 
 afterEach(async () => {
@@ -25,6 +26,23 @@ afterEach(async () => {
 });
 
 describe('GitHubApiService', () => {
+  it('records bounded API latency and safe failure codes for ordinary GitHub requests', async () => {
+    const metrics = new RuntimeMetricRegistry();
+    const okFetch: typeof fetch = async () => new Response(JSON.stringify({ login: 'safe-user' }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+    const { api } = await setup(okFetch, metrics);
+    await api.request({ method: 'GET', endpoint: '/user' });
+    expect(metrics.metric('github.api.duration_ms').count).toBe(1);
+
+    const failingFetch: typeof fetch = async () => { throw new Error(`network ${TOKEN}`); };
+    const second = await setup(failingFetch, metrics);
+    await second.api.request({ method: 'GET', endpoint: '/user' }).catch(() => undefined);
+    const snapshot = metrics.metric('github.api.duration_ms');
+    expect(snapshot.count).toBe(2);
+    expect(snapshot.lastFailureCode).toBe('GITHUB_API_ERROR');
+  });
+
   it('builds authenticated versioned requests for relative endpoints', async () => {
     let seenUrl = '';
     let seenInit: RequestInit | undefined;

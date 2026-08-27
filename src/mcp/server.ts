@@ -7,6 +7,7 @@ import { CONTINUITY_TOOL_NAMES, registerContinuityTools } from './continuity-too
 import { EXECUTION_TOOL_NAMES, registerExecutionTools } from './execution-tools.js';
 import { GITHUB_TOOL_NAMES, registerGitHubTools } from './github-tools.js';
 import { MEMORY_TOOL_NAMES, registerMemoryTools } from './memory-tools.js';
+import { HEALTH_METRICS_TOOL_NAMES, registerHealthMetricsTools } from './health-metrics.js';
 import { OPERATIONAL_TOOL_NAMES, registerOperationalTools } from './tools.js';
 
 export const SERVER_NAME = 'agent-core';
@@ -146,6 +147,7 @@ export function createAgentCoreMcpServer(key: VerifiedKey, runtime: RuntimeServi
         ...MEMORY_TOOL_NAMES.map((name) => `tool.${name}`),
         ...CONTINUITY_TOOL_NAMES.map((name) => `tool.${name}`),
         ...EXECUTION_TOOL_NAMES.map((name) => `tool.${name}`),
+        ...HEALTH_METRICS_TOOL_NAMES.map((name) => `tool.${name}`),
       ],
       deferred: ['git.semantic_tools', 'gui.automation', 'registry.system_admin', 'app.adapters'],
     };
@@ -155,6 +157,7 @@ export function createAgentCoreMcpServer(key: VerifiedKey, runtime: RuntimeServi
     };
   });
 
+  registerHealthMetricsTools(server, runtime);
   registerOperationalTools(server, runtime, key);
   registerGitHubTools(server, runtime, key);
   registerCapabilityTools(server, runtime, key);

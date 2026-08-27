@@ -18,6 +18,7 @@ export interface HttpHandlerOptions {
   mcpHandler: McpHttpHandler;
   oauthService?: OAuthService;
   healthProvider?: () => Promise<Record<string, unknown>>;
+  healthMetricsProvider?: () => Promise<Record<string, unknown>>;
 }
 
 function sendJson(
@@ -50,6 +51,12 @@ async function handleRequest(
   let key: VerifiedKey | null = null;
 
   try {
+    if (request.method === 'GET' && route === '/health/metrics') {
+      const metrics = options.healthMetricsProvider ? await options.healthMetricsProvider() : { overallHealth: 'degraded' };
+      sendJson(response, 200, metrics);
+      return;
+    }
+
     if (request.method === 'GET' && route === '/health') {
       const diagnostics = options.healthProvider ? await options.healthProvider() : {};
       sendJson(response, 200, { status: 'ok', service: 'agent-core', ...diagnostics });

@@ -39,6 +39,7 @@ export async function startAgentCoreService(config: AppConfig = loadConfig()): P
     auditLogger,
     config.memory,
     config.execution,
+    config.github,
   );
   // Warm independent persistence subsystems without coupling listener availability to either one.
   await Promise.allSettled([
@@ -49,6 +50,7 @@ export async function startAgentCoreService(config: AppConfig = loadConfig()): P
     keyStore,
     oauthService,
     auditLogger,
+    healthMetricsProvider: async () => runtime.healthMetrics.getMetrics(),
     healthProvider: async () => {
       const [memory, execution] = await Promise.all([
         runtime.memory.status(),

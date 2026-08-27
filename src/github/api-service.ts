@@ -1,4 +1,5 @@
 import type { GitHubConfig } from '../config.js';
+import type { RuntimeMetricRegistry } from '../runtime/metric-window.js';
 import type { GitHubCredentialProvider } from './credentials.js';
 import { GitHubFabricError, type GitHubErrorCode } from './errors.js';
 import { assertSafeCallerHeaders, resolveGitHubApiEndpoint } from './safety.js';
@@ -80,11 +81,14 @@ export class GitHubApiService {
     private readonly config: GitHubConfig,
     private readonly credentials: GitHubCredentialProvider,
     private readonly fetchImpl: typeof fetch = fetch,
+    private readonly metrics?: RuntimeMetricRegistry,
     private readonly userAgent = 'Agent-Core/0.5.3',
   ) {}
 
   async request(input: GitHubApiRequest): Promise<GitHubApiResult> {
-    assertSafeCallerHeaders(input.headers);
+    const metricStarted = performance.now();
+    try {
+      assertSafeCallerHeaders(input.headers);
     const url = resolveGitHubApiEndpoint(this.config.apiBaseUrl, input.endpoint);
     if (input.query) {
       for (const [name, value] of Object.entries(input.query)) {
@@ -173,13 +177,22 @@ export class GitHubApiService {
       );
     }
 
-    return {
-      ok: true,
-      status: response.status,
-      method: input.method,
-      endpoint: input.endpoint,
-      headers: normalizedHeaders,
-      data,
-    };
+      return {
+        ok: true,
+        status: response.status,
+        method: input.method,
+        endpoint: input.endpoint,
+        headers: normalizedHeaders,
+        data,
+      };
+    } catch (error) {
+      const code = error instanceof Error && 'code' in error && typeof (error as { code?: unknown }).code === 'string'
+        ? String((error as { code: string }).code)
+        : 'GITHUB_API_ERROR';
+      this.metrics?.failure('github.api.duration_ms', code);
+      throw error;
+    } finally {
+      this.metrics?.observe('github.api.duration_ms', Math.max(0, performance.now() - metricStarted));
+    }
   }
 }

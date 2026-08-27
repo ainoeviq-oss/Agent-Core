@@ -15,6 +15,8 @@ import { ProcessManager } from './process-manager.js';
 import { RouteContextStore } from './route-context-store.js';
 import { SearchService } from './search.js';
 import { WorkspacePolicy } from './workspace.js';
+import { RuntimeMetricRegistry } from './metric-window.js';
+import { RuntimeHealthMetrics } from './health-metrics.js';
 
 export interface RuntimeServices {
   workspace: WorkspacePolicy;
@@ -27,6 +29,8 @@ export interface RuntimeServices {
   memory: MemoryService;
   execution: ExecutionService;
   github: GitHubService;
+  metrics: RuntimeMetricRegistry;
+  healthMetrics: RuntimeHealthMetrics;
 }
 
 export function createRuntimeServices(
@@ -44,7 +48,8 @@ export function createRuntimeServices(
   const resolvedMemoryConfig = memoryConfig ?? defaults.memory;
   const resolvedExecutionConfig = executionConfig ?? defaults.execution;
   const resolvedGitHubConfig = githubConfig ?? defaults.github;
-  const memory = new MemoryService(resolvedMemoryConfig);
+  const metrics = new RuntimeMetricRegistry();
+  const memory = new MemoryService(resolvedMemoryConfig, metrics);
   const executionStore = new ExecutionStore();
   const executionBridge = new ExecutionMemoryBridge(
     executionStore,
@@ -55,19 +60,21 @@ export function createRuntimeServices(
     store: executionStore,
     memoryBridge: executionBridge,
     memorySearch: new ExecutionMemoryPreSearch(memory),
+    metrics,
   });
-  return {
+  const runtime = {
     workspace,
     filesystem: new FileSystemService(workspace),
     search: new SearchService(workspace),
     processes: new ProcessManager(workspace),
     capabilities,
     router: new CapabilityRouter(capabilities),
-    routes: new RouteContextStore(
-      routingAuditLogger ? { auditLogger: routingAuditLogger } : {},
-    ),
+    routes: new RouteContextStore({ ...(routingAuditLogger ? { auditLogger: routingAuditLogger } : {}), metrics }),
     memory,
     execution,
-    github: new GitHubService(resolvedGitHubConfig, workspace, githubDependencies),
-  };
+    github: new GitHubService(resolvedGitHubConfig, workspace, { ...githubDependencies, metrics }),
+    metrics,
+  } as Omit<RuntimeServices, 'healthMetrics'> & { healthMetrics?: RuntimeHealthMetrics };
+  runtime.healthMetrics = new RuntimeHealthMetrics(runtime as RuntimeServices);
+  return runtime as RuntimeServices;
 }

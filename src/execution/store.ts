@@ -432,14 +432,18 @@ export class ExecutionStore {
     }
   }
 
-  async systemCounts(): Promise<{ activeRuns: number; queuedSync: number }> {
+  async systemCounts(): Promise<{ activeRuns: number; queuedSync: number; queuedNodes: number; runningNodes: number }> {
     this.assertReady();
     const rows = await this.client.query<Record<string, unknown>>(`SELECT
       (SELECT count(*) FROM execution_runs WHERE state IN ('planned','running')) AS active_runs,
-      (SELECT count(*) FROM execution_memory_sync_queue WHERE state IN ('queued','syncing','failed')) AS queued_sync`);
+      (SELECT count(*) FROM execution_memory_sync_queue WHERE state IN ('queued','syncing','failed')) AS queued_sync,
+      (SELECT count(*) FROM execution_nodes WHERE state IN ('queued','ready')) AS queued_nodes,
+      (SELECT count(*) FROM execution_nodes WHERE state = 'running') AS running_nodes`);
     return {
       activeRuns: Number(rows[0]?.active_runs ?? 0),
       queuedSync: Number(rows[0]?.queued_sync ?? 0),
+      queuedNodes: Number(rows[0]?.queued_nodes ?? 0),
+      runningNodes: Number(rows[0]?.running_nodes ?? 0),
     };
   }
 

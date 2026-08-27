@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type { ExecutionScope } from './types.js';
 import type { ExecutionStore } from './store.js';
+import type { RuntimeMetricRegistry } from '../runtime/metric-window.js';
 
 export const EXECUTION_EVENT_TYPES = [
   'run.created', 'run.started', 'node.queued', 'node.ready', 'node.started',
@@ -37,8 +38,12 @@ function matches(event: ExecutionEventRecord, filters?: ExecutionEventFilter): b
 export class ExecutionWakeCoordinator {
   private readonly emitter = new EventEmitter();
 
-  constructor(readonly store: ExecutionStore) {
+  constructor(readonly store: ExecutionStore, private readonly metrics?: RuntimeMetricRegistry, private readonly now: () => number = Date.now) {
     this.emitter.setMaxListeners(0);
+  }
+
+  private recordDelivery(event: ExecutionEventRecord): void {
+    this.metrics?.observe('execution.wake_delivery.duration_ms', Math.max(0, this.now() - event.createdAt));
   }
 
   async waitForEvent(
@@ -52,7 +57,7 @@ export class ExecutionWakeCoordinator {
     if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 60_000) throw new Error('EXECUTION_WAIT_TIMEOUT_INVALID');
 
     const existing = (await this.store.getEvents(scope, runId, afterSequence, filters, 1))[0];
-    if (existing) return existing;
+    if (existing) { this.recordDelivery(existing); return existing; }
 
     const channel = this.channel(runId);
     let settled = false;
@@ -70,6 +75,7 @@ export class ExecutionWakeCoordinator {
     };
     const listener = (event: ExecutionEventRecord) => {
       if (event.sequence <= afterSequence || !matches(event, filters)) return;
+      this.recordDelivery(event);
       settle(event);
     };
     const timer = setTimeout(() => settle(null), timeoutMs);
@@ -79,7 +85,7 @@ export class ExecutionWakeCoordinator {
     // There is no DB polling loop: after this check, only a persisted event signal or timeout can resolve the wait.
     try {
       const raced = (await this.store.getEvents(scope, runId, afterSequence, filters, 1))[0];
-      if (raced) settle(raced);
+      if (raced) { this.recordDelivery(raced); settle(raced); }
     } catch (error) {
       if (!settled) {
         settled = true;

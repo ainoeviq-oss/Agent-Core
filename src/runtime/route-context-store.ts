@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { RoutePlan } from '../capabilities/route-types.js';
+import type { RuntimeMetricRegistry } from './metric-window.js';
 import {
   NOOP_ROUTING_AUDIT_LOGGER,
   type RoutingAuditLogger,
@@ -72,6 +73,7 @@ export interface RouteContextStoreOptions {
   ttlMs?: number;
   maxContexts?: number;
   auditLogger?: RoutingAuditLogger;
+  metrics?: RuntimeMetricRegistry;
 }
 
 const DEFAULT_TTL_MS = 30 * 60_000;
@@ -83,12 +85,17 @@ export class RouteContextStore {
   private readonly ttlMs: number;
   private readonly maxContexts: number;
   private readonly auditLogger: RoutingAuditLogger;
+  private readonly runtimeMetrics?: RuntimeMetricRegistry;
+  private totalRoutes = 0;
+  private rejectedRoutes = 0;
+  private expiredContexts = 0;
 
   constructor(options: RouteContextStoreOptions = {}) {
     this.now = options.now ?? Date.now;
     this.ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
     this.maxContexts = options.maxContexts ?? DEFAULT_MAX_CONTEXTS;
     this.auditLogger = options.auditLogger ?? NOOP_ROUTING_AUDIT_LOGGER;
+    this.runtimeMetrics = options.metrics;
   }
 
   reserve(): RouteReservation {
@@ -124,6 +131,8 @@ export class RouteContextStore {
       ...(options.continuitySnapshotHash ? { continuitySnapshotHash: options.continuitySnapshotHash } : {}),
     };
     this.contexts.set(context.routeContextId, context);
+    this.totalRoutes += 1;
+    this.runtimeMetrics?.increment('routing.created.count');
     this.auditLogger.logRouting({
       event: 'route.created',
       routeContextId: context.routeContextId,
@@ -138,11 +147,18 @@ export class RouteContextStore {
     return structuredClone(context);
   }
 
+  metrics() {
+    this.pruneExpired();
+    return { totalRoutes: this.totalRoutes, activeContexts: this.contexts.size, rejectedRoutes: this.rejectedRoutes, expiredContexts: this.expiredContexts };
+  }
+
   get(routeContextId: string): RouteContext | null {
     const context = this.contexts.get(routeContextId);
     if (!context) return null;
     if (this.isExpired(context)) {
       this.contexts.delete(routeContextId);
+      this.expiredContexts += 1;
+      this.runtimeMetrics?.increment('routing.expired.count');
       return null;
     }
     this.pruneExpired(routeContextId);
@@ -259,6 +275,8 @@ export class RouteContextStore {
     skillIds?: string[],
   ): void {
     if (!(error instanceof AgentCoreRouteError)) return;
+    this.rejectedRoutes += 1;
+    this.runtimeMetrics?.increment('routing.rejected.count');
     this.auditLogger.logRouting({
       event: 'route.rejected',
       routeContextId,
@@ -280,7 +298,11 @@ export class RouteContextStore {
 
   private pruneExpired(exceptId?: string): void {
     for (const [id, context] of this.contexts) {
-      if (id !== exceptId && this.isExpired(context)) this.contexts.delete(id);
+      if (id !== exceptId && this.isExpired(context)) {
+        this.contexts.delete(id);
+        this.expiredContexts += 1;
+        this.runtimeMetrics?.increment('routing.expired.count');
+      }
     }
   }
 

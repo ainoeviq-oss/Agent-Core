@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { GitHubConfig } from '../config.js';
 import type { WorkspacePolicy } from '../runtime/workspace.js';
+import type { RuntimeMetricRegistry } from '../runtime/metric-window.js';
 import { GitHubApiService, type GitHubApiRequest, type GitHubApiResult } from './api-service.js';
 import { GitHubCredentialProvider } from './credentials.js';
 import { GitHubFabricError } from './errors.js';
@@ -94,6 +95,7 @@ export interface GitHubReleaseInput {
 export interface GitHubServiceDependencies {
   fetchImpl?: typeof fetch;
   processRunner?: ProcessRunner;
+  metrics?: RuntimeMetricRegistry;
 }
 
 export class GitHubService {
@@ -110,7 +112,7 @@ export class GitHubService {
   ) {
     this.credentials = new GitHubCredentialProvider(config);
     this.fetchImpl = dependencies.fetchImpl ?? fetch;
-    this.api = new GitHubApiService(config, this.credentials, this.fetchImpl);
+    this.api = new GitHubApiService(config, this.credentials, this.fetchImpl, dependencies.metrics);
     this.git = new GitHubGitService(config, this.credentials, workspace, dependencies.processRunner);
     this.packages = new GitHubPackageService(config, this.credentials, workspace, this.api, dependencies.processRunner);
   }

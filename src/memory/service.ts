@@ -1,5 +1,6 @@
 import { stat } from 'node:fs/promises';
 import type { MemoryConfig } from '../config.js';
+import type { RuntimeMetricRegistry } from '../runtime/metric-window.js';
 import {
   ContinuityStore,
   type ContinuityBeginTurnResult,
@@ -129,7 +130,7 @@ export class MemoryService {
   private lastSuccessfulIntegrityCheckAt: number | undefined;
   private lastBackup: MemoryBackupRecord | undefined;
 
-  constructor(readonly config: MemoryConfig) {
+  constructor(readonly config: MemoryConfig, private readonly metrics?: RuntimeMetricRegistry) {
     this.state = config.enabled ? 'idle' : 'disabled';
   }
 
@@ -224,23 +225,39 @@ export class MemoryService {
   }
 
   async search(request: MemorySearchRequest): Promise<MemorySearchResult> {
-    if (!this.config.enabled) {
-      const result = createDisabledPreflightResult({
-        scope: request.scope,
-        routeContextId: 'disabled-search',
-        task: request.query || 'disabled search',
-        expiresAt: Date.now() + 1,
-      });
-      return { query: request.query, hits: [], graphTruncated: false, snapshotHash: result.snapshotHash };
+    const started = performance.now();
+    try {
+      if (!this.config.enabled) {
+        const result = createDisabledPreflightResult({
+          scope: request.scope,
+          routeContextId: 'disabled-search',
+          task: request.query || 'disabled search',
+          expiresAt: Date.now() + 1,
+        });
+        return { query: request.query, hits: [], graphTruncated: false, snapshotHash: result.snapshotHash };
+      }
+      const components = await this.requireComponents();
+      return await components.retriever.search(request);
+    } catch (error) {
+      this.metrics?.failure('memory.search.duration_ms', error instanceof Error ? error.name : 'MEMORY_SEARCH_ERROR');
+      throw error;
+    } finally {
+      this.metrics?.observe('memory.search.duration_ms', Math.max(0, performance.now() - started));
     }
-    const components = await this.requireComponents();
-    return components.retriever.search(request);
   }
 
   async preflight(request: MemoryPreflightRequest): Promise<MemoryPreflightResult> {
-    if (!this.config.enabled) return createDisabledPreflightResult(request);
-    const components = await this.requireComponents();
-    return components.preflight.run(request);
+    const started = performance.now();
+    try {
+      if (!this.config.enabled) return createDisabledPreflightResult(request);
+      const components = await this.requireComponents();
+      return await components.preflight.run(request);
+    } catch (error) {
+      this.metrics?.failure('memory.preflight.duration_ms', error instanceof Error ? error.name : 'MEMORY_PREFLIGHT_ERROR');
+      throw error;
+    } finally {
+      this.metrics?.observe('memory.preflight.duration_ms', Math.max(0, performance.now() - started));
+    }
   }
 
   async openConflict(
