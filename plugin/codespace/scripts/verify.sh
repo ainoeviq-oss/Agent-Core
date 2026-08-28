@@ -41,21 +41,18 @@ const expected = {
   postAttachCommand: 'bash scripts/codespace/ensure-running.sh --repair --phase attach',
 };
 for (const phase of Object.keys(expected)) {
-  const value = config[phase];
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    console.error(`[codespace] RED: ${phase} must use object form.`);
-    process.exit(1);
-  }
-  if (value.existing !== expected[phase]) {
-    console.error(`[codespace] RED: ${phase}.existing changed the pre-existing lifecycle command.`);
-    process.exit(1);
-  }
-  if (typeof value.codespace !== 'string' || !value.codespace.includes('plugin/codespace/scripts/ensure-running.sh')) {
-    console.error(`[codespace] RED: ${phase}.codespace is missing the new lifecycle entry.`);
+  if (config[phase] !== expected[phase]) {
+    console.error(`[codespace] RED: ${phase} must use the deterministic canonical lifecycle command.`);
     process.exit(1);
   }
 }
 NODE
+
+  LEGACY_STARTUP="$REPO_ROOT/scripts/codespace/ensure-running.sh"
+  if ! grep -Fq 'plugin/codespace/scripts/ensure-running.sh' "$LEGACY_STARTUP"; then
+    printf '%s\n' "[codespace] RED: canonical Codespaces lifecycle does not chain the codespace bridge." >&2
+    exit 1
+  fi
 
   STARTUP="$ROOT/scripts/ensure-running.sh"
   if [[ ! -f "$STARTUP" ]]; then
@@ -77,6 +74,7 @@ const required = [
   'TUNNEL_SOURCE="config/tunnel.defaults.json"',
   'env:CONTROL_PLANE_TUNNEL_ID (legacy fallback)',
   'flock -w 120 9',
+  'exec 9>&-',
   'runtimes stop "$ALIAS"',
   'remote_lookup_attempted === true',
   "payload.remote_lookup_auth_ref.startsWith('file:')",

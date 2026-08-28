@@ -276,5 +276,20 @@ fi
 
 write_connection_metadata "$connection_base_url" "$transport"
 
-log_info 'READY: all required local, forwarding, public-health, OAuth, MCP-auth, and configured stable-gateway gates passed.'
+# GitHub Codespaces may collapse object-form lifecycle commands to the legacy
+# entrypoint when it snapshots devcontainer.json. Make the codespace bridge a
+# required final stage of the canonical lifecycle so create/start/attach remain
+# deterministic even when only this script is invoked by the platform.
+plugin_lifecycle="$AGENT_CORE_REPO_ROOT/plugin/codespace/scripts/ensure-running.sh"
+[[ -f "$plugin_lifecycle" ]] || {
+  log_error "Codespace bridge lifecycle is missing: $plugin_lifecycle"
+  exit 94
+}
+log_info "Starting codespace bridge lifecycle for phase $phase."
+if ! bash "$plugin_lifecycle" --phase "$phase"; then
+  log_error 'Codespace bridge lifecycle failed.'
+  exit 94
+fi
+
+log_info 'READY: all required local, forwarding, public-health, OAuth, MCP-auth, codespace-bridge, and configured stable-gateway gates passed.'
 printf 'Agent Core Codespace MCP URL: %s/mcp\n' "$connection_base_url"

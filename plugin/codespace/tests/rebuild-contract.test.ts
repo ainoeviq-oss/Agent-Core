@@ -41,4 +41,13 @@ describe('codespace full rebuild contract', () => {
     expect(startup).toContain("payload.remote_lookup_auth_ref.startsWith('file:')");
     expect(startup).toContain('payload.remote?.id === expectedTunnelId');
   });
+
+  it('closes the lifecycle lock descriptor before launching the long-lived tunnel runtime', () => {
+    const connectBlock = startup.indexOf('connect_rc=0');
+    const closeLock = startup.indexOf('exec 9>&-', connectBlock);
+    const connect = startup.indexOf('runtimes connect', connectBlock);
+    expect(connectBlock).toBeGreaterThanOrEqual(0);
+    expect(closeLock).toBeGreaterThan(connectBlock);
+    expect(closeLock).toBeLessThan(connect);
+  });
 });
