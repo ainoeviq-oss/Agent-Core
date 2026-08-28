@@ -13,21 +13,15 @@ async function read(relative: string): Promise<string> {
 }
 
 describe('Codespaces deployment contract', () => {
-  it('forwards Agent Core MCP port and composes legacy + codespace lifecycle hooks', async () => {
+  it('forwards Agent Core MCP port and uses one deterministic lifecycle chain that also starts the codespace plugin', async () => {
     const config = await readJson('.devcontainer/devcontainer.json');
+    const ensure = await read('scripts/codespace/ensure-running.sh');
     expect(config.forwardPorts).toContain(8765);
-    expect(config.postCreateCommand).toEqual({
-      existing: 'bash scripts/codespace/bootstrap.sh --phase create',
-      codespace: 'bash plugin/codespace/scripts/ensure-running.sh --phase create',
-    });
-    expect(config.postStartCommand).toEqual({
-      existing: 'bash scripts/codespace/bootstrap.sh --phase start',
-      codespace: 'bash plugin/codespace/scripts/ensure-running.sh --phase start',
-    });
-    expect(config.postAttachCommand).toEqual({
-      existing: 'bash scripts/codespace/ensure-running.sh --repair --phase attach',
-      codespace: 'bash plugin/codespace/scripts/ensure-running.sh --phase attach',
-    });
+    expect(config.postCreateCommand).toBe('bash scripts/codespace/bootstrap.sh --phase create');
+    expect(config.postStartCommand).toBe('bash scripts/codespace/bootstrap.sh --phase start');
+    expect(config.postAttachCommand).toBe('bash scripts/codespace/ensure-running.sh --repair --phase attach');
+    expect(ensure).toContain('plugin/codespace/scripts/ensure-running.sh');
+    expect(ensure).toContain('--phase "$phase"');
     expect(config.portsAttributes['8765']?.label).toBe('Agent Core MCP');
   });
 

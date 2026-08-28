@@ -46,21 +46,18 @@ describe('fresh Codespace reproducibility contract', () => {
     }
   });
 
-  it('boots automatically on create, start, and attach with legacy + codespace lifecycle composition and only public port 8765 forwarded', async () => {
+  it('boots automatically on create, start, and attach through one deterministic lifecycle chain and only public port 8765 forwarded', async () => {
     const config = JSON.parse(await read('.devcontainer/devcontainer.json')) as Record<string, any>;
+    const ensure = await read('scripts/codespace/ensure-running.sh');
     expect(config.forwardPorts).toEqual([8765]);
-    expect(config.postCreateCommand).toEqual({
-      existing: 'bash scripts/codespace/bootstrap.sh --phase create',
-      codespace: 'bash plugin/codespace/scripts/ensure-running.sh --phase create',
-    });
-    expect(config.postStartCommand).toEqual({
-      existing: 'bash scripts/codespace/bootstrap.sh --phase start',
-      codespace: 'bash plugin/codespace/scripts/ensure-running.sh --phase start',
-    });
-    expect(config.postAttachCommand).toEqual({
-      existing: 'bash scripts/codespace/ensure-running.sh --repair --phase attach',
-      codespace: 'bash plugin/codespace/scripts/ensure-running.sh --phase attach',
-    });
+    expect(config.postCreateCommand).toBe('bash scripts/codespace/bootstrap.sh --phase create');
+    expect(config.postStartCommand).toBe('bash scripts/codespace/bootstrap.sh --phase start');
+    expect(config.postAttachCommand).toBe('bash scripts/codespace/ensure-running.sh --repair --phase attach');
+    const pluginStart = ensure.indexOf('plugin/codespace/scripts/ensure-running.sh');
+    const ready = ensure.indexOf("log_info 'READY:");
+    expect(pluginStart).toBeGreaterThanOrEqual(0);
+    expect(pluginStart).toBeLessThan(ready);
+    expect(ensure).toContain('--phase "$phase"');
   });
 
   it('restores known system prerequisites, Node/npm dependencies, build output, credentials, and API-key state', async () => {

@@ -178,6 +178,10 @@ fi
 
 connect_rc=0
 (
+  # Keep the lifecycle lock in the parent shell, but never leak its descriptor
+  # into tunnel-client's long-lived managed runtime or MCP descendants.
+  exec 9>&-
+
   # tunnel-client v0.0.13 prefers tmux when it is installed. The Codespaces
   # universal image currently ships tmux 3.0a, whose `source-file -` behavior
   # is incompatible with that managed launch path. Make tmux unavailable only
