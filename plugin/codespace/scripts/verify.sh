@@ -84,7 +84,7 @@ const required = [
   'payload.stale === false',
   'ensure-http-mcp.sh',
   '--mcp-server-url "$MCP_SERVER_URL"',
-  "payload.process?.target_kind === 'url'",
+  "payload.process?.target_kind === 'server_url'",
   'payload.process?.target_value === expectedMcpServerUrl',
   '$ROOT/dist/http-server.js',
   '$ROOT/dist/http-probe.js',

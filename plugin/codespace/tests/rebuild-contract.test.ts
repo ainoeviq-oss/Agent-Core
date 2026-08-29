@@ -44,7 +44,7 @@ describe('codespace full rebuild contract', () => {
     expect(startup).toContain('remote_lookup_attempted === true');
     expect(startup).toContain("payload.remote_lookup_auth_ref.startsWith('file:')");
     expect(startup).toContain('payload.remote?.id === expectedTunnelId');
-    expect(startup).toContain("payload.process?.target_kind === 'url'");
+    expect(startup).toContain("payload.process?.target_kind === 'server_url'");
     expect(startup).toContain('payload.process?.target_value === expectedMcpServerUrl');
   });
 

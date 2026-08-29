@@ -82,7 +82,7 @@ describe('codespace watchdog repair integration', () => {
       remote_error: '',
       remote_lookup_auth_ref: 'file:/ignored/runtime-key',
       remote: { id: expectedTunnelId },
-      process: { target_kind: 'url', target_value: mcpUrl },
+      process: { target_kind: 'server_url', target_value: mcpUrl },
     };
 
     await fs.writeFile(fakeBin, `#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' '${JSON.stringify(status)}'\n`, {

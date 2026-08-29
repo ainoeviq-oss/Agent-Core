@@ -27,7 +27,7 @@ const healthyStatus: RuntimeStatus = {
   remote_lookup_auth_ref: 'file:/workspaces/Agent-Core/secrets/github/CONTROL_PLANE_API_KEY',
   remote: { id: expectedTunnelId },
   process: {
-    target_kind: 'url',
+    target_kind: 'server_url',
     target_value: expectedMcpServerUrl,
   },
 };

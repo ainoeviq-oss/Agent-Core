@@ -46,7 +46,7 @@ describe('codespace managed Streamable HTTP lifecycle contract', () => {
   it('connects tunnel-client to a loopback HTTP MCP URL instead of readiness-blind stdio', () => {
     expect(startup).toContain('--mcp-server-url "$MCP_SERVER_URL"');
     expect(startup).not.toContain('--mcp-command "bash $ROOT/scripts/start-mcp.sh"');
-    expect(startup).toContain("payload.process?.target_kind === 'url'");
+    expect(startup).toContain("payload.process?.target_kind === 'server_url'");
     expect(startup).toContain('payload.process?.target_value === expectedMcpServerUrl');
   });
 

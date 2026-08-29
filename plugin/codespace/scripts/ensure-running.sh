@@ -261,7 +261,7 @@ try {
     typeof payload.remote_lookup_auth_ref === 'string' &&
     payload.remote_lookup_auth_ref.startsWith('file:');
   const targetReady =
-    payload.process?.target_kind === 'url' &&
+    payload.process?.target_kind === 'server_url' &&
     payload.process?.target_value === expectedMcpServerUrl;
   process.exit(localReady && remoteReady && targetReady ? 0 : 1);
 } catch {
