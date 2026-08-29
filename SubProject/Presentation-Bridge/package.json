@@ -1,31 +1,99 @@
 {
   "name": "presentation-bridge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Fresh standalone PPTX to native Google Slides and Keynote conversion kernel with fidelity evidence.",
+  "description": "PPTX to native Google Slides and Keynote conversion kernel with desktop, browser, and evidence-first workflows.",
   "type": "module",
+  "main": "dist/desktop/main.js",
   "bin": {
     "presentation-bridge": "dist/src/cli/index.js"
   },
+  "imports": {
+    "#core/*": "./dist/src/*"
+  },
   "scripts": {
     "clean": "node ./scripts/clean.mjs",
-    "build": "npm run clean && tsc -p tsconfig.json && node ./scripts/copy-assets.mjs",
+    "build:core": "tsc -p tsconfig.json",
+    "build:assets": "node ./scripts/copy-assets.mjs",
+    "build:desktop": "tsc -p tsconfig.desktop.json",
+    "build:ui": "tsc -p ui/tsconfig.json --noEmit && vite build",
+    "build:distribution": "node ./scripts/prepare-distribution.mjs",
+    "build": "npm run clean && npm run build:core && npm run build:assets && npm run build:desktop && npm run build:ui && npm run build:distribution",
     "start": "node dist/src/cli/index.js",
+    "desktop": "npm run build && electron .",
+    "hosted": "npm run build && node dist/src/cli/index.js host",
+    "dev:ui": "vite",
     "test": "node dist/scripts/generate-fixtures.js && node --test dist/tests/*/*.test.js",
     "fixtures": "node dist/scripts/generate-fixtures.js",
     "doctor": "node dist/src/cli/index.js doctor",
     "check": "npm run build && npm test",
-    "verify": "npm run check && npm run doctor"
+    "verify": "npm run check && npm run doctor",
+    "smoke:desktop": "node ./scripts/electron-smoke.mjs",
+    "package:dir": "npm run build && electron-builder --dir",
+    "package:win": "npm run build && electron-builder --win nsis portable"
   },
   "engines": {
     "node": ">=20.12"
   },
   "dependencies": {
-    "sharp": "0.34.1"
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "sharp": "0.35.4"
   },
   "devDependencies": {
     "@types/node": "25.1.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "@vitejs/plugin-react": "6.1.0",
+    "electron": "44.0.0",
+    "electron-builder": "26.15.3",
     "pptxgenjs": "4.0.0",
-    "typescript": "5.8.3"
+    "typescript": "5.8.3",
+    "vite": "8.2.2"
+  },
+  "build": {
+    "appId": "com.presentationbridge.desktop",
+    "productName": "Presentation Bridge",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/sharp/**/*",
+      "node_modules/@img/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/src/**/*",
+      "dist/desktop/**/*",
+      "dist/ui/**/*",
+      "dist/config/**/*",
+      "package.json",
+      "!dist/tests/**/*",
+      "!dist/scripts/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Presentation-Bridge-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Presentation Bridge"
+    }
   }
 }

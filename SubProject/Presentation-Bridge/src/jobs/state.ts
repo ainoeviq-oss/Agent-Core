@@ -1,15 +1,7 @@
 import { writeJson } from '../reports/io.js';
+import type { JobLifecycleState } from '../types/contracts.js';
 
-export type JobState =
-  | 'queued'
-  | 'preflight'
-  | 'converting_google'
-  | 'converting_keynote'
-  | 'verifying'
-  | 'completed'
-  | 'completed_with_warnings'
-  | 'failed'
-  | 'cancelled';
+export type JobState = JobLifecycleState;
 
 export interface JobStateRecord {
   jobId: string;
