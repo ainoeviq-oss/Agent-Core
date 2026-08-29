@@ -12,6 +12,8 @@
 - Added packaged-source isolation coverage and Electron/package-directory acceptance gates.
 - Upgraded `sharp` to 0.35.4; distributable runtime audit has no high or critical findings.
 - Live Google acceptance still requires user OAuth; live Keynote acceptance still requires a real macOS + Keynote worker. These gates remain explicit rather than simulated.
+- Hardened Windows release packaging with distinct NSIS/portable filenames, offline publish mode, canonical package metadata, SHA-256 manifest generation, and ASAR boundary verification.
+- Added release regression coverage and documented unsigned/native-Windows acceptance boundaries.
 
 ## 0.1.0 — 2026-08-27
 
