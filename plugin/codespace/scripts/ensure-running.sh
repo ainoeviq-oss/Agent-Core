@@ -34,11 +34,30 @@ if ! flock -w 120 9; then
 fi
 
 RUNTIME_API_KEY_FILE="$REPO_ROOT/secrets/github/CONTROL_PLANE_API_KEY"
+PUBLIC_RUNTIME_KEY_FILE="$ROOT/runtime/public-control-plane-key.txt"
+BOOTSTRAP_CONFIG_FILE="$ROOT/config/bootstrap.defaults.json"
+
+BOOTSTRAP_CONTROL_PLANE_BASE_URL="$(node -e '
+const fs = require("node:fs");
+const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+if (typeof value.controlPlaneBaseUrl === "string") process.stdout.write(value.controlPlaneBaseUrl);
+' "$BOOTSTRAP_CONFIG_FILE")"
+BOOTSTRAP_PUBLIC_RUNTIME_KEY="$(node -e '
+const fs = require("node:fs");
+const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+if (typeof value.publicRuntimeKey === "string") process.stdout.write(value.publicRuntimeKey);
+' "$BOOTSTRAP_CONFIG_FILE")"
+BOOTSTRAP_TUNNEL_ID="$(node -e '
+const fs = require("node:fs");
+const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+if (typeof value.tunnelId === "string") process.stdout.write(value.tunnelId);
+' "$BOOTSTRAP_CONFIG_FILE")"
 
 # Codespaces lifecycle secrets may be available during create/start but absent
 # from later tool children. Persist an injected credential only into ignored
-# workspace state with owner-only permissions, then always reference it by file.
-# The value is never printed and is removed from the remaining startup env.
+# workspace state with owner-only permissions. A truly fresh fork has no local
+# secret at all, so it falls back to the tracked public credential for the
+# fixed-tunnel control-plane proxy; the real OpenAI runtime key stays server-side.
 if [[ -n "${CONTROL_PLANE_API_KEY:-}" ]]; then
   mkdir -p "$(dirname "$RUNTIME_API_KEY_FILE")"
   umask 077
@@ -47,15 +66,26 @@ if [[ -n "${CONTROL_PLANE_API_KEY:-}" ]]; then
   chmod 600 "$runtime_api_key_tmp"
   mv -f "$runtime_api_key_tmp" "$RUNTIME_API_KEY_FILE"
 fi
+unset CONTROL_PLANE_API_KEY
 
+CONTROL_PLANE_BASE_URL="https://api.openai.com"
 if [[ -s "$RUNTIME_API_KEY_FILE" ]]; then
   chmod 600 "$RUNTIME_API_KEY_FILE"
   RUNTIME_API_KEY_REF="file:$RUNTIME_API_KEY_FILE"
+  CREDENTIAL_MODE="local-runtime-key"
 else
-  printf '%s\n' "[codespace] ERROR: runtime credential is unavailable." >&2
-  exit 1
+  if [[ ! "$BOOTSTRAP_CONTROL_PLANE_BASE_URL" =~ ^https:// ]] || [[ -z "$BOOTSTRAP_PUBLIC_RUNTIME_KEY" ]]; then
+    printf '%s\n' "[codespace] ERROR: tracked fresh-machine bootstrap configuration is invalid." >&2
+    exit 1
+  fi
+  mkdir -p "$(dirname "$PUBLIC_RUNTIME_KEY_FILE")"
+  umask 077
+  printf '%s\n' "$BOOTSTRAP_PUBLIC_RUNTIME_KEY" > "$PUBLIC_RUNTIME_KEY_FILE"
+  chmod 600 "$PUBLIC_RUNTIME_KEY_FILE"
+  RUNTIME_API_KEY_REF="file:$PUBLIC_RUNTIME_KEY_FILE"
+  CONTROL_PLANE_BASE_URL="$BOOTSTRAP_CONTROL_PLANE_BASE_URL"
+  CREDENTIAL_MODE="public-control-plane-proxy"
 fi
-unset CONTROL_PLANE_API_KEY
 
 CANONICAL_TUNNEL_ID=""
 if [[ -f "$ROOT/runtime/tunnel.json" ]]; then
@@ -107,12 +137,17 @@ if [[ ! "$TUNNEL_ID" =~ ^tunnel_[A-Za-z0-9_-]+$ ]]; then
   exit 1
 fi
 
+if [[ -n "$BOOTSTRAP_TUNNEL_ID" && "$BOOTSTRAP_TUNNEL_ID" != "$TUNNEL_ID" ]]; then
+  printf '%s\n' "[codespace] ERROR: bootstrap tunnel identity does not match the active codespace tunnel." >&2
+  exit 1
+fi
+
 if [[ "$CANONICAL_TUNNEL_ID" != "$TUNNEL_ID" ]]; then
   bash "$ROOT/scripts/configure-tunnel.sh" "$TUNNEL_ID"
   CANONICAL_TUNNEL_ID="$TUNNEL_ID"
 fi
 
-printf '%s\n' "[codespace] tunnel source=$TUNNEL_SOURCE tunnel_id=$TUNNEL_ID"
+printf '%s\n' "[codespace] tunnel source=$TUNNEL_SOURCE tunnel_id=$TUNNEL_ID credential_mode=$CREDENTIAL_MODE"
 
 bash "$ROOT/scripts/install-tunnel-client.sh"
 
@@ -195,6 +230,7 @@ connect_rc=0
     --tunnel-id "$TUNNEL_ID" \
     --profile "$PROFILE_NAME" \
     --profile-dir "$PROFILE_DIR" \
+    --control-plane-base-url "$CONTROL_PLANE_BASE_URL" \
     --runtime-api-key "$RUNTIME_API_KEY_REF" \
     --mcp-command "bash $ROOT/scripts/start-mcp.sh"
 ) >/dev/null || connect_rc=$?

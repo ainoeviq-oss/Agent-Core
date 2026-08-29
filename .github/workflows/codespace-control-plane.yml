@@ -1,0 +1,41 @@
+name: codespace-control-plane
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'plugin/codespace/control-plane/**'
+      - 'plugin/codespace/config/bootstrap.defaults.json'
+      - '.github/workflows/codespace-control-plane.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CODESPACE_OPENAI_TUNNEL_RUNTIME_KEY: ${{ secrets.CODESPACE_OPENAI_TUNNEL_RUNTIME_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect deployment credentials
+        id: credentials
+        shell: bash
+        run: |
+          if [[ -n "$CLOUDFLARE_API_TOKEN" && -n "$CODESPACE_OPENAI_TUNNEL_RUNTIME_KEY" ]]; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy fixed-tunnel control plane
+        if: steps.credentials.outputs.ready == 'true'
+        run: node plugin/codespace/control-plane/deploy.mjs
+
+      - name: Deployment not configured
+        if: steps.credentials.outputs.ready != 'true'
+        run: echo 'codespace control-plane deployment credentials are not configured; source verification remains active.'

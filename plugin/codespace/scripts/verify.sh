@@ -35,6 +35,20 @@ if [[ "${1:-}" == "--static" ]]; then
   node <<'NODE'
 const fs = require('node:fs');
 const config = JSON.parse(fs.readFileSync('.devcontainer/devcontainer.json', 'utf8'));
+const bootstrap = JSON.parse(fs.readFileSync('plugin/codespace/config/bootstrap.defaults.json', 'utf8'));
+const tunnelDefaults = JSON.parse(fs.readFileSync('plugin/codespace/config/tunnel.defaults.json', 'utf8'));
+if (typeof bootstrap.controlPlaneBaseUrl !== 'string' || !bootstrap.controlPlaneBaseUrl.startsWith('https://')) {
+  console.error('[codespace] RED: fresh-machine control-plane URL must be tracked HTTPS.');
+  process.exit(1);
+}
+if (typeof bootstrap.publicRuntimeKey !== 'string' || !bootstrap.publicRuntimeKey.startsWith('codespace_public_v1_')) {
+  console.error('[codespace] RED: fresh-machine public runtime key marker is invalid.');
+  process.exit(1);
+}
+if (bootstrap.tunnelId !== tunnelDefaults.tunnelId) {
+  console.error('[codespace] RED: bootstrap and fixed tunnel identities must match.');
+  process.exit(1);
+}
 const expected = {
   postCreateCommand: 'bash scripts/codespace/bootstrap.sh --phase create',
   postStartCommand: 'bash scripts/codespace/bootstrap.sh --phase start',
@@ -66,7 +80,12 @@ const startup = fs.readFileSync(process.argv[2], 'utf8');
 
 const required = [
   'RUNTIME_API_KEY_FILE="$REPO_ROOT/secrets/github/CONTROL_PLANE_API_KEY"',
-  'RUNTIME_API_KEY_REF="file:$RUNTIME_API_KEY_FILE"',
+  'PUBLIC_RUNTIME_KEY_FILE="$ROOT/runtime/public-control-plane-key.txt"',
+  'BOOTSTRAP_CONFIG_FILE="$ROOT/config/bootstrap.defaults.json"',
+  'CREDENTIAL_MODE="local-runtime-key"',
+  'CREDENTIAL_MODE="public-control-plane-proxy"',
+  'CONTROL_PLANE_BASE_URL="$BOOTSTRAP_CONTROL_PLANE_BASE_URL"',
+  '--control-plane-base-url "$CONTROL_PLANE_BASE_URL"',
   '--runtime-api-key "$RUNTIME_API_KEY_REF"',
   'TRACKED_TUNNEL_ID',
   'config/tunnel.defaults.json',
