@@ -1,134 +1,102 @@
-# Final Implementation Report — Presentation Bridge v0.1.0
+# Implementation Report — Presentation Bridge v0.2.0 Release Candidate
 
-**Date:** 2026-08-27
+**Updated:** 2026-08-30
 **Source of truth:** `docs/PLAN_APPROVED_2026-08-27.md`
-**Project:** fresh standalone PPTX → native Google Slides / Keynote converter
-**Implementation state:** code integration complete; two platform-owned live acceptance gates remain environment-dependent and are explicitly not forged.
+**Implementation state:** conversion kernel, desktop/hosted product surfaces, remote Keynote protocol, simple UI, and Windows packaging are integrated and locally verified. Three platform-owned acceptance gates remain explicit.
 
-## What is integrated
+## Integrated architecture
 
-- Fresh independent Node.js + TypeScript repository and CLI.
-- Secure self-contained PPTX ZIP/OPC reader with source/expanded/entry/count limits, encryption rejection, path traversal rejection, CRC verification, and no embedded executable/macro execution.
-- OOXML preflight and source manifest covering slides, dimensions, text/object counts, image/media hashes, fonts, masters, layouts, themes, tables, charts, notes, hyperlinks, external relationships, transitions and timing/animations.
-- Evidence-oriented Presentation IR; unknown target compatibility stays unknown.
-- Google Desktop OAuth with PKCE + loopback callback, project-local token storage, refresh flow and `drive.file` scope.
-- Google Drive runtime `about.importFormats` verification, resumable PPTX import to native Google Slides MIME, target MIME verification, Slides API retrieval, thumbnails, and bounded repair allowlist.
-- Native Keynote macOS doctor, Keynote scripting feasibility checks, AppleScript PPTX open → `.key` save, output verification, version evidence, and PDF-preview export.
-- Structural fidelity reports and confidence withholding for mock/unavailable targets.
-- Deterministic visual diff/heatmap plus integrated live preview pipeline: PPTX source render vs Google slide thumbnails or Keynote PDF-rendered slides.
-- Job ledger, isolated per-job artifacts, JSON conversion report, responsive HTML compatibility report.
-- 12 controlled PPTX fixtures and local unit/integration/acceptance coverage.
-- CLI surface for preflight, convert, Google auth/doctor/repair, Keynote doctor, visual fidelity, and aggregate doctor.
-- Documentation, security model, compatibility matrix, approved plan record, and integration status.
-- No hosted CI configuration and no coupling to other projects.
+Presentation Bridge remains isolated from every other project and owns its source, dependency tree, configuration, secrets paths, runtime, test corpus, reports, and release artifacts.
+
+Version 0.2.0 includes:
+
+- secure PPTX ZIP/OPC/OOXML preflight and Presentation IR;
+- native Google import/verification adapter and bounded repairs;
+- local and authenticated remote Keynote workers;
+- structural and visual fidelity evidence;
+- deterministic job state, progress, cancellation, and history;
+- JSON and HTML conversion reports;
+- shared React/Vite one-screen converter for Electron and hosted mode;
+- Electron context isolation, preload IPC, bounded native pickers, and encrypted worker settings;
+- authenticated hosted HTTP/SSE transport;
+- Windows NSIS and portable packaging with release-manifest verification.
 
 ## Truthful native-success contract
 
-Google can return `native: true` only after all of these are true:
+Google may return `native: true` only after runtime import capability, Drive conversion, native Google Slides MIME verification, and a successful Slides API read.
 
-1. runtime import capability includes PPTX → Google Slides;
-2. Drive import completes;
-3. resulting Drive MIME is exactly `application/vnd.google-apps.presentation`;
-4. Slides API can retrieve the presentation.
+Keynote may return `native: true` only after a real Keynote process creates and verifies a `.key` artifact. Remote transport success alone is insufficient.
 
-Keynote can return `native: true` only when a real macOS Keynote process creates the expected `.key` artifact and the worker verifies that output exists.
+Mock mode always returns `native: false` and never fabricates `.key` or Google-native artifacts.
 
-Mock mode always returns `native: false`. It never creates a fake `.key` and never represents a fake local Google Slides file.
+## Release hardening completed
 
-## Local verification evidence
+The original Windows packaging configuration assigned the same filename to the NSIS installer and portable executable. A real cross-build showed the portable target overwriting the installer path and Electron Builder failing while constructing update metadata.
 
-The release verification command is:
+The release contract now:
 
-```text
-npm run verify
-```
+- assigns `Presentation-Bridge-Setup-${version}-${arch}.exe` to NSIS;
+- assigns `Presentation-Bridge-Portable-${version}-${arch}.exe` to portable mode;
+- disables publishing during local packaging with `--publish never`;
+- declares canonical repository and author metadata;
+- runs an explicit post-package verifier;
+- writes SHA-256 and packaged-content evidence to `release-manifest.json`.
 
-It performs a clean TypeScript build, regenerates the 12 controlled PPTX fixtures, executes the test suite, then runs environment/isolation doctors.
-
-At release-candidate verification, the suite reports **20 tests passed, 0 failed**. A separate render smoke test converted a controlled PPTX to a source slide PNG via LibreOffice/pdftoppm and identity visual comparison reported similarity `1.0`. A CLI end-to-end mock job created source manifest, IR, structural evidence, target result records, conversion report and HTML report while correctly keeping both target `native` values false.
-
-A fresh verification is required immediately before the release archive is finalized; see the final release metadata appended below.
-
-## External acceptance gates — intentionally not misreported
-
-### Google live gate
-
-Current execution environment does not contain the user's Google Desktop OAuth client or authorized token. Therefore a user-owned native Google Slides document cannot be created here without the account authorization step.
-
-The code path is integrated and contract-tested, but live platform acceptance remains pending until:
+## Fresh verification evidence
 
 ```text
-npm run build
-node dist/src/cli/index.js google auth
-node dist/src/cli/index.js google doctor
-node dist/src/cli/index.js convert <deck.pptx> --target google
+Clean dependency install:       PASS
+TypeScript/core/desktop/UI:     PASS
+Controlled corpus:              12 PPTX regenerated
+Automated tests:                45 passed / 0 failed / 0 skipped
+Isolation doctor:               clean=true
+Linux Electron smoke:           PASS
+Runtime dependency audit:       0 vulnerabilities
+Windows package build:          PASS
+Release manifest verification:  PASS
 ```
 
-A successful live gate must show native MIME verification and Slides retrieval; mock output is insufficient.
-
-### Keynote live gate
-
-Current execution environment is Linux, not macOS, and Keynote is not installed. Therefore native `.key` creation cannot be executed truthfully here.
-
-The macOS worker, doctor and AppleScript assets are integrated. Live platform acceptance requires a macOS host with Keynote installed:
+Windows artifacts generated during the verified build:
 
 ```text
-npm install
-npm run build
-node dist/src/cli/index.js keynote doctor
-node dist/src/cli/index.js convert <deck.pptx> --target keynote
+Installer
+  file:   Presentation-Bridge-Setup-0.2.0-x64.exe
+  bytes:  118020974
+  sha256: 421d6ccd1cdde9d8d7033c3aca620888334026315a77df8d0bb1a0708ab385e7
+
+Portable
+  file:   Presentation-Bridge-Portable-0.2.0-x64.exe
+  bytes:  117789777
+  sha256: 5eaba0b12f22efde674f26fda4552c11575331f4ca7c314886029178896a36eb
 ```
 
-A successful gate must contain a real `.key` artifact and `verification: "live"`.
+Packaged ASAR verification:
 
-## Dependency installation note
+```text
+Required desktop/UI/CLI paths: present
+Forbidden source/test/secret/runtime paths: absent
+Packaged Google OAuth client: absent
+ASAR entries inspected: 338
+```
 
-The sandbox could not reach `registry.npmjs.org`. A package lock was therefore not fabricated. The local verification used preinstalled copies of the exact versions pinned in `package.json`:
+## Explicitly pending acceptance
 
-- `sharp` 0.34.1
-- `pptxgenjs` 4.0.0
-- `typescript` 5.8.3
-- `@types/node` 25.1.0
+### Native Windows host
 
-`node_modules` is excluded from the release archive. On a normal target machine, `npm install` must be run before local verification.
+The executables are structurally valid PE artifacts and package verification passes. They are unsigned, currently use Electron's default icon, and have not yet completed a native Windows 10/11 smoke. Wine 5 terminated Electron 44 and is not treated as a substitute for Windows acceptance.
+
+### Native Google Slides
+
+No user OAuth client/token is configured in the Linux build environment. Live conversion must produce a native Google Slides file, verify MIME, and complete a Slides API read.
+
+### Native Keynote
+
+The current host is Linux. Live acceptance requires macOS, Keynote, Automation permission, and a real `.key` result. The remote worker code is implemented and contract-tested, but the platform gate remains.
 
 ## Release interpretation
 
-**Integrated codebase:** complete for the approved V1 architecture.
-**Local deterministic acceptance:** complete after the final verification recorded below.
-**Native Google platform acceptance:** pending external Google OAuth/account environment.
-**Native Keynote platform acceptance:** pending external macOS + Keynote environment.
-
-This distinction is deliberate: platform-owned prerequisites are not converted into false “complete” claims.
-
----
-
-## Final release verification metadata
-
-_To be appended only from fresh verification evidence during release packaging._
-
-### Fresh release verification — 2026-08-27
-
-```text
-Command: npm run verify
-Build: PASS
-Controlled corpus regenerated: 12 PPTX
-Tests: 20 passed / 0 failed / 0 skipped
-Isolation doctor: clean=true, findings=[]
-Google live environment: pending (no OAuth token configured)
-Keynote live environment: pending (current host Linux; Keynote requires macOS)
-Source renderer doctor: available (LibreOffice + pdftoppm)
-Node: v22.16.0
-```
-
-Additional release smoke evidence:
-
-```text
-PPTX source render: PASS (1 controlled slide rendered)
-Identity visual comparison: similarity=1.0, mismatchedPixels=0
-CLI mock end-to-end: PASS
-Mock Google native=false: PASS
-Mock Keynote native=false: PASS
-Fake .key artifacts in mock job: 0
-HTML compatibility report produced: PASS
-```
+- **Code integration:** complete for v0.2.0.
+- **Local deterministic verification:** complete.
+- **Windows cross-built package integrity:** complete.
+- **Public signed Windows release:** pending native Windows smoke, optional Authenticode signing, and an approved icon.
+- **Stable V1 claim:** withheld until live Google and Keynote corpus acceptance satisfy the approved release definition.
