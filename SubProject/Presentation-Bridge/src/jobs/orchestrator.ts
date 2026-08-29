@@ -6,7 +6,7 @@ import { analyzePptx } from '../pptx/preflight/analyze.js';
 import { buildPresentationIR } from '../pptx/ir/build.js';
 import { writeJson } from '../reports/io.js';
 import { writeHtmlReport } from '../reports/html.js';
-import type { ConversionReport, JobTarget, TargetResult } from '../types/contracts.js';
+import type { ConversionProgressEvent, ConversionReport, JobLifecycleState, JobTarget, TargetResult } from '../types/contracts.js';
 import { compareStructural } from '../fidelity/structural/compare.js';
 import { convertToGoogleSlides, mockGoogleResult } from '../converters/google/adapter.js';
 import { getGoogleAccessToken } from '../converters/google/oauth.js';
@@ -24,9 +24,12 @@ export interface ConvertJobOptions {
   googleMode?: 'live' | 'mock';
   keynoteMode?: 'live' | 'mock';
   exportKeynotePdfPreview?: boolean;
+  jobId?: string;
+  signal?: AbortSignal;
+  onProgress?: (event: ConversionProgressEvent) => void;
 }
 
-function makeJobId(): string {
+export function makeJobId(): string {
   const stamp = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
   return `${stamp}-${randomUUID().slice(0, 8)}`;
 }
@@ -44,7 +47,7 @@ function failedTarget(target: 'google' | 'keynote', error: unknown): TargetResul
 }
 
 export async function runConversionJob(sourcePath: string, config: BridgeConfig, options: ConvertJobOptions): Promise<{ jobRoot: string; report: ConversionReport }> {
-  const jobId = makeJobId();
+  const jobId = options.jobId ?? makeJobId();
   const root = resolve(options.outputRoot ?? config.runtimeRoot);
   const jobRoot = join(root, jobId);
   const sourceDir = join(jobRoot, 'source');
@@ -56,10 +59,30 @@ export async function runConversionJob(sourcePath: string, config: BridgeConfig,
   const state = new JobStateWriter(join(jobRoot, 'job.json'), jobId);
   await state.init();
   const startedAt = new Date().toISOString();
+  let currentPercent = 0;
+  const emitProgress = (stage: JobLifecycleState, percent: number, message: string): void => {
+    currentPercent = Math.max(currentPercent, Math.min(100, Math.round(percent)));
+    options.onProgress?.({ jobId, stage, percent: currentPercent, message, at: new Date().toISOString() });
+  };
+  const setStage = async (stage: JobLifecycleState, percent: number, message: string): Promise<void> => {
+    await state.set(stage);
+    emitProgress(stage, percent, message);
+  };
+  const ensureNotCancelled = async (): Promise<void> => {
+    if (!options.signal?.aborted) return;
+    await state.set('cancelled');
+    emitProgress('cancelled', currentPercent, 'Conversion cancelled by user.');
+    const error = new Error('Conversion cancelled by user.');
+    error.name = 'AbortError';
+    throw error;
+  };
 
+  emitProgress('queued', 0, 'Conversion queued.');
+  await ensureNotCancelled();
   const copiedSource = join(sourceDir, basename(sourcePath));
   await copyFile(resolve(sourcePath), copiedSource);
-  await state.set('preflight');
+  await setStage('preflight', 10, 'Analyzing PowerPoint structure and compatibility.');
+  await ensureNotCancelled();
   const manifest = await analyzePptx(copiedSource, config);
   const ir = buildPresentationIR(manifest);
   await writeJson(join(preflightDir, 'source-manifest.json'), manifest);
@@ -75,7 +98,8 @@ export async function runConversionJob(sourcePath: string, config: BridgeConfig,
   const requestedKeynote = options.target === 'all' || options.target === 'keynote';
 
   if (requestedGoogle) {
-    await state.set('converting_google');
+    await ensureNotCancelled();
+    await setStage('converting_google', 35, 'Converting to native Google Slides.');
     if ((options.googleMode ?? 'live') === 'mock') {
       targets.google = mockGoogleResult(manifest);
     } else {
@@ -87,24 +111,28 @@ export async function runConversionJob(sourcePath: string, config: BridgeConfig,
       }
     }
     await writeJson(join(googleDir, 'result.json'), targets.google);
+    await ensureNotCancelled();
   }
 
   if (requestedKeynote) {
-    await state.set('converting_keynote');
+    await ensureNotCancelled();
+    await setStage('converting_keynote', requestedGoogle ? 60 : 45, 'Converting to native Keynote.');
     try {
       const keynoteMode = options.keynoteMode ?? 'live';
       targets.keynote = await convertToKeynote(copiedSource, manifest, {
         outputDir: keynoteDir,
         mode: keynoteMode,
         exportPdfPreview: options.exportKeynotePdfPreview ?? keynoteMode === 'live'
-      });
+      }, config);
     } catch (error) {
       targets.keynote = failedTarget('keynote', error);
     }
     await writeJson(join(keynoteDir, 'result.json'), targets.keynote);
+    await ensureNotCancelled();
   }
 
-  await state.set('verifying');
+  await setStage('verifying', 82, 'Verifying structure, native output, and fidelity evidence.');
+  await ensureNotCancelled();
   const structural: ConversionReport['structural'] = {};
   if (targets.google) {
     structural.google = compareStructural(manifest, targets.google);
@@ -166,6 +194,8 @@ export async function runConversionJob(sourcePath: string, config: BridgeConfig,
       ? 'completed_with_warnings'
       : 'completed';
 
+  await ensureNotCancelled();
+
   const artifacts = [
     join(preflightDir, 'source-manifest.json'),
     join(preflightDir, 'presentation-ir.json'),
@@ -191,6 +221,7 @@ export async function runConversionJob(sourcePath: string, config: BridgeConfig,
   await writeHtmlReport(join(jobRoot, 'compatibility-report.html'), report);
   report.artifacts.push(join(jobRoot, 'compatibility-report.html'));
   await writeJson(join(jobRoot, 'conversion-report.json'), report);
-  await state.set(status === 'failed' ? 'failed' : status);
+  const terminalState: JobLifecycleState = status === 'failed' ? 'failed' : status;
+  await setStage(terminalState, 100, status === 'failed' ? 'Conversion failed.' : 'Conversion finished.');
   return { jobRoot, report };
 }

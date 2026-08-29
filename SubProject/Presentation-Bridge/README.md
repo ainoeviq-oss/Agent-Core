@@ -26,11 +26,13 @@ This repository is intentionally standalone. It has no imports, runtime paths, s
 ## Install
 
 ```bash
-npm install
+npm ci
 npm run build
 npm test
 node dist/src/cli/index.js doctor
 ```
+
+`package-lock.json` is committed and is the reproducible install contract for the verified release.
 
 On a Windows production machine, put the repository in its own directory, for example:
 
@@ -47,9 +49,11 @@ presentation-bridge preflight deck.pptx --output manifest.json --ir ir.json
 presentation-bridge convert deck.pptx --target google
 presentation-bridge convert deck.pptx --target keynote
 presentation-bridge convert deck.pptx --target all
+presentation-bridge host --host 127.0.0.1 --port 4173
 presentation-bridge google auth
 presentation-bridge google doctor
 presentation-bridge keynote doctor
+presentation-bridge keynote worker --host 127.0.0.1 --port 4815
 presentation-bridge fidelity visual source.png target.png --diff diff.png
 presentation-bridge doctor
 ```
@@ -122,6 +126,12 @@ See:
 
 Live Google acceptance requires user OAuth; live Keynote acceptance requires a macOS+Keynote runtime. The code does not fake these gates when the environment is unavailable.
 
-## Dependency reproducibility note
+## Desktop and hosted surfaces
 
-The release manifest pins the exact dependency versions used by local verification. This build environment could not reach the public npm registry, so a registry-generated `package-lock.json` is intentionally not fabricated. On the target machine, run `npm install`; npm will resolve the pinned versions and create the local lockfile.
+Version 0.2.0 includes an Electron desktop application and a hosted browser surface backed by the same conversion service. The desktop build uses context isolation and a preload API; selected input/output paths are bounded by the native pickers. Hosted mode binds to loopback by default and requires `PB_HOSTED_TOKEN` when exposed beyond loopback.
+
+Remote Keynote conversion uses the bounded worker protocol documented in `docs/keynote-worker.md`. Non-loopback workers require TLS plus bearer authentication. Desktop worker tokens are encrypted with Electron `safeStorage` before they are persisted.
+
+## Dependency reproducibility and audit
+
+`package-lock.json` is committed. Use `npm ci` for reproducible installs. The packaged/runtime dependency audit (`npm audit --omit=dev`) is expected to contain no high or critical findings. The development-only fixture generator currently retains `pptxgenjs` because npm's audit-recommended downgrade is incompatible with the controlled corpus generator; see `SECURITY.md` for the scoped development-tooling note.

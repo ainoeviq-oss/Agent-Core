@@ -41,9 +41,15 @@ Never commit:
 
 ## Keynote worker
 
-The V1 local worker is not a generic remote shell. It invokes only packaged AppleScript conversion/export scripts with job-controlled input/output paths.
+The local worker is not a generic remote shell. It invokes only packaged AppleScript conversion/export scripts with job-controlled input/output paths.
 
-A future remote worker must add authenticated job transport before it can be enabled.
+The remote worker exposes only the bounded Presentation Bridge worker protocol. It requires bearer authentication, refuses non-loopback cleartext binding, requires TLS for non-loopback service, limits PPTX upload size, validates native `.key` artifacts before delivery, and never returns stored worker credentials in metadata. Desktop remote-worker tokens are persisted through Electron `safeStorage`, not plaintext settings.
+
+## Dependency audit
+
+The distributable runtime is checked with `npm audit --omit=dev`. Version 0.2.0 pins `sharp` to a patched 0.35.x release so the runtime audit has no high or critical findings.
+
+The full development audit can still report the `pptxgenjs` test-fixture tool through its `image-size` dependency. The registry currently offers no `image-size` release outside the advisory range, and npm's suggested `pptxgenjs@1.1.5` downgrade is incompatible with the controlled fixture generator. `pptxgenjs` remains a development-only dependency used to create local test corpus files and is not included in the packaged application runtime.
 
 ## Logging
 
