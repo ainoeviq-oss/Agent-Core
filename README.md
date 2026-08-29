@@ -1,72 +1,82 @@
 # Agent Core
 
-Agent Core is a **local-first, authenticated MCP control plane** that lets ChatGPT work against a bounded Windows workspace with durable memory, dependency-aware execution, evidence-backed continuity, and an operator-owned launcher/tray lifecycle.
+[![Latest release](https://img.shields.io/github/v/release/rendevouz999/Agent-Core?display_name=tag&sort=semver)](https://github.com/rendevouz999/Agent-Core/releases/latest)
+[![GitHub package](https://img.shields.io/badge/GitHub%20Packages-agent--core--plugin-24292f?logo=github)](https://github.com/users/rendevouz999/packages/npm/package/agent-core-plugin)
 
-The design keeps semantic reasoning in the connected model while Agent Core supplies the deterministic substrate around it: authentication, workspace policy, local state, command execution, event wake, recovery, and factual evidence.
+Agent Core is a **local-first, authenticated MCP control plane** that gives ChatGPT a bounded execution authority instead of an unverified shell. It combines durable memory, cross-session continuity, dependency-aware execution, evidence-backed completion, GitHub operations, and self-healing desktop or Codespaces lifecycles.
 
-## What Agent Core provides
+The model remains responsible for interpretation and judgment. Agent Core supplies the deterministic substrate around it: identity, policy, local state, guarded tools, process truth, recovery, and auditable evidence.
+
+## Core capabilities
 
 | Layer | Responsibility |
 |---|---|
-| MCP gateway | Streamable HTTP MCP endpoint and tool discovery |
-| Authentication | Custom Agent Core API keys, OAuth 2.0, PKCE, refresh tokens, dynamic client registration |
+| MCP gateway | Streamable HTTP MCP endpoint, OAuth, custom Agent Core API keys, and bounded tool discovery |
 | Workspace guard | Allowed-root filesystem and process boundaries |
-| Capability routing | Principal-bound task routing and audited deferred skill loading |
-| Deterministic Memory Fabric | Local SQLite semantic memory, provenance, retrieval, backup, integrity, redaction |
-| Local Continuity | Task/checkpoint/frontier state that can be rehydrated by a later route or chat session |
-| Execution Fabric | Durable DAG execution, bounded concurrency, retries, logs, restart recovery |
-| Event wake | Persist-before-signal event delivery without busy database polling |
-| Native GitHub Fabric | Route-aware GitHub REST, HTTPS Git, Releases, Issues/PRs and Packages without interactive login |
-| Windows lifecycle | One launcher, tray controls, watchdog recovery, tunnel supervision, optional autostart |
+| Capability routing | Principal/project routing, deferred capability search, and audited skill loading |
+| Deterministic Memory Fabric | Local SQLite memory with provenance, retrieval, revision, redaction, backup, and integrity checks |
+| Local Continuity | Durable task, checkpoint, blocker, decision, and next-frontier state across sessions |
+| Execution Fabric | Persisted DAG execution, bounded concurrency, retries, cancellation, logs, restart recovery, and verified artifacts |
+| Native GitHub Fabric | Route-aware repositories, Git, issues, pull requests, releases, REST calls, and GitHub Packages without interactive login |
+| Lifecycle authority | Windows launcher/tray supervision and self-healing GitHub Codespaces startup |
+| Presentation Bridge | Standalone PPTX conversion project with desktop and hosted interfaces |
+
+**Authority order:** process truth > verified artifact truth > parsed structured interpretation > artifact/cache suggestion > workflow advice. Lower layers may help reasoning, but they do not override current execution evidence.
 
 ## Architecture
 
 ```text
-ChatGPT / MCP Client
+ChatGPT / MCP client
         |
         v
-+-----------------------------+
-| Agent Core MCP + OAuth      |
-| identity / route / policy   |
-+-------------+---------------+
-              |
-   +----------+----------+----------+----------------+
-   |                     |          |                |
-   v                     v          v                v
-Capability         DMF + Continuity Execution     Native GitHub
- Registry           durable context   Fabric         Fabric
-   |                     |          DAG + events  REST/Git/Packages
-   +----------+----------+----------+----------------+
-              |
-              v
-       Verified bounded actions
-              |
-       +------+----------------+
-       |                       |
-       v                       v
-Files / processes        GitHub / evidence
++-------------------------------+
+| Agent Core MCP + OAuth        |
+| identity / route / policy     |
++---------------+---------------+
+                |
+   +------------+------------+------------+----------------+
+   |                         |            |                |
+   v                         v            v                v
+Capability              Memory +      Execution      Native GitHub
+routing                  Continuity      Fabric          Fabric
+   |                         |         DAG + events   REST/Git/Packages
+   +------------+------------+------------+----------------+
+                |
+                v
+          Bounded actions
+                |
+        +-------+--------+
+        |                |
+        v                v
+ files / processes   GitHub / evidence
 ```
 
-**Core rule:** the model interprets and decides; Agent Core persists, constrains, executes, and records reality.
+## Clone the canonical repository
 
-Execution-derived intelligence follows a strict authority order: **process truth > verified artifact truth > parsed structured interpretation > artifact/cache suggestion > workflow advice**. Lower layers are deterministic aids only; they cannot override higher-authority evidence, and cache awareness never skips current command execution.
+```bash
+git clone https://github.com/rendevouz999/Agent-Core.git
+cd Agent-Core
+git switch main
+```
 
-## Quick start
+Use `rendevouz999/Agent-Core` as the canonical source. Forks may be useful as temporary development remotes, but stable source, releases, packages, and Codespaces lifecycle updates are published from the canonical repository.
+
+## Windows quick start
 
 Requirements:
 
-- Windows 10/11
+- Windows 10 or 11
 - Node.js 24+
-- the Agent Core project folder kept intact
-- Secure MCP Tunnel configured for remote ChatGPT access when needed
+- the complete Agent Core folder kept intact
+- a configured Secure MCP Tunnel when remote ChatGPT access is required
 
-For normal use, launch only:
+For normal operation, launch only:
 
 ```text
 Start-Agent-Core.bat
 ```
 
-The launcher resolves the current project location, installs missing dependencies, builds the runtime, performs identity-safe service takeover, then starts the tray manager in the background. Internal PowerShell/VBS helpers do not need to be launched manually.
+The launcher resolves the current project root, installs missing dependencies, builds the runtime, performs identity-safe service takeover, and starts the tray manager in the background.
 
 Default local endpoints:
 
@@ -76,9 +86,7 @@ Health   http://127.0.0.1:8765/health
 Metrics  http://127.0.0.1:8765/health/metrics
 ```
 
-The service remains loopback-bound. Remote ChatGPT access is provided through the configured Secure MCP Tunnel rather than by exposing the local MCP listener directly.
-
-## Tray controls
+Tray controls:
 
 ```text
 Restart:        tray menu -> Restart All
@@ -87,26 +95,67 @@ Autostart:      tray menu -> Start with Windows: On/Off
 Exit:           tray menu -> Exit Agent Core
 ```
 
-`Exit Agent Core` stops only identity-validated Agent Core and tunnel processes owned by the tray manager. Runtime data, logs, OAuth/key state, capabilities, and secrets are preserved.
+`Exit Agent Core` stops only identity-validated Agent Core and tunnel processes owned by the tray lifecycle. Runtime data, logs, OAuth/key state, capabilities, and secrets remain preserved.
+
+## GitHub Codespaces
+
+The repository includes an automatic Linux lifecycle for disposable Codespaces hosts:
+
+```text
+postCreate -> scripts/codespace/bootstrap.sh --phase create
+postStart  -> scripts/codespace/bootstrap.sh --phase start
+postAttach -> scripts/codespace/ensure-running.sh --repair --phase attach
+```
+
+The lifecycle restores dependencies, rebuilds when required, starts the loopback MCP server, performs a real MCP protocol probe, registers the fixed tunnel runtime, verifies remote identity, and keeps a watchdog active. Credential values stay in ignored file-backed or GitHub Codespaces secret storage and are never committed.
+
+For an already configured repository/account, the normal user flow is:
+
+```text
+Create, resume, or rebuild the Codespace
+              -> wait for lifecycle readiness
+              -> say "test koneksi" in ChatGPT
+```
+
+No tunnel ID or API key should be pasted into chat. Keep only one Codespace active against the same fixed tunnel identity at a time. See [`docs/codespaces.md`](docs/codespaces.md) for provisioning boundaries, recovery behavior, and verification commands.
+
+## Presentation Bridge
+
+`SubProject/Presentation-Bridge` is an independently testable PPTX conversion project with one shared UI surface for Electron desktop and hosted browser use.
+
+```bash
+cd SubProject/Presentation-Bridge
+npm ci
+npm run verify
+npm run smoke:desktop
+```
+
+The v0.2 interface provides one-screen file selection, Google Slides / Keynote / Both targets, progress and cancellation, result cards, compatibility reporting, recent jobs, and setup dialogs. Google Slides live OAuth verification and native Keynote `.key` generation remain environment-dependent acceptance gates; unavailable targets are reported rather than presented as false success.
+
+Every stable Agent Core release includes a credential-free source archive:
+
+```text
+presentation-bridge-v0.2.0-source.zip
+```
+
+The archive contains tracked source and documentation only. It excludes runtime jobs, secrets, generated corpus files, build output, release output, and `node_modules`.
 
 ## Tool surface
 
 Agent Core groups its MCP tools by responsibility:
 
-- **Identity & status** - runtime identity, lightweight readiness, detailed bounded `agent_core_health_metrics`, workspace roots, capability stage.
-- **Filesystem & search** - bounded read/write/edit/move/info and recursive filename/content search.
-- **Processes** - guarded PowerShell execution plus owned background-process lifecycle tools.
-- **Capability routing** - route, search, inspect dependencies, load audited native-ready skills, registry coverage.
-- **GitHub** - route-aware repository, Git, issue, pull-request, release, Packages/npm, and bounded generic REST operations with lazy local credentials. GitHub Actions/CI is intentionally forbidden for this repository.
-- **Memory** - status, search, inspect, commit, revise, forget, explain, export.
-- **Continuity** - checkpoint, status, task inspection, actionable frontier.
-- **Execution** - create/start/status/wait/log/add/retry/cancel dependency-aware command runs, plus verified artifact lookup and deterministic read-only workflow advice.
+- **Identity and status** — runtime identity, readiness, bounded health metrics, workspace roots, and capability stage.
+- **Filesystem and search** — bounded read/write/edit/move/info plus recursive filename/content search.
+- **Processes** — guarded command execution and owned background-process lifecycle tools.
+- **Capability routing** — route, search, dependency inspection, audited skill loading, and registry coverage.
+- **GitHub** — repositories, Git, issues, pull requests, releases, GitHub Packages/npm, and bounded REST operations.
+- **Memory** — status, search, inspect, commit, revise, forget, explain, and export.
+- **Continuity** — checkpoint, status, task inspection, blockers, and actionable frontier.
+- **Execution** — create/start/status/wait/log/add/retry/cancel DAG runs, verified artifact lookup, and read-only workflow advice.
 
 Route-bound mutations require a current principal/project routing context. High-risk system, storage, privilege, and escape-path operations are rejected before execution.
 
-## Persistence model
-
-Runtime state is local and intentionally separated by concern:
+## Persistence and security
 
 ```text
 runtime/data/       OAuth clients, key metadata, launcher state
@@ -114,79 +163,80 @@ runtime/logs/       operational logs
 runtime/memory/     Deterministic Memory Fabric SQLite + backups
 runtime/execution/  execution SQLite + per-attempt evidence
 capabilities/       deferred/audited capability registry
-secrets/            operator-managed secrets (never packaged)
+secrets/            operator-managed secrets; never packaged
 ```
 
-Generated runtime state, secrets, caches, local capability sources, and release build output are excluded from Git.
+Security boundaries:
 
-## Security boundaries
+- MCP binds to `127.0.0.1` by default.
+- Agent Core API keys are stored as salted hashes; raw material is shown only at creation or rotation.
+- OAuth state and GitHub credentials remain outside source control.
+- Filesystem/process tools are constrained to configured workspace roots.
+- Raw execution stdout/stderr remains sensitive operator evidence and is not promoted wholesale into semantic memory.
+- Recovery does not infer success from a missing process or PID; durable result evidence is authoritative.
+- Deferred third-party capabilities cannot become executable skills until audit gates pass.
+- REST/Git and GitHub Packages credentials are separate, read lazily, redacted, and excluded from release assets.
 
-- MCP is bound to `127.0.0.1` by default.
-- Agent Core API keys are persisted as salted hashes; raw key material is shown only at creation/rotation time.
-- OAuth state is separate from source control.
-- Filesystem/process tools are restricted to configured workspace roots.
-- Raw execution stdout/stderr is treated as sensitive operator evidence and is never promoted wholesale into semantic memory.
-- Execution recovery never infers success from a vanished process or PID; durable result evidence is authoritative.
-- Deferred third-party capabilities cannot become executable skills until their audit gates pass.
-- GitHub credentials remain in operator-managed local files under `secrets/github`; REST/Git and Packages credentials are separated, read lazily, redacted from errors/audit/memory, and excluded from release packages.
-
-See [`SECURITY.md`](SECURITY.md) for the repository security model.
+See [`SECURITY.md`](SECURITY.md) for the complete repository security model.
 
 ## Repository layout
 
 ```text
-src/                 Agent Core runtime source
-tests/               behavioral, security, recovery and performance tests
-scripts/             build, benchmark, release and Windows lifecycle tooling
-plugin/agent-core/    native Agent Core plugin source
-docs/                canonical architecture/operator documentation
-tunnel-client/        safe tunnel configuration example
-Start-Agent-Core.bat  public launcher
+src/                            Agent Core runtime source
+tests/                          behavioral, security, recovery, and performance tests
+scripts/                        build, benchmark, release, and lifecycle tooling
+plugin/agent-core/              native routing and GitHub skills
+plugin/codespace/               bounded Codespace MCP bridge and watchdog
+SubProject/Presentation-Bridge/ standalone PPTX conversion project
+docs/                           canonical architecture and operator documentation
+tunnel-client/                  safe tunnel configuration example
+Start-Agent-Core.bat            Windows launcher
 ```
-
-## Documentation
-
-Start with [`docs/README.md`](docs/README.md).
-
-Key documents:
-
-- [`docs/deterministic-memory.md`](docs/deterministic-memory.md)
-- [`docs/local-agent-continuity.md`](docs/local-agent-continuity.md)
-- [`docs/deterministic-execution-fabric.md`](docs/deterministic-execution-fabric.md)
-- [`docs/multi-command-wake-workflow.md`](docs/multi-command-wake-workflow.md)
-- [`docs/stability.md`](docs/stability.md)
-- [`docs/github.md`](docs/github.md) — Native GitHub Fabric operator/security guide and opt-in live acceptance
-- [`docs/codespaces.md`](docs/codespaces.md) — self-healing GitHub Codespaces deployment and verified MCP URL workflow
-- [`docs/roadmap/self-fork-integration.md`](docs/roadmap/self-fork-integration.md) - planning only; not implemented
 
 ## Development and verification
 
-```powershell
+```bash
 npm ci
-npm run build
-npm test
-npm run check:brand
+npm run verify
 ```
 
-For the complete release gate:
+Complete stable release gate and local packaging:
 
-```powershell
+```bash
 npm run verify:release
 npm run package:release
 ```
 
-## Plugin packaging
+GitHub Actions is intentionally disabled for this repository. Accepted local verification is authoritative; stable publication is performed directly through Native GitHub Fabric.
 
-The tracked plugin source contains the native Agent Core Capability Router and Native GitHub Fabric skills. Local audited `native_ready` skills can additionally be materialized from the deferred capability registry with:
+## Releases and packages
 
-```powershell
-npm run build:plugin
+A stable release contains:
+
+```text
+agent-core-windows-vX.Y.Z-stable.zip
+agent-core-plugin-vX.Y.Z-stable.zip
+presentation-bridge-v0.2.0-source.zip
+rendevouz999-agent-core-plugin-X.Y.Z.tgz
+release-manifest.json
+SHA256SUMS.txt
 ```
 
-Local generated skill packages include provenance/license evidence and remain ignored by Git. Release packaging deliberately uses a reproducible tracked-core bundle; runtime credentials, OAuth state, secrets, caches, quarantine material, and untracked capability sources are never included.
+The ZIP and TGZ files are built from an exact clean source commit. Runtime state, credentials, secrets, local capability caches, generated jobs, and raw evidence are excluded. `SHA256SUMS.txt` provides independently verifiable hashes for every distributable asset and the manifest.
 
-## Releases
+The npm-compatible plugin is published to GitHub Packages as:
 
-Stable release artifacts are generated, verified, packaged, and published directly from the local Agent Core authority. Once the local release gate has passed and the build is declared stable, that verification is authoritative and must not be repeated through GitHub-hosted CI. GitHub Actions is disabled for this repository and must not be used, dispatched, rerun, or treated as a release fallback. Publication uses Native GitHub Fabric for Git/tag/release operations and the dedicated package credential for GitHub Packages under the `stable` dist-tag.
+```text
+@rendevouz999/agent-core-plugin
+```
 
-Release history and behavior changes are recorded in [`CHANGELOG.md`](CHANGELOG.md).
+Authenticated installation:
+
+```bash
+export NODE_AUTH_TOKEN="<GitHub token with read:packages>"
+npm install @rendevouz999/agent-core-plugin --registry=https://npm.pkg.github.com
+```
+
+Do not commit `NODE_AUTH_TOKEN` or a generated `.npmrc`. Stable package publication uses a dedicated file-backed Packages credential and the `stable` dist-tag.
+
+Release history and behavior changes are recorded in [`CHANGELOG.md`](CHANGELOG.md). Canonical operational documents begin at [`docs/README.md`](docs/README.md); GitHub credential and publication behavior is documented in [`docs/github.md`](docs/github.md).

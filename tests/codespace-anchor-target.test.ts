@@ -28,7 +28,7 @@ function response(body: unknown, status = 200): Response {
 function healthyFetch(base = 'https://replacement-8765.app.github.dev'): typeof fetch {
   return (async (input: string | URL | Request) => {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input : input.url);
-    if (url.pathname === '/health') return response({ status: 'ok', service: 'agent-core', version: '0.5.3', memory: { healthy: true }, continuity: { healthy: true }, execution: { healthy: true } });
+    if (url.pathname === '/health') return response({ status: 'ok', service: 'agent-core', version: '0.5.4', memory: { healthy: true }, continuity: { healthy: true }, execution: { healthy: true } });
     if (url.pathname === '/.well-known/oauth-authorization-server') return response({ issuer: base, authorization_endpoint: `${base}/oauth/authorize`, token_endpoint: `${base}/oauth/token`, registration_endpoint: `${base}/oauth/register` });
     if (url.pathname === '/mcp') return response({ error: 'unauthorized' }, 401);
     return response({ error: 'not_found' }, 404);

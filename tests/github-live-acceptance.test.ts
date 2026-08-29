@@ -127,14 +127,14 @@ describe('GitHub live acceptance harness', () => {
       readFile(path.resolve('package.json'), 'utf8'),
       readFile(path.resolve('docs', 'README.md'), 'utf8'),
       readFile(path.resolve('README.md'), 'utf8'),
-      readFile(path.resolve('scripts', 'release', 'build-release.ps1'), 'utf8'),
+      readFile(path.resolve('scripts', 'release', 'release-contract.mjs'), 'utf8'),
       readFile(path.resolve('docs', 'github.md'), 'utf8'),
     ]);
     const packageMeta = JSON.parse(packageJson) as { scripts?: Record<string, string> };
     expect(packageMeta.scripts?.['acceptance:github']).toContain('github-live-acceptance.mjs');
     expect(docsIndex).toContain('[`github.md`](github.md)');
     expect(rootReadme).toContain('[`docs/github.md`](docs/github.md)');
-    expect(releaseBuilder).toContain("'docs\\github.md'");
+    expect(releaseBuilder).toContain("'docs/github.md'");
     expect(githubDoc).toContain('2026-03-10');
     expect(githubDoc).toContain('read:packages');
     expect(githubDoc).toContain('personal access token (classic)');

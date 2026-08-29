@@ -36,10 +36,16 @@ function trackedFiles() {
     .map((file) => path.join(repoRoot, file));
 }
 
+function isDependencyLockfile(file) {
+  const normalized = file.replaceAll('\\', '/');
+  return /(?:^|\/)(?:package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock)$/i.test(normalized);
+}
+
 const scanIndex = process.argv.indexOf('--scan-path');
 const scanRoot = scanIndex >= 0 ? path.resolve(process.argv[scanIndex + 1] ?? '') : null;
-const files = scanRoot ? await walk(scanRoot) : trackedFiles();
 const base = scanRoot ?? repoRoot;
+const files = (scanRoot ? await walk(scanRoot) : trackedFiles())
+  .filter((file) => !isDependencyLockfile(path.relative(base, file)));
 const findings = [];
 for (const file of files) {
   const display = path.relative(base, file).replaceAll('\\', '/');
