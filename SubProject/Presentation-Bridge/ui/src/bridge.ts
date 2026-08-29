@@ -1,5 +1,6 @@
 import type { PresentationBridgeDesktopApi, SelectedPresentationFile } from '../../src/application/desktop-contracts.js';
 import type { ApplicationJobSnapshot, BridgeDoctorResult, JobHistoryItem } from '../../src/application/contracts.js';
+import type { KeynoteWorkerSettingsInput, KeynoteWorkerSettingsView } from '../../src/application/settings-store.js';
 import type { ConversionProgressEvent, JobTarget } from '../../src/types/contracts.js';
 
 export interface SelectedPresentation {
@@ -24,6 +25,8 @@ export interface UiBridge {
   getJob(jobId: string): Promise<ApplicationJobSnapshot | null>;
   listHistory(): Promise<JobHistoryItem[]>;
   doctor(): Promise<BridgeDoctorResult>;
+  getKeynoteWorkerSettings(): Promise<KeynoteWorkerSettingsView>;
+  saveKeynoteWorkerSettings(input: KeynoteWorkerSettingsInput): Promise<KeynoteWorkerSettingsView>;
   authorizeGoogle(): Promise<void>;
   openExternal(url: string): Promise<void>;
   openReport(item: JobHistoryItem | { jobId: string; htmlReportPath?: string }): Promise<void>;
@@ -53,6 +56,8 @@ function desktopBridge(api: PresentationBridgeDesktopApi): UiBridge {
     getJob: async (jobId) => await api.getJob(jobId),
     listHistory: async () => await api.listHistory(),
     doctor: async () => await api.doctor(),
+    getKeynoteWorkerSettings: async () => await api.getKeynoteWorkerSettings(),
+    saveKeynoteWorkerSettings: async (input) => await api.saveKeynoteWorkerSettings(input),
     authorizeGoogle: async () => { await api.authorizeGoogle(); },
     openExternal: async (url) => { await api.openExternal(url); },
     openReport: async (item) => {
@@ -110,6 +115,8 @@ function hostedBridge(): UiBridge {
     },
     listHistory: async () => await (await apiFetch('/api/history')).json() as JobHistoryItem[],
     doctor: async () => await (await apiFetch('/api/doctor')).json() as BridgeDoctorResult,
+    getKeynoteWorkerSettings: async () => { throw new Error('Keynote worker settings are managed by the hosted server.'); },
+    saveKeynoteWorkerSettings: async () => { throw new Error('Keynote worker settings are managed by the hosted server.'); },
     authorizeGoogle: async () => { await apiFetch('/api/google/authorize', { method: 'POST' }); },
     openExternal: async (url) => { window.open(url, '_blank', 'noopener,noreferrer'); },
     openReport: async (item) => { window.open(withToken(`/api/jobs/${encodeURIComponent(item.jobId)}/report.html`), '_blank', 'noopener,noreferrer'); },
