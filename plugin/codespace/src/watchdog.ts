@@ -118,7 +118,7 @@ function runtimeIsHealthy(
     && status.remote?.id === expectedTunnelId
     && typeof status.remote_lookup_auth_ref === 'string'
     && status.remote_lookup_auth_ref.startsWith('file:')
-    && status.process?.target_kind === 'url'
+    && status.process?.target_kind === 'server_url'
     && status.process?.target_value === expectedMcpServerUrl;
 }
 
