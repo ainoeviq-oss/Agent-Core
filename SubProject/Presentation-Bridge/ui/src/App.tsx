@@ -1,17 +1,33 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { bridge, type SelectedPresentation } from './bridge.js';
 import type { ApplicationJobSnapshot, BridgeDoctorResult, JobHistoryItem } from '../../src/application/contracts.js';
+import type { KeynoteWorkerSettingsInput, KeynoteWorkerSettingsView } from '../../src/application/settings-store.js';
 import type { ConversionProgressEvent, JobTarget, TargetResult } from '../../src/types/contracts.js';
 
-type View = 'convert' | 'history' | 'settings';
-
 const terminalStates = new Set(['completed', 'completed_with_warnings', 'failed', 'cancelled']);
+const targets: Array<{ value: JobTarget; title: string; description: string; icon: 'google' | 'keynote' | 'both' }> = [
+  { value: 'google', title: 'Google Slides', description: 'Editable presentation in Drive', icon: 'google' },
+  { value: 'keynote', title: 'Keynote', description: 'Native .key document', icon: 'keynote' },
+  { value: 'all', title: 'Both', description: 'Create both native targets', icon: 'both' }
+];
 
-function Icon({ name }: { name: 'convert' | 'history' | 'settings' | 'file' | 'google' | 'keynote' | 'check' | 'warning' | 'folder' | 'external' | 'close' }) {
-  const common = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, 'aria-hidden': true };
+type IconName = 'convert' | 'history' | 'setup' | 'file' | 'google' | 'keynote' | 'check' | 'warning' | 'folder' | 'external' | 'close' | 'refresh';
+
+function Icon({ name }: { name: IconName }) {
+  const common = {
+    width: 18,
+    height: 18,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.8,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true
+  };
   if (name === 'convert') return <svg {...common}><path d="M5 7h11"/><path d="m13 4 3 3-3 3"/><path d="M19 17H8"/><path d="m11 14-3 3 3 3"/></svg>;
   if (name === 'history') return <svg {...common}><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v6h6"/><path d="M12 7v5l3 2"/></svg>;
-  if (name === 'settings') return <svg {...common}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 9 19.37a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.63 15 1.7 1.7 0 0 0 3.08 14H3v-4h.08A1.7 1.7 0 0 0 4.63 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.63 1.7 1.7 0 0 0 10 3.08V3h4v.08A1.7 1.7 0 0 0 15 4.63a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.37 9 1.7 1.7 0 0 0 20.92 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/></svg>;
+  if (name === 'setup') return <svg {...common}><circle cx="12" cy="12" r="3"/><path d="M19 12h2M3 12h2M12 3v2M12 19v2M17 7l1.5-1.5M5.5 18.5 7 17M17 17l1.5 1.5M5.5 5.5 7 7"/></svg>;
   if (name === 'file') return <svg {...common}><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v5h5"/><path d="M10 13h5M10 17h5"/></svg>;
   if (name === 'google') return <svg {...common}><path d="M7 3h8l4 4v14H7z"/><path d="M15 3v5h4"/><path d="M10 12h6v5h-6z"/></svg>;
   if (name === 'keynote') return <svg {...common}><rect x="4" y="4" width="16" height="11" rx="2"/><path d="M12 15v5M8 20h8"/><path d="m9 11 2-2 2 2 2-3"/></svg>;
@@ -19,6 +35,7 @@ function Icon({ name }: { name: 'convert' | 'history' | 'settings' | 'file' | 'g
   if (name === 'warning') return <svg {...common}><path d="M12 3 2.7 20h18.6L12 3Z"/><path d="M12 9v4M12 17h.01"/></svg>;
   if (name === 'folder') return <svg {...common}><path d="M3 6h7l2 2h9v11H3z"/></svg>;
   if (name === 'external') return <svg {...common}><path d="M14 4h6v6M20 4l-9 9"/><path d="M19 13v6H5V5h6"/></svg>;
+  if (name === 'refresh') return <svg {...common}><path d="M20 6v5h-5"/><path d="M19 11a8 8 0 1 0 1 5"/></svg>;
   return <svg {...common}><path d="m6 6 12 12M18 6 6 18"/></svg>;
 }
 
@@ -40,42 +57,83 @@ function targetStatus(result: TargetResult | undefined): { label: string; kind: 
   return { label: humanState(result.status), kind: 'warn' };
 }
 
-function PlatformDot({ ready }: { ready: boolean }) {
-  return <span className={`platform-dot ${ready ? 'ready' : 'pending'}`} />;
+function StatusDot({ ready }: { ready: boolean }) {
+  return <span className={`status-dot ${ready ? 'ready' : 'pending'}`} />;
+}
+
+function Dialog({ open, title, onClose, children, wide = false }: { open: boolean; title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
+  if (!open) return null;
+  return <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}>
+    <section className={`dialog ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
+      <header className="dialog-header"><h2>{title}</h2><button className="icon-button" onClick={onClose} aria-label={`Close ${title}`}><Icon name="close"/></button></header>
+      {children}
+    </section>
+  </div>;
+}
+
+function ResultCard({ name, result }: { name: 'google' | 'keynote'; result: TargetResult | undefined }) {
+  const status = targetStatus(result);
+  return <article className="result-card">
+    <span className={`platform-icon ${name}`}><Icon name={name}/></span>
+    <div className="result-copy"><strong>{name === 'google' ? 'Google Slides' : 'Keynote'}</strong><span className={`result-status ${status.kind}`}>{status.label}</span></div>
+    <div className="result-actions">
+      {result?.webViewLink ? <button className="icon-button" onClick={() => void bridge.openExternal(result.webViewLink!)} aria-label="Open Google Slides"><Icon name="external"/></button> : null}
+      {result?.artifact && bridge.surface === 'desktop' ? <button className="icon-button" onClick={() => void bridge.revealArtifact(result.artifact!)} aria-label="Show Keynote file"><Icon name="folder"/></button> : null}
+    </div>
+  </article>;
 }
 
 export default function App() {
-  const [view, setView] = useState<View>('convert');
   const [source, setSource] = useState<SelectedPresentation | null>(null);
   const [target, setTarget] = useState<JobTarget>(() => (localStorage.getItem('pb.defaultTarget') as JobTarget | null) ?? 'all');
-  const [outputRoot, setOutputRoot] = useState<string>(() => localStorage.getItem('pb.outputRoot') ?? '');
+  const [outputRoot, setOutputRoot] = useState(() => localStorage.getItem('pb.outputRoot') ?? '');
   const [doctor, setDoctor] = useState<BridgeDoctorResult | null>(null);
   const [history, setHistory] = useState<JobHistoryItem[]>([]);
+  const [keynoteSettings, setKeynoteSettings] = useState<KeynoteWorkerSettingsView | null>(null);
+  const [workerMode, setWorkerMode] = useState<'local' | 'remote'>('local');
+  const [workerUrl, setWorkerUrl] = useState('');
+  const [workerToken, setWorkerToken] = useState('');
   const [job, setJob] = useState<ApplicationJobSnapshot | null>(null);
   const [events, setEvents] = useState<ConversionProgressEvent[]>([]);
-  const [error, setError] = useState<string>('');
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [error, setError] = useState('');
   const [loadingDoctor, setLoadingDoctor] = useState(true);
   const [authorizing, setAuthorizing] = useState(false);
+  const [savingWorker, setSavingWorker] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const currentJobId = useRef<string | null>(null);
 
-  const refreshDoctor = async () => {
+  const refreshDoctor = async (): Promise<void> => {
     setLoadingDoctor(true);
     try { setDoctor(await bridge.doctor()); }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setLoadingDoctor(false); }
   };
-  const refreshHistory = async () => {
+
+  const refreshHistory = async (): Promise<void> => {
     try { setHistory(await bridge.listHistory()); }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
   };
 
+  const refreshKeynoteSettings = async (): Promise<void> => {
+    if (bridge.surface !== 'desktop') return;
+    try {
+      const settings = await bridge.getKeynoteWorkerSettings();
+      setKeynoteSettings(settings);
+      setWorkerMode(settings.mode);
+      setWorkerUrl(settings.url);
+      setWorkerToken('');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
   useEffect(() => {
-    void refreshDoctor();
-    void refreshHistory();
+    void Promise.all([refreshDoctor(), refreshHistory(), refreshKeynoteSettings()]);
     const unsubscribe = bridge.onProgress((event) => {
       if (event.jobId !== currentJobId.current) return;
-      setEvents((previous) => [...previous.slice(-39), event]);
+      setEvents((previous) => [...previous.slice(-29), event]);
       setJob((previous) => previous ? {
         ...previous,
         state: event.stage,
@@ -100,10 +158,10 @@ export default function App() {
   const keynoteReady = doctor?.keynote.available === true;
   const isActive = Boolean(job && !terminalStates.has(job.state));
   const canConvert = Boolean(source && !isActive);
-  const terminalReport = job?.report;
-  const reportPath = terminalReport?.artifacts.find((artifact) => artifact.endsWith('compatibility-report.html'));
+  const report = job?.report;
+  const htmlReportPath = report?.artifacts.find((artifact) => artifact.endsWith('compatibility-report.html'));
 
-  const selectPresentation = async () => {
+  const selectPresentation = async (): Promise<void> => {
     setError('');
     if (bridge.surface === 'hosted') {
       fileInput.current?.click();
@@ -111,11 +169,17 @@ export default function App() {
     }
     try {
       const selected = await bridge.selectPresentation();
-      if (selected) { setSource(selected); setJob(null); setEvents([]); }
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+      if (selected) {
+        setSource(selected);
+        setJob(null);
+        setEvents([]);
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
   };
 
-  const selectHostedFile = (file: File | undefined) => {
+  const selectHostedFile = (file: File | undefined): void => {
     if (!file) return;
     if (!file.name.toLowerCase().endsWith('.pptx')) {
       setError('Only .pptx PowerPoint presentations are supported.');
@@ -127,17 +191,19 @@ export default function App() {
     setError('');
   };
 
-  const chooseOutput = async () => {
+  const chooseOutput = async (): Promise<void> => {
     try {
       const selected = await bridge.selectOutputDirectory();
       if (selected) {
         setOutputRoot(selected);
         localStorage.setItem('pb.outputRoot', selected);
       }
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
   };
 
-  const startConversion = async () => {
+  const startConversion = async (): Promise<void> => {
     if (!source) return;
     setError('');
     setEvents([]);
@@ -152,142 +218,192 @@ export default function App() {
         message: 'Conversion queued.',
         updatedAt: new Date().toISOString()
       });
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
   };
 
-  const cancelConversion = async () => {
+  const cancelConversion = async (): Promise<void> => {
     if (!job) return;
     try { await bridge.cancel(job.jobId); }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
   };
 
-  const connectGoogle = async () => {
+  const connectGoogle = async (): Promise<void> => {
     setError('');
     setAuthorizing(true);
     try {
       await bridge.authorizeGoogle();
       await refreshDoctor();
-    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
-    finally { setAuthorizing(false); }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setAuthorizing(false);
+    }
   };
 
-  const platformAdvice = useMemo(() => {
-    if (target === 'google' && !googleReady) return googleConfigured ? 'Google authorization is required before native conversion.' : 'Google OAuth is not provisioned in this build.';
-    if (target === 'keynote' && !keynoteReady) return 'Native Keynote conversion needs a compatible macOS Keynote worker.';
-    if (target === 'all' && (!googleReady || !keynoteReady)) return 'Unavailable targets will be reported honestly; available targets can still complete.';
-    return '';
-  }, [target, googleReady, googleConfigured, keynoteReady]);
+  const saveWorker = async (event: FormEvent): Promise<void> => {
+    event.preventDefault();
+    if (bridge.surface !== 'desktop') return;
+    setSavingWorker(true);
+    setError('');
+    try {
+      const input: KeynoteWorkerSettingsInput = workerMode === 'local'
+        ? { mode: 'local' }
+        : {
+            mode: 'remote',
+            url: workerUrl,
+            ...(workerToken.trim() ? { token: workerToken } : {})
+          };
+      const settings = await bridge.saveKeynoteWorkerSettings(input);
+      setKeynoteSettings(settings);
+      setWorkerToken('');
+      await refreshDoctor();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setSavingWorker(false);
+    }
+  };
 
-  return <div className="app-shell">
-    <aside className="sidebar">
-      <div className="brand">
-        <div className="brand-mark">PB</div>
-        <div><strong>Presentation</strong><span>Bridge</span></div>
+  const resetConversion = (): void => {
+    currentJobId.current = null;
+    setSource(null);
+    setJob(null);
+    setEvents([]);
+    setError('');
+  };
+
+  const openHistory = (): void => {
+    setHistoryOpen(true);
+    void refreshHistory();
+  };
+
+  const openSetup = (): void => {
+    setSetupOpen(true);
+    void Promise.all([refreshDoctor(), refreshKeynoteSettings()]);
+  };
+
+  let advice = '';
+  if (target === 'google' && !googleReady) advice = googleConfigured ? 'Connect your Google account in Setup before native conversion.' : 'Google OAuth is not provisioned in this build.';
+  if (target === 'keynote' && !keynoteReady) advice = 'Keynote needs macOS with Keynote installed, locally or through a remote worker.';
+  if (target === 'all' && (!googleReady || !keynoteReady)) advice = 'Available targets will run; unavailable targets will be reported instead of silently faked.';
+
+  return <div className="app-frame">
+    <header className="app-header">
+      <div className="brand"><span className="brand-mark">PB</span><div><strong>Presentation Bridge</strong><small>PPTX converter</small></div></div>
+      <div className="header-actions">
+        <button className="utility-button" onClick={openHistory}><Icon name="history"/>Recent jobs</button>
+        <button className="utility-button" onClick={openSetup}><Icon name="setup"/>Setup</button>
       </div>
-      <nav className="nav-list" aria-label="Primary navigation">
-        {([
-          ['convert', 'Convert', 'convert'],
-          ['history', 'History', 'history'],
-          ['settings', 'Settings', 'settings']
-        ] as const).map(([key, label, icon]) => <button key={key} className={view === key ? 'nav-item active' : 'nav-item'} onClick={() => setView(key)}><Icon name={icon}/><span>{label}</span></button>)}
-      </nav>
-      <div className="sidebar-status">
-        <div className="status-line"><PlatformDot ready={googleReady}/><span>Google Slides</span><small>{googleReady ? 'Ready' : 'Setup'}</small></div>
-        <div className="status-line"><PlatformDot ready={keynoteReady}/><span>Keynote</span><small>{keynoteReady ? 'Ready' : 'Worker'}</small></div>
-      </div>
-      <div className="sidebar-footer"><span>{bridge.surface === 'desktop' ? 'Desktop' : 'Browser'} surface</span><small>v0.2.0</small></div>
-    </aside>
+    </header>
 
-    <main className="main-area">
-      <header className="topbar">
-        <div>
-          <h1>{view === 'convert' ? 'Convert presentation' : view === 'history' ? 'Conversion history' : 'Settings & diagnostics'}</h1>
-          <p>{view === 'convert' ? 'PowerPoint in. Native target out. Evidence included.' : view === 'history' ? 'Review native results, warnings, and compatibility reports.' : 'Configure the local workflow and verify platform readiness.'}</p>
-        </div>
-        <button className="icon-button" onClick={() => void refreshDoctor()} title="Refresh diagnostics" aria-label="Refresh diagnostics"><span className={loadingDoctor ? 'refresh-spinner spinning' : 'refresh-spinner'}>↻</span></button>
-      </header>
+    <main className="converter-shell">
+      <section className="intro">
+        <h1>Convert PowerPoint</h1>
+        <p>Turn one .pptx file into an editable Google Slides presentation, a native Keynote document, or both.</p>
+      </section>
 
-      {error && <div className="error-banner"><Icon name="warning"/><span>{error}</span><button onClick={() => setError('')} aria-label="Dismiss error"><Icon name="close"/></button></div>}
+      {error ? <div className="error-banner" role="alert"><Icon name="warning"/><span>{error}</span><button onClick={() => setError('')} aria-label="Dismiss error"><Icon name="close"/></button></div> : null}
 
-      {view === 'convert' && <section className="content-stack">
-        <div className="workspace-grid">
-          <section className="panel source-panel">
-            <div className="panel-heading"><span>01</span><div><h2>PowerPoint source</h2><p>Select one presentation to inspect and convert.</p></div></div>
-            <button className={source ? 'dropzone selected' : 'dropzone'} onClick={() => void selectPresentation()}>
-              <span className="file-icon"><Icon name="file"/></span>
-              {source ? <><strong>{source.name}</strong><span>{formatBytes(source.bytes)} · PPTX</span><em>Choose a different file</em></> : <><strong>Select PowerPoint</strong><span>.pptx up to the configured security limit</span><em>{bridge.surface === 'desktop' ? 'Browse files' : 'Choose upload'}</em></>}
-            </button>
-            <input ref={fileInput} className="hidden-input" type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" onChange={(event) => selectHostedFile(event.target.files?.[0])}/>
-            {bridge.surface === 'desktop' && <div className="output-row"><div><span>Output location</span><strong>{outputRoot || 'Presentation Bridge runtime'}</strong></div><button className="ghost-button" onClick={() => void chooseOutput()}><Icon name="folder"/>Choose</button></div>}
-          </section>
-
-          <section className="panel target-panel">
-            <div className="panel-heading"><span>02</span><div><h2>Native target</h2><p>Choose where the PowerPoint should become editable.</p></div></div>
-            <div className="target-options">
-              <button className={target === 'google' ? 'target-card selected google' : 'target-card google'} onClick={() => setTarget('google')}>
-                <span className="target-icon"><Icon name="google"/></span><div><strong>Google Slides</strong><small>Native Drive presentation</small></div><span className="target-ready"><PlatformDot ready={googleReady}/>{googleReady ? 'Ready' : 'Setup'}</span>
-              </button>
-              <button className={target === 'keynote' ? 'target-card selected keynote' : 'target-card keynote'} onClick={() => setTarget('keynote')}>
-                <span className="target-icon"><Icon name="keynote"/></span><div><strong>Keynote</strong><small>Native .key document</small></div><span className="target-ready"><PlatformDot ready={keynoteReady}/>{keynoteReady ? 'Ready' : 'Worker'}</span>
-              </button>
-              <button className={target === 'all' ? 'target-card selected both' : 'target-card both'} onClick={() => setTarget('all')}>
-                <span className="target-icon dual"><Icon name="google"/><Icon name="keynote"/></span><div><strong>Both targets</strong><small>Independent native paths</small></div><span className="target-ready">Evidence for both</span>
-              </button>
-            </div>
-            {platformAdvice && <div className="advice"><Icon name="warning"/><span>{platformAdvice}</span></div>}
-            {!googleReady && googleConfigured && <button className="secondary-button auth-button" disabled={authorizing} onClick={() => void connectGoogle()}>{authorizing ? 'Waiting for browser authorization…' : 'Connect Google account'}</button>}
-          </section>
+      <section className="converter-card">
+        <div className="field-block">
+          <div className="field-heading"><span>1</span><div><h2>PowerPoint file</h2><p>Select the presentation you want to convert.</p></div></div>
+          <button className={`file-picker ${source ? 'selected' : ''}`} onClick={() => void selectPresentation()}>
+            <span className="file-symbol"><Icon name="file"/></span>
+            <span className="file-copy">
+              <strong>{source?.name ?? 'Choose a .pptx file'}</strong>
+              <small>{source ? `${formatBytes(source.bytes)} · PowerPoint presentation` : 'Click to browse your computer'}</small>
+            </span>
+            <span className="browse-label">{source ? 'Change' : 'Browse'}</span>
+          </button>
+          <input ref={fileInput} className="hidden-input" type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" onChange={(event) => selectHostedFile(event.target.files?.[0])}/>
         </div>
 
-        <section className="action-panel">
-          <div><span className="action-kicker">03 · Convert</span><h2>{source ? source.name : 'Ready when your presentation is selected'}</h2><p>The converter will preflight the PPTX, use the native target path, verify the result, and produce compatibility evidence.</p></div>
-          <button className="primary-button" disabled={!canConvert} onClick={() => void startConversion()}><Icon name="convert"/>{isActive ? 'Conversion running' : 'Convert presentation'}</button>
-        </section>
-
-        {job && <section className="progress-panel">
-          <div className="progress-head"><div><span className={`state-pill ${terminalStates.has(job.state) ? job.state : 'active'}`}>{humanState(job.state)}</span><h2>{job.message}</h2></div><strong>{job.percent}%</strong></div>
-          <div className="progress-track"><div className="progress-fill" style={{ width: `${job.percent}%` }}/></div>
-          <div className="stage-row">
-            {['Preflight', 'Google', 'Keynote', 'Verification', 'Report'].map((label, index) => <span key={label} className={job.percent >= [10,35,60,82,100][index]! ? 'stage done' : 'stage'}><i>{job.percent >= [10,35,60,82,100][index]! ? '✓' : index + 1}</i>{label}</span>)}
-          </div>
-          {isActive && <div className="progress-actions"><button className="danger-button" onClick={() => void cancelConversion()}>Cancel conversion</button><small>Cancellation is applied at safe conversion boundaries.</small></div>}
-          {events.length > 0 && <details className="event-log"><summary>Process log · {events.length} events</summary><div>{events.map((event, index) => <p key={`${event.at}-${index}`}><time>{new Date(event.at).toLocaleTimeString()}</time><span>{humanState(event.stage)}</span>{event.message}</p>)}</div></details>}
-        </section>}
-
-        {terminalReport && <section className="result-panel">
-          <div className="result-title"><div><span className="result-check"><Icon name={terminalReport.status === 'failed' ? 'warning' : 'check'}/></span><div><h2>Conversion evidence ready</h2><p>{terminalReport.warnings.length ? `${terminalReport.warnings.length} warning${terminalReport.warnings.length === 1 ? '' : 's'} recorded. Nothing was silently promoted to success.` : 'All requested live checks completed without warnings.'}</p></div></div>{reportPath && <button className="ghost-button" onClick={() => void bridge.openReport({ jobId: terminalReport.jobId, htmlReportPath: reportPath })}>Open report<Icon name="external"/></button>}</div>
-          <div className="result-grid">
-            {(['google','keynote'] as const).map((name) => {
-              const result = terminalReport.targets[name];
-              const status = targetStatus(result);
-              return <div className="result-card" key={name}><span className={`target-icon ${name}`}><Icon name={name}/></span><div><strong>{name === 'google' ? 'Google Slides' : 'Keynote'}</strong><span className={`result-status ${status.kind}`}>{status.label}</span></div>{result?.webViewLink && <button onClick={() => void bridge.openExternal(result.webViewLink!)}><Icon name="external"/></button>}{result?.artifact && bridge.surface === 'desktop' && <button onClick={() => void bridge.revealArtifact(result.artifact!)}><Icon name="folder"/></button>}</div>;
+        <div className="field-block">
+          <div className="field-heading"><span>2</span><div><h2>Convert to</h2><p>Choose one native target or create both.</p></div></div>
+          <div className="target-grid">
+            {targets.map((option) => {
+              const selected = target === option.value;
+              const ready = option.value === 'google' ? googleReady : option.value === 'keynote' ? keynoteReady : googleReady && keynoteReady;
+              return <button key={option.value} data-target={option.value} className={`target-option ${selected ? 'selected' : ''}`} onClick={() => setTarget(option.value)} aria-pressed={selected}>
+                <span className={`platform-icon ${option.icon}`}>
+                  {option.icon === 'both' ? <><Icon name="google"/><Icon name="keynote"/></> : <Icon name={option.icon}/>}
+                </span>
+                <span><strong>{option.title}</strong><small>{option.description}</small></span>
+                <StatusDot ready={ready}/>
+              </button>;
             })}
           </div>
-        </section>}
-      </section>}
-
-      {view === 'history' && <section className="history-view">
-        <div className="history-toolbar"><span>{history.length} recorded job{history.length === 1 ? '' : 's'}</span><button className="ghost-button" onClick={() => void refreshHistory()}>Refresh</button></div>
-        <div className="history-list">
-          {history.length === 0 && <div className="empty-state"><Icon name="history"/><h2>No conversion history yet</h2><p>Your verified jobs will appear here.</p><button className="secondary-button" onClick={() => setView('convert')}>Start a conversion</button></div>}
-          {history.map((item) => <article className="history-row" key={item.jobId}>
-            <span className="history-file"><Icon name="file"/></span>
-            <div className="history-main"><strong>{item.sourceFilename ?? item.jobId}</strong><span>{item.finishedAt ? new Date(item.finishedAt).toLocaleString() : new Date(item.updatedAt).toLocaleString()}</span></div>
-            <span className={`state-pill ${item.state}`}>{humanState(item.state)}</span>
-            <div className="history-targets"><span>G {item.targets?.google?.native ? '✓' : '—'}</span><span>K {item.targets?.keynote?.native ? '✓' : '—'}</span></div>
-            {item.htmlReportPath && <button className="icon-button" title="Open compatibility report" onClick={() => void bridge.openReport(item)}><Icon name="external"/></button>}
-          </article>)}
+          {advice ? <div className="advice"><Icon name="warning"/><span>{advice}</span><button onClick={openSetup}>Open Setup</button></div> : null}
         </div>
-      </section>}
 
-      {view === 'settings' && <section className="settings-view">
-        <div className="settings-grid">
-          <section className="panel settings-card"><div className="panel-heading plain"><div><h2>Default conversion</h2><p>Choose the target preselected when the app opens.</p></div></div><div className="segmented">{(['google','keynote','all'] as JobTarget[]).map((value) => <button key={value} className={target === value ? 'selected' : ''} onClick={() => setTarget(value)}>{value === 'all' ? 'Both' : value === 'google' ? 'Google Slides' : 'Keynote'}</button>)}</div>{bridge.surface === 'desktop' && <div className="setting-row"><div><strong>Output folder</strong><span>{outputRoot || 'Default runtime folder'}</span></div><button className="ghost-button" onClick={() => void chooseOutput()}>Change</button></div>}</section>
-          <section className="panel settings-card"><div className="panel-heading plain"><div><h2>Google Slides</h2><p>System-browser OAuth. Tokens remain local to this app state.</p></div></div><div className="readiness-row"><div><PlatformDot ready={googleReady}/><strong>{googleReady ? 'Connected and import-ready' : googleConfigured ? 'Authorization required' : 'OAuth client not provisioned'}</strong></div>{googleConfigured && !googleReady && <button className="secondary-button" disabled={authorizing} onClick={() => void connectGoogle()}>Connect</button>}</div></section>
-          <section className="panel settings-card"><div className="panel-heading plain"><div><h2>Keynote worker</h2><p>Native Keynote output requires macOS with Keynote automation available.</p></div></div><div className="readiness-row"><div><PlatformDot ready={keynoteReady}/><strong>{keynoteReady ? `Ready · ${String(doctor?.keynote.version ?? 'Keynote')}` : String(doctor?.keynote.reason ?? 'Worker unavailable')}</strong></div></div></section>
-          <section className="panel settings-card diagnostics"><div className="panel-heading plain"><div><h2>Diagnostics</h2><p>Evidence from the same backend used for conversion.</p></div></div><dl><div><dt>Runtime</dt><dd>{doctor ? `${doctor.node} · ${doctor.platform}/${doctor.arch}` : 'Checking…'}</dd></div><div><dt>Isolation</dt><dd>{doctor?.isolation.clean ? 'Clean' : doctor ? 'Review required' : 'Checking…'}</dd></div><div><dt>Source renderer</dt><dd>{doctor?.sourceRenderer.available === true ? 'Available' : 'Optional / unavailable'}</dd></div><div><dt>Surface</dt><dd>{bridge.surface === 'desktop' ? 'Electron desktop' : 'Hosted browser'}</dd></div></dl><button className="secondary-button" onClick={() => void refreshDoctor()}>Run diagnostics</button></section>
+        {bridge.surface === 'desktop' ? <div className="output-line">
+          <div><span>Output folder</span><strong title={outputRoot}>{outputRoot || 'Presentation Bridge runtime folder'}</strong></div>
+          <button className="text-button" onClick={() => void chooseOutput()}><Icon name="folder"/>Choose folder</button>
+        </div> : null}
+
+        <button className="primary-button" disabled={!canConvert} onClick={() => void startConversion()}><Icon name="convert"/>{isActive ? 'Conversion running' : 'Convert presentation'}</button>
+      </section>
+
+      {job ? <section className="progress-card" aria-live="polite">
+        <div className="progress-copy"><div><span className={`state-label ${terminalStates.has(job.state) ? job.state : 'active'}`}>{humanState(job.state)}</span><h2>{job.message}</h2></div><strong>{job.percent}%</strong></div>
+        <div className="progress-track"><div className="progress-fill" style={{ width: `${job.percent}%` }}/></div>
+        <div className="progress-footer">
+          <span>{events.at(-1)?.message ?? 'Preparing conversion…'}</span>
+          {isActive ? <button className="danger-button" onClick={() => void cancelConversion()}>Cancel</button> : null}
         </div>
-      </section>}
+        {events.length ? <details className="event-log"><summary>Show process log</summary><div>{events.map((event, index) => <p key={`${event.at}-${index}`}><time>{new Date(event.at).toLocaleTimeString()}</time><span>{humanState(event.stage)}</span>{event.message}</p>)}</div></details> : null}
+      </section> : null}
+
+      {report ? <section className="results-card">
+        <div className="results-heading"><span className={`result-mark ${report.status === 'failed' ? 'bad' : ''}`}><Icon name={report.status === 'failed' ? 'warning' : 'check'}/></span><div><h2>Conversion finished</h2><p>{report.warnings.length ? `${report.warnings.length} warning${report.warnings.length === 1 ? '' : 's'} recorded in the compatibility report.` : 'The requested target checks finished without warnings.'}</p></div></div>
+        <div className="results-grid"><ResultCard name="google" result={report.targets.google}/><ResultCard name="keynote" result={report.targets.keynote}/></div>
+        <div className="results-footer">
+          {htmlReportPath ? <button className="secondary-button" onClick={() => void bridge.openReport({ jobId: report.jobId, htmlReportPath })}><Icon name="external"/>View compatibility report</button> : null}
+          <button className="text-button" onClick={resetConversion}>Convert another file</button>
+        </div>
+      </section> : null}
     </main>
+
+    <footer className="app-footer">
+      <span>{bridge.surface === 'desktop' ? 'Desktop app' : 'Browser app'}</span>
+      <span><StatusDot ready={googleReady}/>Google</span>
+      <span><StatusDot ready={keynoteReady}/>Keynote</span>
+      <button onClick={() => void refreshDoctor()} disabled={loadingDoctor}><Icon name="refresh"/>{loadingDoctor ? 'Checking…' : 'Refresh status'}</button>
+    </footer>
+
+    <Dialog open={historyOpen} title="Recent jobs" onClose={() => setHistoryOpen(false)} wide>
+      <div className="dialog-toolbar"><span>{history.length} saved conversion{history.length === 1 ? '' : 's'}</span><button className="text-button" onClick={() => void refreshHistory()}><Icon name="refresh"/>Refresh</button></div>
+      <div className="history-list">
+        {history.length === 0 ? <div className="empty-state"><Icon name="history"/><strong>No conversions yet</strong><span>Completed jobs will appear here.</span></div> : null}
+        {history.map((item) => <article className="history-row" key={item.jobId}>
+          <span className="file-symbol small"><Icon name="file"/></span>
+          <div><strong>{item.sourceFilename ?? item.jobId}</strong><small>{new Date(item.finishedAt ?? item.updatedAt).toLocaleString()}</small></div>
+          <span className={`state-label ${item.state}`}>{humanState(item.state)}</span>
+          {item.htmlReportPath ? <button className="icon-button" onClick={() => void bridge.openReport(item)} aria-label="Open compatibility report"><Icon name="external"/></button> : <span/>}
+        </article>)}
+      </div>
+    </Dialog>
+
+    <Dialog open={setupOpen} title="Setup" onClose={() => setSetupOpen(false)} wide>
+      <div className="setup-stack">
+        <section className="setup-section">
+          <div className="setup-title"><span className="platform-icon google"><Icon name="google"/></span><div><h3>Google Slides</h3><p>Connect the Google account that will own imported presentations.</p></div></div>
+          <div className="setup-status"><div><StatusDot ready={googleReady}/><strong>{googleReady ? 'Connected and ready' : googleConfigured ? 'Authorization required' : 'OAuth client not provisioned'}</strong></div>{googleConfigured && !googleReady ? <button className="secondary-button" disabled={authorizing} onClick={() => void connectGoogle()}>{authorizing ? 'Waiting for browser…' : 'Connect Google'}</button> : null}</div>
+        </section>
+
+        <section className="setup-section">
+          <div className="setup-title"><span className="platform-icon keynote"><Icon name="keynote"/></span><div><h3>Keynote</h3><p>Use this Mac directly or connect a remote Mac that has Keynote installed.</p></div></div>
+          {bridge.surface === 'desktop' ? <form className="worker-form" onSubmit={(event) => void saveWorker(event)}>
+            <div className="mode-switch"><button type="button" className={workerMode === 'local' ? 'selected' : ''} onClick={() => setWorkerMode('local')}>This Mac</button><button type="button" className={workerMode === 'remote' ? 'selected' : ''} onClick={() => setWorkerMode('remote')}>Remote Mac</button></div>
+            {workerMode === 'remote' ? <div className="worker-fields"><label><span>Worker URL</span><input type="url" value={workerUrl} onChange={(event) => setWorkerUrl(event.target.value)} placeholder="https://mac-worker.example.com" required/></label><label><span>Access token</span><input type="password" value={workerToken} onChange={(event) => setWorkerToken(event.target.value)} placeholder={keynoteSettings?.tokenConfigured ? 'Leave blank to keep saved token' : 'Required'} required={!keynoteSettings?.tokenConfigured}/></label></div> : <p className="setup-note">Local conversion becomes available automatically on macOS when Keynote automation is permitted.</p>}
+            <div className="setup-actions"><span><StatusDot ready={keynoteReady}/>{keynoteReady ? 'Keynote worker ready' : String(doctor?.keynote.reason ?? 'Worker not ready')}</span><button className="secondary-button" type="submit" disabled={savingWorker}>{savingWorker ? 'Saving…' : 'Save Keynote setup'}</button></div>
+          </form> : <p className="setup-note">Hosted mode uses the Keynote worker configured on the server.</p>}
+        </section>
+
+        <section className="diagnostics-line"><span>Runtime</span><strong>{doctor ? `${doctor.node} · ${doctor.platform}/${doctor.arch}` : 'Checking…'}</strong><span>Isolation</span><strong>{doctor?.isolation.clean ? 'Clean' : doctor ? 'Review required' : 'Checking…'}</strong></section>
+      </div>
+    </Dialog>
   </div>;
 }
