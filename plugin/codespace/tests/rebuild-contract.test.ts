@@ -19,10 +19,13 @@ describe('codespace full rebuild contract', () => {
     expect(packageJson.devDependencies?.['@types/node']).toBe('24.13.3');
   });
 
-  it('restores its own dependency tree and uses local compiler/test binaries', () => {
+  it('restores its own dependency tree, HTTP entrypoints, and local compiler/test binaries', () => {
     expect(startup).toContain('npm ci');
     expect(startup).toContain('$ROOT/node_modules/.bin/tsc');
     expect(startup).toContain('$ROOT/node_modules/.bin/vitest');
+    expect(startup).toContain('$ROOT/dist/http-server.js');
+    expect(startup).toContain('$ROOT/dist/http-probe.js');
+    expect(startup).toContain('$ROOT/dist/watchdog.js');
     expect(startup).not.toContain('npx tsc -p plugin/codespace/tsconfig.json');
     expect(startup).not.toContain('npx vitest run plugin/codespace/tests/mcp.integration.test.ts');
   });
@@ -33,13 +36,16 @@ describe('codespace full rebuild contract', () => {
     expect(startup).toContain('RUNTIME_API_KEY_REF="file:$RUNTIME_API_KEY_FILE"');
   });
 
-  it('serializes lifecycle recovery, refreshes platform registration on start/attach, and gates remote lookup', () => {
+  it('serializes lifecycle recovery, refreshes platform registration, and gates the HTTP target plus remote lookup', () => {
     expect(startup).toContain('flock -w 120 9');
     expect(startup).toContain('start|attach)');
     expect(startup).toContain('runtimes stop "$ALIAS"');
+    expect(startup).toContain('--mcp-server-url "$MCP_SERVER_URL"');
     expect(startup).toContain('remote_lookup_attempted === true');
     expect(startup).toContain("payload.remote_lookup_auth_ref.startsWith('file:')");
     expect(startup).toContain('payload.remote?.id === expectedTunnelId');
+    expect(startup).toContain("payload.process?.target_kind === 'url'");
+    expect(startup).toContain('payload.process?.target_value === expectedMcpServerUrl');
   });
 
   it('closes the lifecycle lock descriptor before launching the long-lived tunnel runtime', () => {
