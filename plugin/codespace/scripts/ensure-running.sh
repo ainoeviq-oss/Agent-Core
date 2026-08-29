@@ -10,16 +10,33 @@ PROFILE_FILE="$PROFILE_DIR/$PROFILE_NAME.yaml"
 STATE_DIR="$ROOT/runtime/state"
 ALIAS="codespace"
 
-if [[ $# -ne 2 || "${1:-}" != "--phase" ]]; then
-  printf '%s\n' "Usage: $0 --phase create|start|attach|manual" >&2
-  exit 2
-fi
+PHASE=""
+FORCE_RECONNECT=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --phase)
+      [[ $# -ge 2 ]] || {
+        printf '%s\n' "Usage: $0 --phase create|start|attach|manual [--force-reconnect]" >&2
+        exit 2
+      }
+      PHASE="$2"
+      shift 2
+      ;;
+    --force-reconnect)
+      FORCE_RECONNECT=true
+      shift
+      ;;
+    *)
+      printf '%s\n' "Usage: $0 --phase create|start|attach|manual [--force-reconnect]" >&2
+      exit 2
+      ;;
+  esac
+done
 
-PHASE="$2"
 case "$PHASE" in
   create|start|attach|manual) ;;
   *)
-    printf '%s\n' "Usage: $0 --phase create|start|attach|manual" >&2
+    printf '%s\n' "Usage: $0 --phase create|start|attach|manual [--force-reconnect]" >&2
     exit 2
     ;;
 esac
@@ -119,16 +136,6 @@ bash "$ROOT/scripts/install-tunnel-client.sh"
 mkdir -p "$PROFILE_DIR" "$STATE_DIR"
 export TUNNEL_CLIENT_STATE_DIR="$STATE_DIR"
 
-# A locally healthy process can still have stale platform registration after a
-# Codespace restart. Lifecycle start/attach therefore performs one controlled
-# stop before reconnecting the same alias+tunnel. This is intentionally skipped
-# for manual invocations so diagnostics do not flap a healthy tunnel.
-case "$PHASE" in
-  start|attach)
-    "$BIN" runtimes stop "$ALIAS" >/dev/null 2>&1 || true
-    ;;
-esac
-
 command -v node >/dev/null 2>&1 || {
   printf '%s\n' "[codespace] ERROR: node is unavailable." >&2
   exit 1
@@ -156,7 +163,7 @@ if [[ "$needs_dependencies" == true ]]; then
 fi
 
 needs_build=false
-if [[ ! -f "$ROOT/dist/server.js" ]]; then
+if [[ ! -f "$ROOT/dist/server.js" || ! -f "$ROOT/dist/http-server.js" || ! -f "$ROOT/dist/http-probe.js" || ! -f "$ROOT/dist/watchdog.js" ]]; then
   needs_build=true
 elif find "$ROOT/src" -type f -name '*.ts' -newer "$ROOT/dist/server.js" -print -quit | grep -q .; then
   needs_build=true
@@ -173,8 +180,35 @@ fi
 
 (
   cd "$REPO_ROOT"
-  NODE_ENV=test "$ROOT/node_modules/.bin/vitest" run plugin/codespace/tests/mcp.integration.test.ts
+  NODE_ENV=test "$ROOT/node_modules/.bin/vitest" run \
+    plugin/codespace/tests/mcp.integration.test.ts \
+    plugin/codespace/tests/http-mcp.integration.test.ts
 )
+
+(
+  exec 9>&-
+  bash "$ROOT/scripts/ensure-http-mcp.sh"
+)
+MCP_SERVER_URL_FILE="$ROOT/runtime/state/http-mcp.url"
+MCP_SERVER_URL="$(tr -d '\r\n' < "$MCP_SERVER_URL_FILE")"
+if [[ ! "$MCP_SERVER_URL" =~ ^http://127\.0\.0\.1:[0-9]+/mcp$ ]]; then
+  printf '%s\n' "[codespace] ERROR: invalid loopback MCP URL produced by supervisor." >&2
+  exit 1
+fi
+timeout 15 node "$ROOT/dist/http-probe.js" "$MCP_SERVER_URL" >/dev/null
+
+# Keep the currently registered route alive until the replacement MCP target has
+# passed a real protocol exchange. This minimizes connector downtime during a
+# restart, rebuild, or watchdog repair.
+if [[ "$FORCE_RECONNECT" == true ]]; then
+  "$BIN" runtimes stop "$ALIAS" >/dev/null 2>&1 || true
+else
+  case "$PHASE" in
+    start|attach)
+      "$BIN" runtimes stop "$ALIAS" >/dev/null 2>&1 || true
+      ;;
+  esac
+fi
 
 connect_rc=0
 (
@@ -186,7 +220,7 @@ connect_rc=0
   # universal image currently ships tmux 3.0a, whose `source-file -` behavior
   # is incompatible with that managed launch path. Make tmux unavailable only
   # to this connect subprocess so tunnel-client uses its own managed process
-  # fallback. start-mcp.sh restores the original PATH before MCP starts.
+  # fallback. The loopback MCP server is supervised independently.
   source "$ROOT/scripts/runtime-environment.sh"
   codespace_prepare_process_runtime "$ROOT"
 
@@ -196,7 +230,7 @@ connect_rc=0
     --profile "$PROFILE_NAME" \
     --profile-dir "$PROFILE_DIR" \
     --runtime-api-key "$RUNTIME_API_KEY_REF" \
-    --mcp-command "bash $ROOT/scripts/start-mcp.sh"
+    --mcp-server-url "$MCP_SERVER_URL"
 ) >/dev/null || connect_rc=$?
 
 if [[ "$connect_rc" -ne 0 && "$connect_rc" -ne 2 ]]; then
@@ -208,10 +242,11 @@ status_json=""
 status_gate_passed=false
 for _ in $(seq 1 10); do
   status_json="$($BIN runtimes status "$ALIAS" --json 2>/dev/null || true)"
-  if EXPECTED_TUNNEL_ID="$TUNNEL_ID" STATUS_JSON="$status_json" node <<'NODE'
+  if EXPECTED_TUNNEL_ID="$TUNNEL_ID" EXPECTED_MCP_SERVER_URL="$MCP_SERVER_URL" STATUS_JSON="$status_json" node <<'NODE'
 try {
   const payload = JSON.parse(process.env.STATUS_JSON || '{}');
   const expectedTunnelId = process.env.EXPECTED_TUNNEL_ID;
+  const expectedMcpServerUrl = process.env.EXPECTED_MCP_SERVER_URL;
   const localReady =
     payload.process_running === true &&
     payload.healthy === true &&
@@ -225,7 +260,10 @@ try {
     payload.remote?.id === expectedTunnelId &&
     typeof payload.remote_lookup_auth_ref === 'string' &&
     payload.remote_lookup_auth_ref.startsWith('file:');
-  process.exit(localReady && remoteReady ? 0 : 1);
+  const targetReady =
+    payload.process?.target_kind === 'url' &&
+    payload.process?.target_value === expectedMcpServerUrl;
+  process.exit(localReady && remoteReady && targetReady ? 0 : 1);
 } catch {
   process.exit(1);
 }
@@ -238,28 +276,75 @@ NODE
 done
 
 if [[ "$status_gate_passed" != true ]]; then
-  EXPECTED_TUNNEL_ID="$TUNNEL_ID" STATUS_JSON="$status_json" node <<'NODE'
+  EXPECTED_TUNNEL_ID="$TUNNEL_ID" EXPECTED_MCP_SERVER_URL="$MCP_SERVER_URL" STATUS_JSON="$status_json" node <<'NODE'
 let payload = {};
 try { payload = JSON.parse(process.env.STATUS_JSON || '{}'); } catch {}
 const expectedTunnelId = process.env.EXPECTED_TUNNEL_ID;
+const expectedMcpServerUrl = process.env.EXPECTED_MCP_SERVER_URL;
 console.error(
   `[codespace] ERROR: managed runtime/platform gate failed (` +
   `tunnel_id=${payload.tunnel_id ?? '<missing>'} expected_tunnel_id=${expectedTunnelId ?? '<missing>'} ` +
   `process_running=${payload.process_running === true} healthy=${payload.healthy === true} ` +
   `ready=${payload.ready === true} runtime_state=${payload.runtime_state ?? '<missing>'} ` +
   `stale=${payload.stale ?? '<missing>'} remote_lookup_attempted=${payload.remote_lookup_attempted === true} ` +
-  `remote_error=${payload.remote_error || '<none>'} remote_id=${payload.remote?.id ?? '<missing>'}).`,
+  `remote_error=${payload.remote_error || '<none>'} remote_id=${payload.remote?.id ?? '<missing>'} ` +
+  `target_kind=${payload.process?.target_kind ?? '<missing>'} target_value=${payload.process?.target_value ?? '<missing>'} ` +
+  `expected_target=${expectedMcpServerUrl ?? '<missing>'}).`,
 );
 NODE
   exit 1
 fi
 
-# Run diagnostics only after connect + status reconciliation. This prevents a
-# stale generated profile from being reported as the active tunnel during
-# automatic Codespaces lifecycle startup.
+# Re-run a real MCP initialize/list-tools exchange after tunnel registration.
+# Local TCP health alone is never accepted as bridge readiness.
+timeout 15 node "$ROOT/dist/http-probe.js" "$MCP_SERVER_URL" >/dev/null
+
+# Run diagnostics only after connect + status + MCP protocol reconciliation.
 "$BIN" doctor \
   --profile "$PROFILE_NAME" \
   --profile-dir "$PROFILE_DIR" \
   --explain
 
-printf '%s\n' "[codespace] READY: phase=$PHASE tunnel_id=$TUNNEL_ID MCP integration, managed tunnel process, health, and readiness gates passed."
+if [[ "${CODESPACE_WATCHDOG_ACTIVE:-0}" != "1" ]]; then
+  command -v tmux >/dev/null 2>&1 || {
+    printf '%s\n' "[codespace] ERROR: tmux is required to supervise bridge recovery." >&2
+    exit 1
+  }
+  WATCHDOG_SESSION="${CODESPACE_WATCHDOG_SESSION:-codespace-bridge-watchdog}"
+  WATCHDOG_LOG="$STATE_DIR/logs/watchdog.log"
+  mkdir -p "$(dirname "$WATCHDOG_LOG")"
+  (
+    exec 9>&-
+    CODESPACE_EXPECTED_TUNNEL_ID="$TUNNEL_ID" \
+    CODESPACE_MCP_SERVER_URL="$MCP_SERVER_URL" \
+    TUNNEL_CLIENT_STATE_DIR="$STATE_DIR" \
+    bash "$ROOT/scripts/start-watchdog.sh" --once
+  )
+  tmux kill-session -t "$WATCHDOG_SESSION" >/dev/null 2>&1 || true
+  printf -v watchdog_command \
+    'exec env CODESPACE_EXPECTED_TUNNEL_ID=%q CODESPACE_MCP_SERVER_URL=%q TUNNEL_CLIENT_STATE_DIR=%q bash %q >>%q 2>&1' \
+    "$TUNNEL_ID" "$MCP_SERVER_URL" "$STATE_DIR" "$ROOT/scripts/start-watchdog.sh" "$WATCHDOG_LOG"
+  (
+    exec 9>&-
+    tmux new-session -d -s "$WATCHDOG_SESSION" -c "$ROOT" "$watchdog_command"
+  )
+  watchdog_ready=false
+  for _ in $(seq 1 10); do
+    if tmux has-session -t "$WATCHDOG_SESSION" >/dev/null 2>&1; then
+      watchdog_ready=true
+      sleep 0.2
+      if tmux has-session -t "$WATCHDOG_SESSION" >/dev/null 2>&1; then
+        break
+      fi
+      watchdog_ready=false
+    fi
+    sleep 0.2
+  done
+  if [[ "$watchdog_ready" != true ]]; then
+    printf '%s\n' "[codespace] ERROR: bridge watchdog failed to remain active." >&2
+    if [[ -f "$WATCHDOG_LOG" ]]; then tail -40 "$WATCHDOG_LOG" >&2 || true; fi
+    exit 1
+  fi
+fi
+
+printf '%s\n' "[codespace] READY: phase=$PHASE tunnel_id=$TUNNEL_ID loopback MCP protocol, managed tunnel process, remote registration, watchdog, and readiness gates passed."

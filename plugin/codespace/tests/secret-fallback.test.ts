@@ -21,8 +21,14 @@ describe('codespace restart self-recovery contract', () => {
     expect(startup).toContain('TUNNEL_SOURCE="config/tunnel.defaults.json"');
   });
 
-  it('keeps MCP/tool children isolated from the control-plane credential', () => {
-    const childStartup = readFileSync(path.join(pluginRoot, 'scripts', 'start-mcp.sh'), 'utf8');
-    expect(childStartup).toContain('unset CONTROL_PLANE_API_KEY');
+  it('keeps stdio, HTTP MCP, and watchdog children isolated from the control-plane credential', () => {
+    const stdioStartup = readFileSync(path.join(pluginRoot, 'scripts', 'start-mcp.sh'), 'utf8');
+    const httpStartup = readFileSync(path.join(pluginRoot, 'scripts', 'start-http-mcp.sh'), 'utf8');
+    const watchdogStartup = readFileSync(path.join(pluginRoot, 'scripts', 'start-watchdog.sh'), 'utf8');
+    expect(stdioStartup).toContain('unset CONTROL_PLANE_API_KEY');
+    expect(httpStartup).toContain('unset CONTROL_PLANE_API_KEY');
+    expect(httpStartup).toContain('unset OPENAI_ADMIN_KEY');
+    expect(watchdogStartup).toContain('unset CONTROL_PLANE_API_KEY');
+    expect(watchdogStartup).toContain('unset OPENAI_ADMIN_KEY');
   });
 });

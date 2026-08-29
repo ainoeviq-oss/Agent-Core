@@ -82,6 +82,19 @@ const required = [
   'payload.tunnel_id === expectedTunnelId',
   "payload.runtime_state === 'ready'",
   'payload.stale === false',
+  'ensure-http-mcp.sh',
+  '--mcp-server-url "$MCP_SERVER_URL"',
+  "payload.process?.target_kind === 'url'",
+  'payload.process?.target_value === expectedMcpServerUrl',
+  '$ROOT/dist/http-server.js',
+  '$ROOT/dist/http-probe.js',
+  '$ROOT/dist/watchdog.js',
+  'FORCE_RECONNECT=false',
+  '--force-reconnect)',
+  'FORCE_RECONNECT=true',
+  'CODESPACE_WATCHDOG_ACTIVE',
+  'codespace-bridge-watchdog',
+  'start-watchdog.sh',
 ];
 for (const needle of required) {
   if (!startup.includes(needle)) {
@@ -101,17 +114,56 @@ if (
   process.exit(1);
 }
 
+const localProbeIndex = startup.indexOf('bash "$ROOT/scripts/ensure-http-mcp.sh"');
+const stopIndex = startup.indexOf('runtimes stop "$ALIAS"');
 const connectIndex = startup.indexOf('runtimes connect');
 const statusIndex = startup.indexOf('runtimes status');
 const doctorIndex = startup.indexOf('"$BIN" doctor');
-if (connectIndex < 0 || statusIndex < 0 || doctorIndex < 0 || !(connectIndex < statusIndex && statusIndex < doctorIndex)) {
-  console.error('[codespace] RED: lifecycle order must be connect -> status gate -> doctor.');
+const watchdogPreflightIndex = startup.indexOf('start-watchdog.sh" --once');
+const readyIndex = startup.indexOf('[codespace] READY:');
+if (
+  localProbeIndex < 0 || stopIndex < 0 || connectIndex < 0 || statusIndex < 0 ||
+  doctorIndex < 0 || watchdogPreflightIndex < 0 || readyIndex < 0 ||
+  !(localProbeIndex < stopIndex && stopIndex < connectIndex && connectIndex < statusIndex &&
+    statusIndex < doctorIndex && doctorIndex < watchdogPreflightIndex && watchdogPreflightIndex < readyIndex)
+) {
+  console.error('[codespace] RED: lifecycle order must be local MCP -> stop -> connect -> status -> doctor -> watchdog -> READY.');
   process.exit(1);
 }
 NODE
 
-  if ! grep -Fq -- '--mcp-command' "$STARTUP"; then
-    printf '%s\n' "[codespace] RED: managed runtime startup does not use --mcp-command." >&2
+  HTTP_ENSURE="$ROOT/scripts/ensure-http-mcp.sh"
+  HTTP_START="$ROOT/scripts/start-http-mcp.sh"
+  WATCHDOG_START="$ROOT/scripts/start-watchdog.sh"
+  for script in "$HTTP_ENSURE" "$HTTP_START" "$WATCHDOG_START"; do
+    if [[ ! -x "$script" ]]; then
+      printf '%s\n' "[codespace] RED: required HTTP MCP lifecycle script is missing or not executable: $script" >&2
+      exit 1
+    fi
+    bash -n "$script"
+  done
+  if ! grep -Fq -- '--mcp-server-url "$MCP_SERVER_URL"' "$STARTUP"; then
+    printf '%s\n' "[codespace] RED: managed runtime startup does not use the probed loopback MCP URL." >&2
+    exit 1
+  fi
+  if grep -Fq -- '--mcp-command "bash $ROOT/scripts/start-mcp.sh"' "$STARTUP"; then
+    printf '%s\n' "[codespace] RED: managed runtime startup must not use readiness-blind stdio." >&2
+    exit 1
+  fi
+  if ! grep -Fq 'dist/http-probe.js' "$HTTP_ENSURE"; then
+    printf '%s\n' "[codespace] RED: HTTP MCP supervisor lacks a protocol probe." >&2
+    exit 1
+  fi
+  if ! grep -Fq 'build_is_current' "$HTTP_ENSURE" || ! grep -Fq 'find "$ROOT/dist" -type f -newer "$URL_FILE"' "$HTTP_ENSURE"; then
+    printf '%s\n' "[codespace] RED: HTTP MCP supervisor cannot detect stale compiled server code." >&2
+    exit 1
+  fi
+  if ! grep -Fq 'exec 9>&-' "$HTTP_START" || ! grep -Fq 'unset CONTROL_PLANE_API_KEY' "$HTTP_START"; then
+    printf '%s\n' "[codespace] RED: HTTP MCP child retains a lifecycle lock or control-plane credential." >&2
+    exit 1
+  fi
+  if ! grep -Fq 'exec 9>&-' "$WATCHDOG_START" || ! grep -Fq 'unset CONTROL_PLANE_API_KEY' "$WATCHDOG_START" || ! grep -Fq 'dist/watchdog.js' "$WATCHDOG_START"; then
+    printf '%s\n' "[codespace] RED: watchdog entrypoint is missing, lock-retaining, or not credential-isolated." >&2
     exit 1
   fi
   if grep -Eq '(^|[^[:alnum:]_])(nohup|disown)([^[:alnum:]_]|$)' "$STARTUP"; then
@@ -119,7 +171,7 @@ NODE
     exit 1
   fi
 
-  printf '%s\n' "[codespace] GREEN: lifecycle composition static checks passed."
+  printf '%s\n' "[codespace] GREEN: lifecycle composition, probed HTTP MCP, and watchdog static checks passed."
   exit 0
 fi
 
