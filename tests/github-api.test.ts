@@ -63,7 +63,7 @@ describe('GitHubApiService', () => {
     expect(headers.get('authorization')).toBe(`Bearer ${TOKEN}`);
     expect(headers.get('accept')).toBe('application/vnd.github+json');
     expect(headers.get('x-github-api-version')).toBe('2026-03-10');
-    expect(headers.get('user-agent')).toBe('Agent-Core/0.5.3');
+    expect(headers.get('user-agent')).toBe('Agent-Core/0.5.4');
     expect(result).toMatchObject({ ok: true, status: 200, method: 'GET', endpoint: '/user' });
     expect(result.data).toEqual({ login: 'safe-user' });
     expect(result.headers.requestId).toBe('REQ-1');

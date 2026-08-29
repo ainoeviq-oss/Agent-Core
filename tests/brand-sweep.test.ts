@@ -32,4 +32,19 @@ describe('Agent Core brand scanner', () => {
     const run = spawnSync(process.execPath, [script, '--scan-path', root], { encoding: 'utf8' });
     expect(run.status).toBe(0);
   });
+
+  it('ignores third-party dependency lockfiles while still scanning owned source', async () => {
+    const root = await fixture('Agent Core source remains clean.');
+    const oldWord = ['com', 'mander'].join('');
+    await writeFile(path.join(root, 'package-lock.json'), JSON.stringify({
+      packages: {
+        [`node_modules/${oldWord}`]: {
+          version: '1.0.0',
+          resolved: `https://registry.npmjs.org/${oldWord}/-/${oldWord}-1.0.0.tgz`,
+        },
+      },
+    }), 'utf8');
+    const run = spawnSync(process.execPath, [script, '--scan-path', root], { encoding: 'utf8' });
+    expect(run.status).toBe(0);
+  });
 });

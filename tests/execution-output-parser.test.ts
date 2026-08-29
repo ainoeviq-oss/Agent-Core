@@ -32,7 +32,7 @@ describe('deterministic execution output parser', () => {
 
   it('recognizes explicit build, warning/error, performance, and deployment patterns without overriding exit truth', () => {
     const stdout = [
-      '> agent-core@0.5.3 build',
+      '> agent-core@0.5.4 build',
       '> tsc -p tsconfig.json',
       'PERF wake_ms=7.5',
       'Deployment status: deployed',
