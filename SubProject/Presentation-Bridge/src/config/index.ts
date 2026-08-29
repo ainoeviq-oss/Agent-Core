@@ -16,6 +16,9 @@ export interface BridgeConfig {
   googleTokenPath: string;
   googleFolderId?: string;
   keynoteWorker: 'local' | 'remote';
+  keynoteRemoteUrl?: string;
+  keynoteRemoteToken?: string;
+  keynoteRemoteAllowInsecureLoopback?: boolean;
   limits: SecurityLimits;
 }
 
@@ -23,6 +26,9 @@ export function loadConfig(cwd = process.cwd()): BridgeConfig {
   const worker = process.env.PB_KEYNOTE_WORKER ?? 'local';
   if (worker !== 'local' && worker !== 'remote') throw new Error('PB_KEYNOTE_WORKER must be local or remote');
   const folderId = process.env.PB_GOOGLE_FOLDER_ID?.trim();
+  const keynoteRemoteUrl = process.env.PB_KEYNOTE_WORKER_URL?.trim();
+  const keynoteRemoteToken = process.env.PB_KEYNOTE_WORKER_TOKEN?.trim();
+  const keynoteRemoteAllowInsecureLoopback = process.env.PB_KEYNOTE_WORKER_ALLOW_INSECURE_LOOPBACK === '1';
   return {
     cwd,
     runtimeRoot: resolve(cwd, 'runtime', 'jobs'),
@@ -30,6 +36,9 @@ export function loadConfig(cwd = process.cwd()): BridgeConfig {
     googleTokenPath: resolve(cwd, process.env.PB_GOOGLE_TOKEN ?? './secrets/google/token.json'),
     ...(folderId ? { googleFolderId: folderId } : {}),
     keynoteWorker: worker,
+    ...(keynoteRemoteUrl ? { keynoteRemoteUrl } : {}),
+    ...(keynoteRemoteToken ? { keynoteRemoteToken } : {}),
+    ...(keynoteRemoteAllowInsecureLoopback ? { keynoteRemoteAllowInsecureLoopback: true } : {}),
     limits: {
       maxSourceBytes: intEnv('PB_MAX_SOURCE_BYTES', 200 * 1024 * 1024),
       maxExpandedBytes: intEnv('PB_MAX_EXPANDED_BYTES', 1024 * 1024 * 1024),

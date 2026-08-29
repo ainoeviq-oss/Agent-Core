@@ -1,6 +1,24 @@
 export type TargetName = 'google' | 'keynote';
 export type JobTarget = TargetName | 'all';
 export type VerificationKind = 'live' | 'mock' | 'unavailable';
+export type JobLifecycleState =
+  | 'queued'
+  | 'preflight'
+  | 'converting_google'
+  | 'converting_keynote'
+  | 'verifying'
+  | 'completed'
+  | 'completed_with_warnings'
+  | 'failed'
+  | 'cancelled';
+
+export interface ConversionProgressEvent {
+  jobId: string;
+  stage: JobLifecycleState;
+  percent: number;
+  message: string;
+  at: string;
+}
 export type CompatibilityState =
   | 'preserved'
   | 'preserved_with_substitution'

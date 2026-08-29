@@ -1,4 +1,4 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { access, readdir, readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 
 const FORBIDDEN = [
@@ -10,7 +10,12 @@ const FORBIDDEN = [
 
 export async function auditSourceIsolation(root: string): Promise<{ clean: boolean; findings: Array<{ path: string; match: string }> }> {
   const findings: Array<{ path: string; match: string }> = [];
-  const sourceRoot = join(root, 'src');
+  const sourceCandidate = join(root, 'src');
+  const compiledCandidate = join(root, 'dist', 'src');
+  const sourceRoot = await access(sourceCandidate).then(() => sourceCandidate).catch(async () => {
+    await access(compiledCandidate);
+    return compiledCandidate;
+  });
   async function walk(dir: string): Promise<void> {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name);
