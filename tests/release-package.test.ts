@@ -55,6 +55,18 @@ describe('stable release package contract', () => {
     expect(RUNTIME_RELEASE_ITEMS).not.toContain('node_modules');
   });
 
+  it('keeps the nested Codespaces package scripts portable across Windows and Linux npm shells', async () => {
+    const codespacePkg = JSON.parse(await readFile(path.join(root, 'plugin', 'codespace', 'package.json'), 'utf8')) as {
+      scripts?: Record<string, string>;
+    };
+    expect(codespacePkg.scripts?.build).toBe('tsc -p tsconfig.json');
+    expect(codespacePkg.scripts?.test).toBe('vitest run tests');
+    expect(codespacePkg.scripts?.verify).toBe('npm run build && npm test');
+    expect(Object.values(codespacePkg.scripts ?? {})).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/^\.\//)]),
+    );
+  });
+
   it('uses the cross-platform Node release builder and keeps the PowerShell entry point as a wrapper', async () => {
     const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8')) as { scripts?: Record<string, string> };
     const nodeBuilder = await readFile(path.join(root, 'scripts', 'release', 'build-release.mjs'), 'utf8');

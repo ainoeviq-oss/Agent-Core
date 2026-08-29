@@ -32,6 +32,7 @@ All notable stable Agent Core changes are recorded here. The project follows sem
 - Codespaces readiness now accepts the actual `server_url` runtime target contract while continuing to require the exact loopback MCP URL.
 - Lifecycle startup no longer treats local process health as sufficient: it verifies protocol availability, remote tunnel identity, registration freshness, and watchdog supervision before reporting ready.
 - File-backed runtime credentials and tracked tunnel defaults survive environment loss, process replacement, Codespace restart, and full container rebuild without requiring manual key or tunnel export.
+- Nested Codespaces package scripts now rely on the npm-provided local binary path instead of POSIX-only `./node_modules/.bin` commands, allowing the complete root release gate to run on Windows and Linux.
 
 ### Documentation
 
@@ -47,7 +48,7 @@ All notable stable Agent Core changes are recorded here. The project follows sem
 
 - Codespaces fault injection proved automatic recovery after terminating the loopback MCP process and tunnel runtime; cold runtime reconstruction and a full Codespace rebuild restored the bridge and ChatGPT command path without user-entered recovery commands.
 - Presentation Bridge verification passed its complete automated suite, doctor/isolation gates, Linux Electron smoke, restrictive-CSP contracts, rendered desktop/mobile interaction QA, and production dependency audit.
-- `npm run verify:release`: 110 test files passed, 495 tests passed, 38 platform/performance tests skipped, release consistency passed, and 44 Markdown files with 17 relative links passed documentation validation. The Codespaces plugin additionally passed 14 files / 46 tests, while Presentation Bridge passed 45/45 tests, doctor/isolation, Linux Electron smoke, and a zero-vulnerability production audit.
+- `npm run verify:release`: 110 test files passed, 496 tests passed, 38 platform/performance tests skipped, release consistency passed, and 44 Markdown files with 17 relative links passed documentation validation. The Codespaces plugin additionally passed 14 files / 46 tests, while Presentation Bridge passed 45/45 tests, doctor/isolation, Linux Electron smoke, and a zero-vulnerability production audit.
 - Stable publication remains local-direct with GitHub Actions/CI disabled; the exact source SHA, asset sizes, and SHA-256 digests are independently verified again after the merge and by remote read-back.
 
 ## [0.5.3] - 2026-08-27 — Stable
