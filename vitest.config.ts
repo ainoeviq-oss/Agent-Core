@@ -9,6 +9,7 @@ export default defineConfig({
       '**/runtime/**',
       '**/.worktrees/**',
       '**/stable-release/**',
+      '**/SubProject/**',
     ],
   },
 });
