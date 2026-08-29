@@ -34,6 +34,26 @@ node dist/src/cli/index.js doctor
 
 `package-lock.json` is committed and is the reproducible install contract for the verified release.
 
+## Windows desktop package
+
+Build and verify the unsigned x64 installer and portable executable:
+
+```bash
+npm ci
+npm run verify
+npm run package:win
+```
+
+Outputs:
+
+```text
+release/Presentation-Bridge-Setup-0.2.0-x64.exe
+release/Presentation-Bridge-Portable-0.2.0-x64.exe
+release/release-manifest.json
+```
+
+`package:win` uses offline publishing mode and automatically verifies SHA-256, file sizes, and packaged ASAR boundaries. Cross-building from headless Linux requires Wine 64/32-bit plus Xvfb. Native Windows smoke and Authenticode signing remain separate release gates. See `docs/WINDOWS_RELEASE.md`.
+
 On a Windows production machine, put the repository in its own directory, for example:
 
 ```text

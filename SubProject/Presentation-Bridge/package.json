@@ -30,7 +30,8 @@
     "verify": "npm run check && npm run doctor",
     "smoke:desktop": "node ./scripts/electron-smoke.mjs",
     "package:dir": "npm run build && electron-builder --dir",
-    "package:win": "npm run build && electron-builder --win nsis portable"
+    "package:win": "npm run build && electron-builder --win nsis portable --publish never && npm run verify:release",
+    "verify:release": "node ./scripts/verify-release.mjs"
   },
   "engines": {
     "node": ">=20.12"
@@ -41,6 +42,7 @@
     "sharp": "0.35.4"
   },
   "devDependencies": {
+    "@electron/asar": "3.4.1",
     "@types/node": "25.1.0",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.5",
@@ -85,15 +87,24 @@
             "x64"
           ]
         }
-      ],
-      "artifactName": "Presentation-Bridge-${version}-${arch}.${ext}"
+      ]
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Presentation Bridge"
+      "shortcutName": "Presentation Bridge",
+      "artifactName": "Presentation-Bridge-Setup-${version}-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Presentation-Bridge-Portable-${version}-${arch}.${ext}"
     }
+  },
+  "author": "Presentation Bridge Contributors",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rendevouz999/Agent-Core.git",
+    "directory": "SubProject/Presentation-Bridge"
   }
 }
