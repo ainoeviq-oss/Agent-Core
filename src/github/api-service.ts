@@ -82,7 +82,7 @@ export class GitHubApiService {
     private readonly credentials: GitHubCredentialProvider,
     private readonly fetchImpl: typeof fetch = fetch,
     private readonly metrics?: RuntimeMetricRegistry,
-    private readonly userAgent = 'Agent-Core/0.5.3',
+    private readonly userAgent = 'Agent-Core/0.5.4',
   ) {}
 
   async request(input: GitHubApiRequest): Promise<GitHubApiResult> {

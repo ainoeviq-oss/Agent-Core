@@ -4,25 +4,51 @@ All notable stable Agent Core changes are recorded here. The project follows sem
 
 ## Unreleased
 
-### Documentation
-
-- Recorded the Windows installation cutover procedure and the defects found while moving the authoritative installation to a fresh canonical clone: empty `runtime/data` authentication stores on a clone, deletion of an ignored-path secret file that the tracked tunnel template and `tests/unified-launcher.test.ts` require, a machine-level root locator left pointing at the previous installation, leaked tray-test processes, and a stale cutover marker asserting a success that had rolled back.
+## [0.5.4] - 2026-08-30 — Stable
 
 ### Added
 
-- Autonomous execution memory pre-search now recalls bounded relevant failures, decisions, conflicts, and hard guardrails from the execution objective/node purposes before create/start/dynamic-add/retry paths, without indexing raw command text; degraded memory search fails open while enforced hard guardrails fail closed before process launch.
+- Autonomous execution memory pre-search now recalls bounded relevant failures, decisions, conflicts, and hard guardrails from execution objectives and node purposes before create/start/dynamic-add/retry paths, without indexing raw command text; degraded memory search fails open while enforced hard guardrails fail closed before process launch.
 - Execution memory pre-search has a dedicated local performance gate requiring real p95 latency below 500 ms.
 - Bounded runtime observability with `/health/metrics` and read-only `agent_core_health_metrics`, deterministic rolling p50/p95/p99/max summaries, and TTL/single-flight optional GitHub health probes.
 - Deterministic structured execution-output parser v1 with persisted source hashes and bounded test/build/deployment/performance/warning/error/security evidence.
 - Execution schema v4 verified-artifact index with hash/type/run lookup, startup reconciliation, advisory-only reuse discovery, and review-only purge suggestions.
 - Read-only `execution_workflow_advice` with optional route-valid `proposedNext` guidance and principal/project isolation.
 - Local improvisation performance gates for health metrics, bounded parsing, 1000-row artifact lookup, 128-node advisor analysis, and 100000 bounded metric observations.
+- Self-healing Codespaces bridge with a loopback Streamable HTTP MCP server, real protocol probes, remote registration verification, file-backed credential recovery, fixed tunnel identity, and watchdog repair for local MCP failure, stale runtime state, or repeated internal 502 responses.
+- Presentation Bridge v0.2 with a shared one-screen Electron/hosted interface, real progress and cancellation, Google Slides workflows, local or remote Keynote worker support, encrypted desktop worker settings, recent jobs, setup dialogs, compatibility reporting, and restrictive CSP.
+- Cross-platform stable release construction through Node.js, including a credential-free `presentation-bridge-v0.2.0-source.zip` alongside the Agent Core runtime/plugin ZIPs and npm package.
 
 ### Changed
 
 - `capability_route` now injects a bounded deterministic projection of recalled non-guardrail memory into capability ranking and reports `memoryInjection` evidence, closing the gap between available DMF infrastructure and autonomous routing adoption.
 - Execution-derived intelligence now documents and enforces the authority order `PROCESS TRUTH > VERIFIED ARTIFACT TRUTH > PARSED STRUCTURED INTERPRETATION > ARTIFACT/CACHE SUGGESTION > WORKFLOW ADVICE`; cache awareness never skips current command execution.
 - Windows owned-process stop now terminates the spawned process tree so a stopped background command cannot leave descendants holding the routed working directory.
+- The repository README now documents the canonical clone path, Windows and Codespaces operation, Presentation Bridge, release assets, and authenticated GitHub Packages installation.
+- Stable release packaging now includes canonical Codespaces and Windows cutover documentation, deterministic source ZIP paths, an expanded manifest, and SHA-256 coverage for every distributable asset.
+
+### Fixed
+
+- Codespaces readiness now accepts the actual `server_url` runtime target contract while continuing to require the exact loopback MCP URL.
+- Lifecycle startup no longer treats local process health as sufficient: it verifies protocol availability, remote tunnel identity, registration freshness, and watchdog supervision before reporting ready.
+- File-backed runtime credentials and tracked tunnel defaults survive environment loss, process replacement, Codespace restart, and full container rebuild without requiring manual key or tunnel export.
+
+### Documentation
+
+- Recorded the Windows installation cutover procedure and the defects found while moving the authoritative installation to a fresh canonical clone: empty `runtime/data` authentication stores on a clone, deletion of an ignored-path secret file required by the tracked tunnel template and launcher tests, a machine-level root locator left pointing at the previous installation, leaked tray-test processes, and a stale cutover marker asserting a success that had rolled back.
+
+### Security
+
+- Release ZIP/TGZ construction remains allowlist-based and excludes secrets, runtime databases, logs, local capabilities, raw execution evidence, Presentation Bridge jobs, generated corpus files, caches, and credential-bearing configuration.
+- GitHub REST/Git and Packages credentials remain separate, file-backed, lazily read, redacted, and absent from command arguments and release artifacts.
+- Presentation Bridge preserves truthful target availability; live Google OAuth and native macOS Keynote output remain external acceptance gates rather than simulated success.
+
+### Stability evidence
+
+- Codespaces fault injection proved automatic recovery after terminating the loopback MCP process and tunnel runtime; cold runtime reconstruction and a full Codespace rebuild restored the bridge and ChatGPT command path without user-entered recovery commands.
+- Presentation Bridge verification passed its complete automated suite, doctor/isolation gates, Linux Electron smoke, restrictive-CSP contracts, rendered desktop/mobile interaction QA, and production dependency audit.
+- `npm run verify:release`: 110 test files passed, 495 tests passed, 38 platform/performance tests skipped, release consistency passed, and 44 Markdown files with 17 relative links passed documentation validation. The Codespaces plugin additionally passed 14 files / 46 tests, while Presentation Bridge passed 45/45 tests, doctor/isolation, Linux Electron smoke, and a zero-vulnerability production audit.
+- Stable publication remains local-direct with GitHub Actions/CI disabled; the exact source SHA, asset sizes, and SHA-256 digests are independently verified again after the merge and by remote read-back.
 
 ## [0.5.3] - 2026-08-27 — Stable
 

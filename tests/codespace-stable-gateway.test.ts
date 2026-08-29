@@ -155,7 +155,7 @@ describe('stable Cloudflare Worker gateway contract', () => {
         return Response.json({ success: true, result: { name: 'BACKEND_URL', type: 'secret_text' } });
       }
       if (url === 'https://agent-core-gateway.example/health') {
-        return new Response(JSON.stringify({ status: 'ok', version: '0.5.3', memory: { healthy: true }, continuity: { healthy: true }, execution: { healthy: true } }), {
+        return new Response(JSON.stringify({ status: 'ok', version: '0.5.4', memory: { healthy: true }, continuity: { healthy: true }, execution: { healthy: true } }), {
           status: 200,
           headers: { 'x-agent-core-backend-host': 'replacement-8765.app.github.dev' },
         });
@@ -190,7 +190,7 @@ describe('stable Cloudflare Worker gateway contract', () => {
     await admin.verifyStableGateway({
       stableBaseUrl: 'https://agent-core-gateway.example',
       backendUrl: 'https://replacement-8765.app.github.dev',
-      expectedVersion: '0.5.3',
+      expectedVersion: '0.5.4',
       fetchImpl: fakeFetch,
     });
 
@@ -214,7 +214,7 @@ describe('stable Cloudflare Worker gateway contract', () => {
         const backendHost = healthCalls < 3
           ? 'old-backend-8765.app.github.dev'
           : 'replacement-8765.app.github.dev';
-        return new Response(JSON.stringify({ status: 'ok', version: '0.5.3', memory: { healthy: true }, continuity: { healthy: true }, execution: { healthy: true } }), {
+        return new Response(JSON.stringify({ status: 'ok', version: '0.5.4', memory: { healthy: true }, continuity: { healthy: true }, execution: { healthy: true } }), {
           status: 200,
           headers: { 'x-agent-core-backend-host': backendHost },
         });
@@ -242,7 +242,7 @@ describe('stable Cloudflare Worker gateway contract', () => {
     await expect(admin.verifyStableGateway({
       stableBaseUrl: 'https://agent-core-gateway.example',
       backendUrl: 'https://replacement-8765.app.github.dev',
-      expectedVersion: '0.5.3',
+      expectedVersion: '0.5.4',
       confirmationAttempts: 4,
       confirmationDelayMs: 1,
       sleepImpl: async () => { sleepCalls += 1; },

@@ -11,7 +11,7 @@ import { HEALTH_METRICS_TOOL_NAMES, registerHealthMetricsTools } from './health-
 import { OPERATIONAL_TOOL_NAMES, registerOperationalTools } from './tools.js';
 
 export const SERVER_NAME = 'agent-core';
-export const SERVER_VERSION = '0.5.3';
+export const SERVER_VERSION = '0.5.4';
 
 export function createAgentCoreMcpServer(key: VerifiedKey, runtime: RuntimeServices): McpServer {
   const server = new McpServer({

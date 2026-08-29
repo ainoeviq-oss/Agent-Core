@@ -131,11 +131,15 @@ describe('Agent Core plugin package builder', () => {
   });
 
   it('keeps the stable release builder explicitly credential-free while packaging the github skill', async () => {
-    const releaseBuilder = await readFile(path.resolve('scripts', 'release', 'build-release.ps1'), 'utf8');
-    expect(releaseBuilder).toContain("skills\\agent-core-github");
-    expect(releaseBuilder).toContain("skills = @('agent-core-capability-router','agent-core-github')");
-    expect(releaseBuilder).toContain("exclusions = @('secrets'");
+    const releaseBuilder = await readFile(path.resolve('scripts', 'release', 'build-release.mjs'), 'utf8');
+    const releaseContract = await readFile(path.resolve('scripts', 'release', 'release-contract.mjs'), 'utf8');
+    const powershellWrapper = await readFile(path.resolve('scripts', 'release', 'build-release.ps1'), 'utf8');
+    expect(releaseBuilder).toContain("skills', 'agent-core-github'");
+    expect(releaseBuilder).toContain("skills: ['agent-core-capability-router', 'agent-core-github']");
+    expect(releaseContract).toContain("'secrets'");
+    expect(releaseContract).toContain("'runtime'");
     expect(releaseBuilder).not.toContain('gh-token.txt');
     expect(releaseBuilder).not.toContain('packages-token.txt');
+    expect(powershellWrapper).toContain('build-release.mjs');
   });
 });
